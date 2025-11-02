@@ -1,14 +1,13 @@
 name: Node.js CI
 
 on:
-  push:
-    branches: ['main', 'dev']
   pull_request:
     branches: ['main', 'dev']
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     strategy:
       matrix:
         node-version: [18.x]
@@ -22,20 +21,18 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
-      # Server dependencies
-      - name: Install server dependencies
-        run: npm ci
-        working-directory: ./server
-
-      # Client dependencies
+      # Install dependencies for client
       - name: Install client dependencies
-        run: npm ci
-        working-directory: ./client
+        run: npm ci --prefix client
 
-      # Lint server
-      - name: Lint server
-        run: npm run lint --prefix server
+      # Install dependencies for server
+      - name: Install server dependencies
+        run: npm ci --prefix server
 
-      # Lint client
-      - name: Lint client
+      # Run ESLint for client
+      - name: Run ESLint for client
         run: npm run lint --prefix client
+
+      # Run ESLint for server
+      - name: Run ESLint for server
+        run: npm run lint --prefix server
