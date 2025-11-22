@@ -4,8 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "lint": "eslint . --ext .js,.jsx"
+    "dev": "nodemon index.js --exec babel-node",
+    "start": "node index.js"
   },
   "keywords": [],
   "author": "",
