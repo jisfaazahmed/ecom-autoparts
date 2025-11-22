@@ -7,8 +7,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", time: new Date().toISOString() });
+// Test API route
+app.get("/api/message", (req, res) => {
+  res.json({ message: "Hello from Express Backend! working" });
 });
 
 const PORT = process.env.PORT || 5000;
