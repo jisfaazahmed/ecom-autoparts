@@ -36,6 +36,10 @@ function App() {
       </div>
       <p className="read-the-docs">
         Click on the Vite and React logos to learn more
+        any more. 
+      </p>
+      <p>
+        Edited to test Docker volume file change detection.
       </p>
     </>
   )
