@@ -18,6 +18,9 @@ const categoryRoutes = require('./routes/categoryRoutes');
 const productRoutes = require('./routes/productRoutes');
 const vendorProductRoutes = require('./routes/vendorProductRoutes');
 
+const swaggerUI = require('swagger-ui-express');
+const swaggerSpecs = require('./config/swagger');
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -44,6 +47,9 @@ app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/offers', vendorProductRoutes);
+
+app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpecs));
+console.log("📄 Documentation available at http://localhost:5000/api-docs");
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
