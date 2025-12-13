@@ -1,0 +1,11 @@
+db.users.deleteOne({ email: "bob@autoparts.com" })
+use autoparts
+exit
+db.users.deleteOne({ email: "bob@autoparts.com" })
+use autoparts
+db.users.deleteOne({ email: "bob@autoparts.com" })
+use autoparts
+exit
+db.users.deleteOne({ email: "bob@autoparts.com" })
+use autoparts
+exit

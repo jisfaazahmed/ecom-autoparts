@@ -1,0 +1,49 @@
+require("dotenv").config();
+const express = require("express");
+const mongoose = require("mongoose");
+const cors = require("cors");
+const {
+  MONGO_DB,
+  MONGO_USER,
+  MONGO_PASSWORD,
+  MONGO_IP,
+  MONGO_PORT,
+} = require("./config/config");
+
+// === 1. Import the New Routes ===
+const authRoutes = require('./routes/authRoutes');
+const vendorRoutes = require('./routes/vendorRoutes');
+const vehicleRoutes = require('./routes/vehicleRoutes');
+const categoryRoutes = require('./routes/categoryRoutes');
+const productRoutes = require('./routes/productRoutes');
+const vendorProductRoutes = require('./routes/vendorProductRoutes');
+
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// MongoDB connection (Your existing secure configuration)
+const mongoURL = `mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_IP}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`;
+
+mongoose.connect(mongoURL, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log('Connected to MongoDB'))
+.catch((err) => console.error('Error connecting to MongoDB:', err));
+
+// Test API route
+app.get("/api/message", (req, res) => {
+  res.json({ message: "Hello from Express Backend! working" });
+});
+
+// === 2. Use the New Routes ===
+app.use('/api/auth', authRoutes);       // Login & Register
+app.use('/api/vendors', vendorRoutes);  // Vendor Approval
+app.use('/api/vehicles', vehicleRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/offers', vendorProductRoutes);
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
