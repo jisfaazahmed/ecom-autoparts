@@ -26,15 +26,29 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// MongoDB connection (Your existing secure configuration)
+// MongoDB Connection URL
 const mongoURL = `mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_IP}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`;
 
-mongoose.connect(mongoURL, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log('Connected to MongoDB'))
-.catch((err) => console.error('Error connecting to MongoDB:', err));
+// ================================================================
+// 🛡️ ROBUST DATABASE CONNECTION (Replaced old simple connect)
+// ================================================================
+const connectWithRetry = () => {
+  console.log('Attempting to connect to MongoDB...');
+  
+  mongoose.connect(mongoURL, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+  })
+  .then(() => console.log('✅ Connected to MongoDB'))
+  .catch((err) => {
+    console.error('❌ MongoDB Connection Error:', err.message);
+    console.log('⏳ Database not ready yet. Retrying in 5 seconds...');
+    setTimeout(connectWithRetry, 5000); // Wait 5s, then try again
+  });
+};
+
+connectWithRetry(); 
+// ================================================================
 
 // Test API route
 app.get("/api/message", (req, res) => {

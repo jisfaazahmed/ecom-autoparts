@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const User = require('./models/user');
+const User = require('./models/user.model');
 
 // Import your config to get the correct credentials
 const {
@@ -42,7 +42,7 @@ const seed = async () => {
     email,
     password: hashedPassword,
     role: 'SUPER_ADMIN',
-    status: 'ACTIVE'
+    status: 'APPROVED'
   });
 
   await admin.save();

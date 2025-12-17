@@ -23,11 +23,16 @@ const Dashboard = () => {
       setUser(parsedUser);
 
       // SECURITY CHECK: Kick out Customers
-      if (parsedUser.role === 'USER') {
-        navigate('/home'); 
+      if (parsedUser.role !== 'SUPER_ADMIN') {
+        alert("⛔ Access Denied: This dashboard is for Super Admins only.");
+        
+        // Redirect them back to their correct place
+        if (parsedUser.role === 'ADMIN') navigate('/myshop');
+        else navigate('/home');
+        
         return;
       }
-
+      
       fetchStats();
     }
   }, [navigate]);
