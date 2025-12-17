@@ -1,0 +1,5 @@
+show dbs
+use admin
+exit
+use e
+use admin
