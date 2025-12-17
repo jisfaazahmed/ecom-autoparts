@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import api from '../api/api';
-import { useNavigate } from 'react-router-dom'; // <--- Import this
+import { useNavigate, Link } from 'react-router-dom'; // <--- Import this
 
 const Login = () => {
   const [formData, setFormData] = useState({ email: '', password: '' });
@@ -18,35 +18,49 @@ const Login = () => {
     try {
       const res = await api.post('/auth/login', formData);
       
-      // 1. Save Token
-      localStorage.setItem('token', res.data.token);
-      
-      // 2. Save User Info (Optional but useful)
-      if(res.data.user) {
-        localStorage.setItem('user', JSON.stringify(res.data.user));
-      }
+      console.log("Login Response:", res.data); // <--- DEBUG LOG
 
-      // 3. Redirect immediately
-      navigate('/dashboard'); 
+      // 1. Save Token & User
+      localStorage.setItem('token', res.data.token);
+      const userData = res.data.user || res.data;
+      localStorage.setItem('user', JSON.stringify(userData));
+
+      // 2. SMART REDIRECT (The Fix)
+      if (userData.role === 'USER') {
+        navigate('/home');      // Customers go to Shop
+      } else {
+        navigate('/dashboard'); // Admins go to Dashboard
+      } 
 
     } catch (err) {
+      console.error(err);
       setMessage(`❌ Error: ${err.response?.data?.message || 'Login failed'}`);
     }
   };
 
   return (
-    <div style={{ maxWidth: '400px', margin: '50px auto', padding: '20px', border: '1px solid #ccc', borderRadius: '8px' }}>
-      <h2>System Login</h2>
-      {message && <p style={{ color: 'red' }}>{message}</p>}
-      <form onSubmit={handleSubmit}>
-        <div style={{ marginBottom: '15px' }}>
-          <input type="email" name="email" placeholder="Email" value={formData.email} onChange={handleChange} required style={{ width: '100%', padding: '10px' }} />
-        </div>
-        <div style={{ marginBottom: '15px' }}>
-          <input type="password" name="password" placeholder="Password" value={formData.password} onChange={handleChange} required style={{ width: '100%', padding: '10px' }} />
-        </div>
-        <button type="submit" style={{ width: '100%', padding: '12px', background: 'blue', color: 'white', border: 'none', cursor: 'pointer' }}>Login</button>
-      </form>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div className="card" style={{ width: '100%', maxWidth: '400px' }}>
+        <h2 style={{ textAlign: 'center', marginBottom: '20px', color: 'var(--primary)' }}>Welcome Back</h2>
+        
+        {message && <div style={{ padding: '10px', background: '#fee2e2', color: '#b91c1c', borderRadius: '6px', marginBottom: '15px', fontSize: '0.9rem' }}>{message}</div>}
+        
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label className="form-label">Email Address</label>
+            <input className="form-input" type="email" name="email" value={formData.email} onChange={handleChange} required />
+          </div>
+          <div className="form-group">
+            <label className="form-label">Password</label>
+            <input className="form-input" type="password" name="password" value={formData.password} onChange={handleChange} required />
+          </div>
+          <button type="submit" className="btn btn-primary" style={{ width: '100%' }}>Login</button>
+        </form>
+
+        <p style={{ textAlign: 'center', marginTop: '20px', fontSize: '0.9rem', color: '#666' }}>
+          New here? <Link to="/register" style={{ color: 'var(--primary)', fontWeight: '600' }}>Create an account</Link>
+        </p>
+      </div>
     </div>
   );
 };

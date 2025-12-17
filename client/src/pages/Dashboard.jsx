@@ -1,21 +1,45 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import api from '../api/api';
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    activeShops: 0,
+    totalOrders: 0,
+    pendingApprovals: 0
+  });
 
   useEffect(() => {
-    // 1. Check if token exists
     const token = localStorage.getItem('token');
+    const storedUser = localStorage.getItem('user');
+
     if (!token) {
-      navigate('/'); // Redirect to login if not authenticated
+      navigate('/');
     } else {
-      // Load user info from storage (or you could fetch from API)
-      const storedUser = localStorage.getItem('user');
-      if (storedUser) setUser(JSON.parse(storedUser));
+      const parsedUser = JSON.parse(storedUser);
+      setUser(parsedUser);
+
+      // SECURITY CHECK: Kick out Customers
+      if (parsedUser.role === 'USER') {
+        navigate('/home'); 
+        return;
+      }
+
+      fetchStats();
     }
   }, [navigate]);
+
+  const fetchStats = async () => {
+    try {
+      const res = await api.get('/admin/stats');
+      setStats(res.data);
+    } catch (err) {
+      console.error("Failed to fetch stats:", err);
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('token');
@@ -24,44 +48,75 @@ const Dashboard = () => {
   };
 
   return (
-    <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #333', paddingBottom: '10px' }}>
-        <h1>🚗 AutoParts Admin</h1>
-        <button onClick={handleLogout} style={{ background: 'red', color: 'white', border: 'none', padding: '10px 20px', cursor: 'pointer' }}>
-          Logout
-        </button>
-      </header>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-main)' }}>
+      {/* Top Navigation Bar */}
+      <nav className="navbar">
+        <div className="navbar-brand">🚗 AutoParts Admin</div>
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <span style={{ fontSize: '0.9rem', marginRight: '10px' }}>
+             {user?.name} <span style={{ opacity: 0.6 }}>({user?.role})</span>
+          </span>
+          <button onClick={handleLogout} className="btn btn-outline" style={{ fontSize: '0.85rem', padding: '8px 16px' }}>
+            Logout
+          </button>
+        </div>
+      </nav>
 
-      <div style={{ marginTop: '20px' }}>
-        <h2>Welcome, {user?.name || 'Admin'}!</h2>
-        <p>Role: <strong>{user?.role || 'Unknown'}</strong></p>
-        
-        {/* Simple Dashboard Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginTop: '20px' }}>
-          <div style={cardStyle}>
-            <h3>🛒 Total Orders</h3>
-            <p>0</p>
+      {/* Main Content */}
+      <div className="container">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h2 style={{ margin: 0 }}>Dashboard Overview</h2>
+          
+          {user?.role === 'SUPER_ADMIN' && stats.pendingApprovals > 0 && (
+             <button onClick={() => navigate('/approvals')} className="btn btn-warning">
+                ⚠️ Review Pending ({stats.pendingApprovals})
+             </button>
+          )}
+        </div>
+
+        {/* Stats Grid */}
+        <div className="dashboard-grid">
+          <div className="stat-card">
+            <div className="stat-title">Total Orders</div>
+            <div className="stat-number">{stats.totalOrders}</div>
           </div>
-          <div style={cardStyle}>
-            <h3>🏬 Active Shops</h3>
-            <p>1 (HQ)</p>
+
+          <div 
+            className="stat-card" 
+            onClick={() => user?.role === 'SUPER_ADMIN' && navigate('/shops')} // <--- Clickable
+            style={{ cursor: user?.role === 'SUPER_ADMIN' ? 'pointer' : 'default' }}
+          >
+            <div className="stat-title">Active Shops</div>
+            <div className="stat-number">{stats.activeShops}</div>
           </div>
-          <div style={cardStyle}>
-            <h3>👥 Total Users</h3>
-            <p>1</p>
+
+          <div 
+            className="stat-card" 
+            onClick={() => user?.role === 'SUPER_ADMIN' && navigate('/users')} // <--- Clickable
+            style={{ cursor: user?.role === 'SUPER_ADMIN' ? 'pointer' : 'default' }}
+          >
+            <div className="stat-title">Total Users</div>
+            <div className="stat-number">{stats.totalUsers}</div>
+          </div>
+
+          <div 
+            className="stat-card" 
+            onClick={() => user?.role === 'SUPER_ADMIN' && navigate('/approvals')}
+            style={{ 
+               cursor: user?.role === 'SUPER_ADMIN' ? 'pointer' : 'default',
+               border: stats.pendingApprovals > 0 ? '2px solid var(--warning)' : 'none'
+            }}
+          >
+            <div className="stat-title">Pending Approvals</div>
+            <div className="stat-number" style={{ color: stats.pendingApprovals > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>
+              {stats.pendingApprovals}
+            </div>
+            {user?.role === 'SUPER_ADMIN' && <small style={{ color: 'var(--primary)' }}>Click to review</small>}
           </div>
         </div>
       </div>
     </div>
   );
-};
-
-const cardStyle = {
-  border: '1px solid #ddd',
-  padding: '20px',
-  borderRadius: '8px',
-  boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-  textAlign: 'center'
 };
 
 export default Dashboard;

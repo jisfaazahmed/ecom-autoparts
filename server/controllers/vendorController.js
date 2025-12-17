@@ -1,4 +1,4 @@
-const User = require('../models/user');
+const User = require('../models/user.model');
 
 // GET all vendors (Usage: /api/vendors?status=PENDING)
 exports.getAllVendors = async (req, res) => {

@@ -49,6 +49,7 @@ app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/offers', vendorProductRoutes);
 app.use('/api/orders', OrderRoutes);  // Order Management
+app.use('/api/admin', require('./routes/admin.routes'));
 
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpecs));
 console.log("📄 Documentation available at http://localhost:5000/api-docs");

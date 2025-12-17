@@ -1,29 +1,29 @@
 const mongoose = require('mongoose');
 
-const orderSchema = new mongoose.Schema({
-    custamerId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Customer'
-    },
-    sellerId: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Seller'
-    },
-    totalAmount : Number,
-    status: {
-        type: String,
-        enum: ['Pending', 'Processing', 'Shipped', 'Delivered', 'Cancelled'],
-        default: 'Pending'
-    },
-    createdAt: {
-        type: Date,
-        default: Date.now
-    },
-    updatedAt: {
-        type: Date,
-        default: Date.now
-    }
-});
+const UserSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  
+  // ENUMS MUST MATCH EXACTLY WHAT THE CONTROLLER SENDS
+  role: { 
+    type: String, 
+    default: 'USER', 
+    enum: ['USER', 'ADMIN', 'SUPER_ADMIN'] // <--- Verify these are UPPERCASE
+  },
+  
+  shopName: { type: String }, 
+  
+  status: { 
+    type: String, 
+    default: 'PENDING', 
+    enum: ['PENDING', 'APPROVED', 'REJECTED'] // <--- Verify these are UPPERCASE
+  }
+}, { timestamps: true });
 
-module.exports = mongoose.model('Order', orderSchema);
-    
+// Prevent "OverwriteModelError" while ensuring we use the NEW schema
+if (mongoose.models.User) {
+  delete mongoose.models.User;
+}
+
+module.exports = mongoose.model('User', UserSchema);
