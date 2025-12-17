@@ -1,0 +1,2 @@
+use autoparts
+db.users.remove({ email: "superadmin@example.com" })

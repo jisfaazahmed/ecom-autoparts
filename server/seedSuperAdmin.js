@@ -22,8 +22,8 @@ mongoose.connect(mongoURL)
   });
 
 const seed = async () => {
-  const email = 'superadmin@example.com'; // CHANGE THIS
-  const password = 'password123';         // CHANGE THIS
+  const email = 'jisfaaz@gmail.com'; // CHANGE THIS
+  const password = 'Jisfaaz@1';         // CHANGE THIS
 
   // Check if exists
   const exists = await User.findOne({ email });

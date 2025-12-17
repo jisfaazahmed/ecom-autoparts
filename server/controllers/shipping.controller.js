@@ -1,4 +1,4 @@
-const shipping = require('../models/shipping.model ');
+const shipping = require('../models/shipping.model');
 const order = require('../models/order.model');
 
 module.exports.createShipping = async (req, res) => {
