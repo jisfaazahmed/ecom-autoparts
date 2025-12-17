@@ -26,11 +26,13 @@ const Login = () => {
       localStorage.setItem('user', JSON.stringify(userData));
 
       // 2. SMART REDIRECT (The Fix)
-      if (userData.role === 'USER') {
-        navigate('/home');      // Customers go to Shop
+      if (userData.role === 'SUPER_ADMIN') {
+        navigate('/dashboard'); // Only Super Admin goes here
+      } else if (userData.role === 'ADMIN') {
+        navigate('/myshop');    // Vendors go to their Shop Panel
       } else {
-        navigate('/dashboard'); // Admins go to Dashboard
-      } 
+        navigate('/home');      // Customers go to the Storefront
+      }
 
     } catch (err) {
       console.error(err);
