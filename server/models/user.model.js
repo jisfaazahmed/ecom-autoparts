@@ -14,6 +14,12 @@ const UserSchema = new mongoose.Schema({
   
   shopName: { type: String }, 
   
+  // Saved vehicles for "My Garage"
+  savedVehicles: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Vehicle'
+  }],
+  
   // STATUS: Must match what Auth Controller sends
   status: { 
     type: String, 
