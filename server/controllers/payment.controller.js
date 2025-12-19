@@ -1,5 +1,6 @@
 const payment = require('../models/payment.model');
 const order = require('../models/order.model');
+const stripe = require('../config/stripe');
 
 module.exports.createPayment = async (req, res) => {
     try {
@@ -27,4 +28,47 @@ module.exports.getPaymentById = async (req, res) => {
     }
 };
 
-module.exports.processPayment = async (req, res) => {};
+module.exports.processStripePayment = async (req, res) => {
+    try {
+        const { orderId, amount} = req.body;
+
+        const paymentIntent = await stripe.paymentIntents.create({
+            amount: amount ,
+            currency: 'lkr',
+            metadata: { orderId }
+        });
+
+        await payment.create({
+            orderId,
+            amount,
+            paymentMethod: 'Stripe',
+            status: 'Completed',
+            transactionId: paymentIntent.id
+        });
+
+        res.status(200).json({ clientSecret: paymentIntent.client_secret });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+module.exports.paymentConfirmation = async (req, res) => {
+    const event = req.body;
+
+    if (event.type === 'payment_intent.succeeded') {
+        const paymentIntent = event.data.object;
+        
+        await payment.findOneAndUpdate(
+            { transactionId: paymentIntent.id },
+            { status: 'Completed' }
+        );
+
+        await order.findByIdAndUpdate(
+            paymentIntent.metadata.orderId,
+            { status: 'Paid' }
+        );
+    }   
+
+    res.status(200).json({ received: true });
+};
