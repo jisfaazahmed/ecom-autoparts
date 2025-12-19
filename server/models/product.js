@@ -6,6 +6,8 @@ const productSchema = new mongoose.Schema({
   description: { type: String },
   partNumber: { type: String, required: true }, // e.g. "BC-1234"
   image: { type: String }, // URL to image
+  price: { type: Number, required: true },
+  stock: { type: Number, default: 0 },
 
   // 2. The Link to "Brakes > Pads"
   category: {
@@ -26,8 +28,8 @@ const productSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
-  
-  // 5. Is it active?
+
+  // 6. Is it active?
   isActive: { type: Boolean, default: true }
 }, { timestamps: true });
 
