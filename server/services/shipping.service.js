@@ -1,43 +1,43 @@
 const Shipping = require('../models/shipping.model');
 const Order = require('../models/order.model');
 const OrderTimeline = require('../models/timeline.model');
+const ShippingZone = require('../models/deliveryZone.model');
+
+const ZONES = {
+    'zone1': {
+        districts: ['colombo'],
+    },
+    'zone2': {
+        districts: ['gampaha', 'kaluthara'],
+    },
+    'zone3': {
+        districts: ['kurunegala',
+            'Kandy',
+            'Matale',
+            'Nuwara Eliya',
+            'Galle',
+            'Matara',
+            'Hambantota',
+            'Puttalam',
+            'Anuradhapura',
+            'Polonnaruwa',
+            'Badulla',
+            'Monaragala',
+            'Ratnapura',
+            'Kegalle',
+            'Trincomalee',
+            'Batticaloa',
+            'Ampara',
+            'Jaffna',
+            'Vavuniya',
+            'Mannar',
+            'Kilinochchi',
+            'Mullaitivu'],
+
+    }
+};
 
 class ShippingService {
-
-    static ZONES = {
-        'zone1': {
-            districts: ['colombo'],
-        },
-        'zone2': {
-            districts: ['gampaha', 'kaluthara'],
-        },
-        'zone3': {
-            districts: ['kurunegala',
-                'Kandy',
-                'Matale',
-                'Nuwara Eliya',
-                'Galle',
-                'Matara',
-                'Hambantota',
-                'Puttalam',
-                'Anuradhapura',
-                'Polonnaruwa',
-                'Badulla',
-                'Monaragala',
-                'Ratnapura',
-                'Kegalle',
-                'Trincomalee',
-                'Batticaloa',
-                'Ampara',
-                'Jaffna',
-                'Vavuniya',
-                'Mannar',
-                'Kilinochchi',
-                'Mullaitivu'],
-
-        }
-    };
-
 
     async calculateShippingCost(orderData) {
         const {
@@ -93,7 +93,7 @@ class ShippingService {
 
         if (!zone) {
             // Fallback to zone type matching
-            for (const [zoneType, data] of Object.entries(this.constructor.ZONES)) {
+            for (const [zoneType, data] of Object.entries(ZONES)) {
                 if (data.districts.includes(district)) {
                     zone = await ShippingZone.findOne({ zoneType, isActive: true });
                     break;
@@ -449,7 +449,7 @@ class ShippingService {
         // Update order status
         const order = await Order.findById(shipping.order);
         const allItemsDelivered = order.items.every(item => {
-            return true;
+            item.status ==='delivered';
         });
 
         if (allItemsDelivered) {
