@@ -1,74 +1,179 @@
-const payment = require('../models/payment.model');
-const order = require('../models/order.model');
-const stripe = require('../config/stripe');
+const Payment = require('../models/payment.model');
+const paymentService = require('../services/payment.service');
 
-module.exports.createPayment = async (req, res) => {
+//create payment
+exports.createPayment = async (req, res) => {
     try {
-        const newPayment = new payment(req.body);   
-        await order.findByIdAndUpdate(newPayment.orderId, { status: 'Paid' });
-        const savedPayment = await newPayment.save();
-        res.status(201).json(savedPayment);
+        const payment = await paymentService.initiatePayment(
+            req.params.orderId,
+            req.user._id,
+            {
+                ...req.body,
+                ipAddress: req.ip,
+                userAgent: req.get('user-agent')
+            }
+        );
+
+        res.status(200).json(
+            {
+                data: payment,
+                message: 'Payment initiated'
+            }
+        )
     }
     catch (error) {
-        res.status(500).json({ message: error.message });
-    }   
-};
+        res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+}
 
-module.exports.getPaymentById = async (req, res) => {
+// Card payment confirmation
+exports.confirmCardPayment = async (req, res) => {
     try {
-        const paymentId = req.params.id;
-        await order.findByIdAndUpdate(paymentId, { status: 'Paid' });
-        const foundPayment = await payment.findById(paymentId);
-        if (!foundPayment) {
-            return res.status(404).json({ message: 'Payment not found' });
-        }   
-        res.status(200).json(foundPayment);
+        const { paymentIntentId } = req.body;
+
+        const payment = await paymentService.confirmCardPayment(
+            req.params.paymentId,
+            paymentIntentId
+        );
+
+        res.status(200).json({
+            data: payment
+        });
     } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-};
-
-module.exports.processStripePayment = async (req, res) => {
-    try {
-        const { orderId, amount} = req.body;
-
-        const paymentIntent = await stripe.paymentIntents.create({
-            amount: amount ,
-            currency: 'lkr',
-            metadata: { orderId }
-        });
-
-        await payment.create({
-            orderId,
-            amount,
-            paymentMethod: 'Stripe',
-            status: 'Completed',
-            transactionId: paymentIntent.id
-        });
-
-        res.status(200).json({ clientSecret: paymentIntent.client_secret });
-    }
-    catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-};
-
-module.exports.paymentConfirmation = async (req, res) => {
-    const event = req.body;
-
-    if (event.type === 'payment_intent.succeeded') {
-        const paymentIntent = event.data.object;
-        
-        await payment.findOneAndUpdate(
-            { transactionId: paymentIntent.id },
-            { status: 'Completed' }
+        res.status(400).json(
+            {
+                success: false,
+                message: error.message
+            }
         );
+    }
+}
 
-        await order.findByIdAndUpdate(
-            paymentIntent.metadata.orderId,
-            { status: 'Paid' }
-        );
-    }   
-
-    res.status(200).json({ received: true });
+// Verify COD
+exports.verifyCOD = async (req, res) => {
+  try {
+    const { status, notes } = req.body;
+    
+    const payment = await paymentService.verifyCOD(
+      req.params.paymentId,
+      req.user._id,
+      status,
+      notes
+    );
+    
+    res.json({
+      success: true,
+      message: 'COD verification updated',
+      data: payment
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
 };
+
+//confirm cod
+exports.confirmCODCollection = async (req, res) => {
+  try {
+    const payment = await paymentService.confirmCODCollection(
+      req.params.paymentId,
+      req.body
+    );
+    
+    res.json({
+      success: true,
+      message: 'COD collection confirmed',
+      data: payment
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+exports.processRefund = async (req, res) => {
+  try {
+    const payment = await paymentService.processRefund(
+      req.params.paymentId,
+      {
+        ...req.body,
+        initiatedBy: req.user._id
+      }
+    );
+    
+    res.json({
+      success: true,
+      message: 'Refund initiated successfully',
+      data: payment
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+exports.getPaymentDetails = async (req, res) => {
+  try {
+    const payment = await paymentService.getPaymentDetails(
+      req.params.paymentId,
+      req.user._id
+    );
+    
+    res.json({
+      success: true,
+      data: payment
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+// Get User Payments
+exports.getUserPayments = async (req, res) => {
+  try {
+    const { page = 1, limit = 10, status } = req.query;
+    
+    const query = { user: req.user._id };
+    if (status) query.status = status;
+    
+    const payments = await Payment.find(query)
+      .populate('order', 'orderNumber totalAmount')
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+    
+    const total = await Payment.countDocuments(query);
+    
+    res.json({
+      success: true,
+      data: {
+        payments,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
+module.exports = exports;
