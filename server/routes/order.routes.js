@@ -1,11 +1,20 @@
 const router = require('express').Router();
 const orderController = require('../controllers/order.controller');
-const paymentController = require('../controllers/payment.controller');
-const shippingController = require('../controllers/shipping.controller');
 
-router.post('/create', orderController.createOrder);
+//customer
+router.post('/', orderController.createOrder);
+router.get('/my_orders', orderController.getAllOrders);
+router.get('/:id',  orderController.getOrderById);
+router.post('/:id/cancel', orderController.cancelOrder)
+
+//track
 router.get('/track/:id', orderController.trackOrder);
-router.post('/payment/process', paymentController.processPayment);
-router.post('/shipping/create', shippingController.createShipping);
+
+//vendor
+router.get('/vendor/orders',   orderController.getVendorOrders);
+router.patch('/:id/item-status',  orderController.updateOrderStatus);
+
+//Admin 
+router.post('/:id/verify-cod', orderController.verifyCOD);
 
 module.exports = router;
