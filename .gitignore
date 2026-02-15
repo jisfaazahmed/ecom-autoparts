@@ -17,6 +17,9 @@ yarn-error.log
 dist/
 build/
 
+# MongoDB data files
+data/
+
 # Vite / React
 /client/node_modules
 /server/node_modules
