@@ -3,7 +3,9 @@ const User = require('../models/user');
 
 // 1. Verify Token (Is user logged in?)
 exports.verifyToken = (req, res, next) => {
-  const token = req.header('x-auth-token');
+  const authHeader = req.header('Authorization');
+  const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const token = bearerToken || req.header('x-auth-token');
   if (!token) return res.status(401).json({ message: 'No token, authorization denied' });
 
   try {

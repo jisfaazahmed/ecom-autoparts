@@ -52,10 +52,40 @@ exports.login = async (req, res) => {
     if (user.status === 'REJECTED') return res.status(403).json({ message: 'Account rejected.' });
 
     const payload = { user: { id: user.id, role: user.role } };
-    
+
     jwt.sign(payload, 'secret123', { expiresIn: '1d' }, (err, token) => {
       if (err) throw err;
-      res.json({ token, role: user.role });
+      // Client expects accessToken and user (role normalized to lowercase)
+      const roleLower = (user.role || '').toLowerCase().replace('_', '');
+      res.json({
+        accessToken: token,
+        refreshToken: token, // optional: same token for now
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.name,
+          role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer',
+        },
+      });
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Server error');
+  }
+};
+
+// GET /auth/me - return current user from JWT
+exports.getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    const roleLower = (user.role || '').toLowerCase().replace('_', '');
+    res.json({
+      id: user.id,
+      email: user.email,
+      fullName: user.name,
+      role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer',
+      userRoles: [{ role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer' }],
     });
   } catch (err) {
     console.error(err);

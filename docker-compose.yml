@@ -1,3 +1,5 @@
+# Default Compose file for local dev. Use: docker compose up / docker compose down
+# For production: docker compose -f docker-compose.prod.yml up
 version: '3.8'
 
 services:
