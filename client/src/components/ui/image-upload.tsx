@@ -61,9 +61,9 @@ export function ImageUpload({
         const url = await api.uploadFile(file, uploadType);
         onChange(url);
         toast.success('Image uploaded successfully!');
-      } catch (error: any) {
+      } catch (error) {
         console.error('Upload error:', error);
-        toast.error(error.message || 'Failed to upload image');
+        toast.error(error instanceof Error ? error.message : 'Failed to upload image');
       } finally {
         setUploading(false);
       }

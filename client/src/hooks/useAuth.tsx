@@ -195,10 +195,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         description: 'Your account has been created successfully.',
       });
       return { error: null };
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create account';
       toast({
         title: 'Sign Up Failed',
-        description: error.message || 'Failed to create account',
+        description: errorMessage,
         variant: 'destructive',
       });
       return { error };
@@ -231,10 +232,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         description: 'Your seller account has been created. Your shop is pending approval.',
       });
       return { error: null };
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create seller account';
       toast({
         title: 'Registration Failed',
-        description: error.message || 'Failed to create seller account',
+        description: errorMessage,
         variant: 'destructive',
       });
       return { error };
@@ -251,10 +253,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         description: 'You have successfully signed in.',
       });
       return { error: null };
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Invalid email or password';
       toast({
         title: 'Sign In Failed',
-        description: error.message || 'Invalid email or password',
+        description: errorMessage,
         variant: 'destructive',
       });
       return { error };
