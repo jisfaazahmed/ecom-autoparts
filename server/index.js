@@ -28,10 +28,7 @@ app.use(cors());
 app.use(express.json());
 
 //MongoDB connection
-mongoose.connect(`mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_IP}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-}).then(() => {
+mongoose.connect(`mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_IP}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`).then(() => {
   console.log('Connected to MongoDB');
 }).catch((err) => {
   console.error('Error connecting to MongoDB:', err);
@@ -42,7 +39,7 @@ app.get("/api/message", (req, res) => {
   res.json({ message: "Hello from Express Backend! working" });
 });
 
-// === 2. Use the New Routes ===
+// === Use the Routes ===
 app.use('/api/auth', authRoutes);       //   & Register
 app.use('/api/vendors', vendorRoutes);  // Vendor Approval
 app.use('/api/vehicles', vehicleRoutes);
