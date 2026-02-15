@@ -1,10 +1,12 @@
 /**
  * Seed script: creates a default Super Admin user if none exists.
- * Run once: npm run seed (or node seedSuperAdmin.js with MONGO_* env set)
+ * Credentials come from env (never hardcode in repo).
  *
- * Default credentials (change in production):
- *   Email:    jisfaaz@gmail.com
- *   Password: SuperAdmin123!
+ * Required env (e.g. in server/.env or shell):
+ *   SUPER_ADMIN_EMAIL=your@email.com
+ *   SUPER_ADMIN_PASSWORD=your-secure-password
+ *
+ * Run: npm run seed   (with MONGO_* and above vars set)
  */
 
 require('dotenv').config();
@@ -14,10 +16,20 @@ const config = require('./config/config');
 
 const User = require('./models/user');
 
-const DEFAULT_SUPER_ADMIN = {
+const email = process.env.SUPER_ADMIN_EMAIL;
+const password = process.env.SUPER_ADMIN_PASSWORD;
+
+if (!email || !password) {
+  console.error(
+    'Missing env: set SUPER_ADMIN_EMAIL and SUPER_ADMIN_PASSWORD (e.g. in server/.env).'
+  );
+  process.exit(1);
+}
+
+const superAdmin = {
   name: 'Super Admin',
-  email: 'jisfaaz@gmail.com',
-  password: 'SuperAdmin123!',
+  email: email.trim(),
+  password,
   role: 'SUPER_ADMIN',
   status: 'ACTIVE',
 };
@@ -30,7 +42,7 @@ async function seed() {
     await mongoose.connect(uri);
     console.log('Connected to MongoDB');
 
-    const existing = await User.findOne({ email: DEFAULT_SUPER_ADMIN.email });
+    const existing = await User.findOne({ email: superAdmin.email });
     if (existing) {
       console.log('Super Admin already exists:', existing.email);
       process.exit(0);
@@ -38,19 +50,18 @@ async function seed() {
     }
 
     const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(DEFAULT_SUPER_ADMIN.password, salt);
+    const hashedPassword = await bcrypt.hash(superAdmin.password, salt);
 
     await User.create({
-      name: DEFAULT_SUPER_ADMIN.name,
-      email: DEFAULT_SUPER_ADMIN.email,
+      name: superAdmin.name,
+      email: superAdmin.email,
       password: hashedPassword,
-      role: DEFAULT_SUPER_ADMIN.role,
-      status: DEFAULT_SUPER_ADMIN.status,
+      role: superAdmin.role,
+      status: superAdmin.status,
     });
 
     console.log('Super Admin created successfully.');
-    console.log('Email:', DEFAULT_SUPER_ADMIN.email);
-    console.log('Password:', DEFAULT_SUPER_ADMIN.password);
+    console.log('Email:', superAdmin.email);
   } catch (err) {
     console.error('Seed failed:', err.message);
     process.exit(1);
