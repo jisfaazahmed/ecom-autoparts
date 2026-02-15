@@ -45,7 +45,7 @@ app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/offers', vendorProductRoutes);
-app.use('/api/orders', OrderRoutes); 
+app.use('/api/orders', OrderRoutes);  // Order Management
 app.use('/api/cart', cartRoutes);
 
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpecs));
