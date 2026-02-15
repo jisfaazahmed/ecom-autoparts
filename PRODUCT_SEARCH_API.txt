@@ -1,0 +1,179 @@
+================================================================================
+                    PRODUCT SEARCH API DOCUMENTATION
+================================================================================
+
+Base URL: http://localhost:5000/api/products
+Method: GET
+Authentication: Not required (public endpoint)
+
+================================================================================
+                           SEARCH PARAMETERS
+================================================================================
+
+1. TEXT SEARCH
+   Parameter: search
+   Type: string
+   Description: Search in product name, description, and part number
+   Example: /api/products?search=brake
+   
+2. VEHICLE FILTER
+   Parameter: vehicleId
+   Type: MongoDB ObjectId
+   Description: Show only products compatible with specific vehicle
+   Example: /api/products?vehicleId=64abc123def456
+
+3. CATEGORY FILTER
+   Parameter: categoryId
+   Type: MongoDB ObjectId
+   Description: Filter by product category
+   Example: /api/products?categoryId=64def456abc789
+
+4. PRICE RANGE FILTER
+   Parameters: minPrice, maxPrice
+   Type: number
+   Description: Filter products within price range
+   Example: /api/products?minPrice=50&maxPrice=200
+
+5. STOCK AVAILABILITY
+   Parameter: inStock
+   Type: boolean (true/false)
+   Description: Show only products with available stock
+   Example: /api/products?inStock=true
+
+6. SORTING
+   Parameters: sortBy, order
+   sortBy options: price, name, createdAt
+   order options: asc (ascending), desc (descending)
+   Default: createdAt desc (newest first)
+   Example: /api/products?sortBy=price&order=asc
+
+7. PAGINATION
+   Parameters: page, limit
+   Type: number
+   Default: page=1, limit=20
+   Description: Control number of results per page
+   Example: /api/products?page=2&limit=10
+
+================================================================================
+                           EXAMPLE REQUESTS
+================================================================================
+
+1. Get all active products (default):
+   GET /api/products
+
+2. Search for "brake pads":
+   GET /api/products?search=brake%20pads
+
+3. Get products for Honda Civic (vehicleId: 64abc123):
+   GET /api/products?vehicleId=64abc123
+
+4. Get brake products for Honda Civic:
+   GET /api/products?categoryId=64def456&vehicleId=64abc123
+
+5. Get products between $50-$150, sorted by price:
+   GET /api/products?minPrice=50&maxPrice=150&sortBy=price&order=asc
+
+6. Get in-stock brake pads for Honda Civic, page 2:
+   GET /api/products?search=brake&vehicleId=64abc123&inStock=true&page=2
+
+7. Advanced search (all filters combined):
+   GET /api/products?search=brake&vehicleId=64abc123&categoryId=64def456&minPrice=50&maxPrice=150&inStock=true&sortBy=price&order=asc&page=1&limit=10
+
+================================================================================
+                           RESPONSE FORMAT
+================================================================================
+
+Success Response (200):
+{
+  "success": true,
+  "count": 10,              // Number of products in current page
+  "total": 45,              // Total matching products
+  "page": 1,                // Current page number
+  "totalPages": 5,          // Total pages available
+  "products": [
+    {
+      "_id": "64abc123def456",
+      "name": "Bosch Ceramic Brake Pads",
+      "description": "High-performance ceramic brake pads",
+      "partNumber": "BP-2024",
+      "price": 89.99,
+      "stock": 50,
+      "image": "https://example.com/brake-pads.jpg",
+      "isActive": true,
+      "category": {
+        "_id": "64def789",
+        "name": "Brake Pads"
+      },
+      "compatibleVehicles": [
+        {
+          "_id": "64abc999",
+          "year": 2020,
+          "make": "Honda",
+          "model": "Civic"
+        },
+        {
+          "_id": "64abc888",
+          "year": 2021,
+          "make": "Honda",
+          "model": "Civic"
+        }
+      ],
+      "createdAt": "2025-12-25T10:30:00.000Z",
+      "updatedAt": "2025-12-25T10:30:00.000Z"
+    }
+  ]
+}
+
+Error Response (500):
+{
+  "success": false,
+  "message": "Server Error"
+}
+
+================================================================================
+                        PERFORMANCE NOTES
+================================================================================
+
+- Text search uses MongoDB text indexes for fast queries
+- Category + Vehicle filtering uses compound indexes
+- Price filtering uses dedicated index
+- Only active products (isActive: true) are returned by default
+- Pagination prevents loading too many results at once
+
+================================================================================
+                           USE CASES
+================================================================================
+
+1. Homepage Product Listing:
+   GET /api/products?limit=12
+
+2. Vehicle-Specific Parts Shopping:
+   GET /api/products?vehicleId=USER_VEHICLE_ID
+
+3. Category Browse (e.g., All Brakes):
+   GET /api/products?categoryId=BRAKE_CATEGORY_ID
+
+4. Search Bar:
+   GET /api/products?search=USER_INPUT
+
+5. Price Filter on Category Page:
+   GET /api/products?categoryId=BRAKE_CATEGORY_ID&minPrice=0&maxPrice=100
+
+6. "Show In Stock Only" Toggle:
+   GET /api/products?inStock=true
+
+7. Sort by Price (Low to High):
+   GET /api/products?sortBy=price&order=asc
+
+================================================================================
+                              NOTES
+================================================================================
+
+- All query parameters are optional
+- Search is case-insensitive
+- Multiple filters can be combined
+- Results are automatically paginated
+- Vehicle and category data is populated in response
+- Only products with isActive: true are shown
+
+================================================================================

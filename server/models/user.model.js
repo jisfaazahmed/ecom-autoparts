@@ -20,6 +20,12 @@ const UserSchema = new mongoose.Schema({
     ref: 'Vehicle'
   }],
   
+  // Wishlist - saved products
+  wishlist: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product'
+  }],
+  
   // STATUS: Must match what Auth Controller sends
   status: { 
     type: String, 

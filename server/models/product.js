@@ -36,4 +36,10 @@ const productSchema = new mongoose.Schema({
 // Index for fast searching by Category and Vehicle
 productSchema.index({ category: 1, compatibleVehicles: 1 });
 
+// Text index for search functionality (name, description, partNumber)
+productSchema.index({ name: 'text', description: 'text', partNumber: 'text' });
+
+// Index for price-based queries
+productSchema.index({ price: 1 });
+
 module.exports = mongoose.model('Product', productSchema);
