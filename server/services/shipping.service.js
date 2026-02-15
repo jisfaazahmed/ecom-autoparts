@@ -5,13 +5,13 @@ const ShippingZone = require('../models/deliveryZone.model');
 
 const ZONES = {
     'zone1': {
-        districts: ['colombo'],
+        districts: ['Colombo'],
     },
     'zone2': {
-        districts: ['gampaha', 'kaluthara'],
+        districts: ['Gampaha', 'Kalutara'],
     },
     'zone3': {
-        districts: ['kurunegala',
+        districts: ['Kurunegala',
             'Kandy',
             'Matale',
             'Nuwara Eliya',
@@ -86,7 +86,7 @@ class ShippingService {
     }
 
     async getShippingZone(district) {
-        let zone = await this.ShippingZone.findOne({
+        let zone = await ShippingZone.findOne({
             'district.name': district,
             isActive: true
         });
@@ -95,7 +95,20 @@ class ShippingService {
             // Fallback to zone type matching
             for (const [zoneType, data] of Object.entries(ZONES)) {
                 if (data.districts.includes(district)) {
-                    zone = await ShippingZone.findOne({ zoneType, isActive: true });
+                    zone = {
+                        zoneName: zoneType,
+                        zoneType: zoneType,
+                        rates: {
+                            standard: { baseRate: 250, perKgRate: 50, freeShippingThreshold: 5000 },
+                            express: { baseRate: 500, perKgRate: 100, freeShippingThreshold: 10000 },
+                            same_day: { baseRate: 1000, perKgRate: 200, freeShippingThreshold: 15000 }
+                        },
+                        estimatedDelivery: {
+                            standard: { min: 1, max: 3 },
+                            express: { min: 1, max: 2 },
+                            same_day: { min: 0, max: 1 }
+                        }
+                    };
                     break;
                 }
             }
@@ -449,7 +462,7 @@ class ShippingService {
         // Update order status
         const order = await Order.findById(shipping.order);
         const allItemsDelivered = order.items.every(item => {
-            item.status ==='delivered';
+            item.status === 'delivered';
         });
 
         if (allItemsDelivered) {
