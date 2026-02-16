@@ -21,6 +21,8 @@ const OrderRoutes = require('./routes/order.routes');
 const cartRoutes = require('./routes/cartRoutes');
 const swaggerUI = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
+const garageRoutes = require('./routes/garageRoutes');
+const wishlistRoutes = require('./routes/wishlistRoutes');
 
 const app = express();
 app.use(cors());
@@ -47,6 +49,8 @@ app.use('/api/products', productRoutes);
 app.use('/api/offers', vendorProductRoutes);
 app.use('/api/orders', OrderRoutes);  // Order Management
 app.use('/api/cart', cartRoutes);
+app.use('/api/garage', garageRoutes);  // My Garage
+app.use('/api/wishlist', wishlistRoutes);  // Wishlist
 
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpecs));
 console.log("📄 Documentation available at http://localhost:5000/api-docs");

@@ -140,7 +140,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         user: { id: authUser.id, email: authUser.email },
       });
       
-      setProfile(mapApiProfile(authUser.profile));
+      setProfile(mapApiProfile(authUser.profile) || {
+        id: authUser.id,
+        user_id: authUser.id,
+        full_name: authUser.fullName || '',
+        email: authUser.email || '',
+        phone: authUser.phone || null,
+        avatar_url: authUser.avatarUrl || null,
+        address: authUser.address || null,
+        city: authUser.city || null,
+        postal_code: authUser.postalCode || null,
+      });
       
       // Get the primary role (highest privilege)
       const roles = authUser.userRoles?.map(r => r.role) || [];
@@ -186,6 +196,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         email,
         password,
         fullName: metadata?.full_name || email.split('@')[0],
+        phone: metadata?.phone,
       });
 
       await fetchUserData();
