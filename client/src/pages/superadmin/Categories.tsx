@@ -25,7 +25,7 @@ const SuperAdminCategories: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Category | null>(null);
   const [itemToDelete, setItemToDelete] = useState<Category | null>(null);
-  const [formData, setFormData] = useState({ name: '', description: '', icon: '', parentId: '' });
+  const [formData, setFormData] = useState({ name: '', description: '', parentId: '' });
 
   useEffect(() => { fetchCategories(); }, []);
 
@@ -40,13 +40,13 @@ const SuperAdminCategories: React.FC = () => {
     setLoading(false);
   };
 
-  const openAddDialog = (parentId?: string) => { setEditingItem(null); setFormData({ name: '', description: '', icon: '', parentId: parentId || '' }); setDialogOpen(true); };
-  const openEditDialog = (category: Category) => { setEditingItem(category); setFormData({ name: category.name, description: category.description || '', icon: category.icon || '', parentId: category.parentId || '' }); setDialogOpen(true); };
+  const openAddDialog = (parentId?: string) => { setEditingItem(null); setFormData({ name: '', description: '', parentId: parentId || '' }); setDialogOpen(true); };
+  const openEditDialog = (category: Category) => { setEditingItem(category); setFormData({ name: category.name, description: category.description || '', parentId: category.parentId || '' }); setDialogOpen(true); };
 
   const handleSave = async () => {
     if (!formData.name.trim()) { toast({ title: 'Error', description: 'Name is required', variant: 'destructive' }); return; }
     setSaving(true);
-    const data = { name: formData.name, description: formData.description || null, icon: formData.icon || null, parentId: formData.parentId || null };
+    const data = { name: formData.name, description: formData.description || null, parentId: formData.parentId || null };
     try {
       if (editingItem) {
         await api.updateCategory(editingItem.id, data);
@@ -150,7 +150,6 @@ const SuperAdminCategories: React.FC = () => {
           <div className="space-y-4 py-4">
             <div><Label>Name *</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g., Brakes, Engine Parts" /></div>
             <div><Label>Description</Label><Textarea value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} placeholder="Brief description of this category..." rows={2} /></div>
-            <div><Label>Icon (emoji)</Label><Input value={formData.icon} onChange={(e) => setFormData({ ...formData, icon: e.target.value })} placeholder="e.g., 🔧, 🚗, ⚙️" /></div>
             <div>
               <Label>Parent Category</Label>
               <Select value={formData.parentId || 'none'} onValueChange={(v) => setFormData({ ...formData, parentId: v === 'none' ? '' : v })}>

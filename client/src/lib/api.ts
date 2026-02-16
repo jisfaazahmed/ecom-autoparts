@@ -274,6 +274,10 @@ class ApiClient {
       throw new Error(await this.getErrorMessage(response));
     }
 
+    // 204 No Content has no body - do not parse as JSON
+    if (response.status === 204) {
+      return undefined as T;
+    }
     return response.json();
   }
 
