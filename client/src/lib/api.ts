@@ -377,7 +377,7 @@ class ApiClient {
   }
 
   async updateProfile(data: Partial<ApiUser>): Promise<ApiUser> {
-    return this.request<ApiUser>('/users/profile', {
+    return this.request<ApiUser>('/auth/profile', {
       method: 'PUT',
       body: JSON.stringify(data),
     });

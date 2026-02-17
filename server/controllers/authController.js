@@ -105,15 +105,83 @@ exports.getMe = async (req, res) => {
     const user = await User.findById(req.user.id).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
     const roleLower = (user.role || '').toLowerCase().replace('_', '');
+    const mappedRole = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
     res.json({
       id: user.id,
       email: user.email,
       fullName: user.name,
-      role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer',
-      userRoles: [{ role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer' }],
+      phone: user.phone || null,
+      address: user.address || null,
+      city: user.city || null,
+      postalCode: user.postalCode || null,
+      avatarUrl: user.avatarUrl || null,
+      role: mappedRole,
+      userRoles: [{ role: mappedRole }],
     });
   } catch (err) {
     console.error(err);
     res.status(500).send('Server error');
+  }
+};
+
+// PUT /auth/profile - update current user profile
+exports.updateProfile = async (req, res) => {
+  try {
+    const { fullName, phone, address, city, postalCode } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (fullName !== undefined) user.name = fullName.trim();
+    if (phone !== undefined) user.phone = phone || null;
+    if (address !== undefined) user.address = address || null;
+    if (city !== undefined) user.city = city || null;
+    if (postalCode !== undefined) user.postalCode = postalCode || null;
+
+    await user.save();
+
+    const roleLower = (user.role || '').toLowerCase().replace('_', '');
+    const mappedRole = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
+    res.json({
+      id: user.id,
+      email: user.email,
+      fullName: user.name,
+      phone: user.phone || null,
+      address: user.address || null,
+      city: user.city || null,
+      postalCode: user.postalCode || null,
+      avatarUrl: user.avatarUrl || null,
+      role: mappedRole,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Failed to update profile' });
+  }
+};
+
+// POST /auth/change-password
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current and new password are required' });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'New password must be at least 6 characters' });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) return res.status(400).json({ message: 'Current password is incorrect' });
+
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(newPassword, salt);
+    await user.save();
+
+    res.json({ message: 'Password changed successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Failed to change password' });
   }
 };

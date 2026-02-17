@@ -18,6 +18,9 @@ const userSchema = new mongoose.Schema({
   },
   phone: { type: String },
   address: { type: String },
+  city: { type: String },
+  postalCode: { type: String },
+  avatarUrl: { type: String },
 
   role: {
     type: String,
