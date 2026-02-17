@@ -34,7 +34,7 @@ const Index: React.FC = () => {
         ]);
 
         setProducts(productsRes.data || []);
-        setCategories((categoriesRes || []).slice(0, 8));
+        setCategories(categoriesRes || []);
       } catch (error) {
         console.error('Failed to fetch data:', error);
       }
@@ -207,35 +207,60 @@ const Index: React.FC = () => {
           ) : categories.length === 0 ? (
             <p className="text-center text-muted-foreground py-12">No categories available yet.</p>
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {categories.map((category, i) => {
-                const Icon = iconMap[category.icon || 'Cog'] || Cog;
-                return (
-                  <motion.div
-                    key={category.id}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    whileInView={{ opacity: 1, scale: 1 }}
-                    whileHover={{ scale: 1.02 }}
-                    transition={{ delay: i * 0.05 }}
-                    viewport={{ once: true }}
-                  >
-                    <Link
-                      to={`/shop?category=${category.id}`}
-                      className="block glass-card p-6 group hover:border-primary/50 transition-colors"
-                    >
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="p-3 rounded-lg bg-primary/10 border border-primary/30 group-hover:bg-primary/20 transition-colors">
-                          <Icon className="h-6 w-6 text-primary" />
-                        </div>
-                        <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
-                      </div>
-                      <h3 className="font-display text-sm font-semibold mb-1">{category.name}</h3>
-                      <p className="text-xs text-muted-foreground">{category.description || 'Browse products'}</p>
-                    </Link>
-                  </motion.div>
-                );
-              })}
-            </div>
+            (() => {
+              const parentCategories = categories.filter((c: ApiCategory) => !c.parentId);
+              const getSubcategories = (parentId: string) => categories.filter((c: ApiCategory) => c.parentId === parentId);
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {parentCategories.slice(0, 8).map((parent, i) => {
+                    const Icon = iconMap[parent.icon || 'Cog'] || Cog;
+                    const subs = getSubcategories(parent.id);
+                    return (
+                      <motion.div
+                        key={parent.id}
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        whileInView={{ opacity: 1, scale: 1 }}
+                        whileHover={{ scale: 1.02 }}
+                        transition={{ delay: i * 0.05 }}
+                        viewport={{ once: true }}
+                        className="flex flex-col"
+                      >
+                        <Link
+                          to={`/shop?category=${parent.id}`}
+                          className="block glass-card p-6 group hover:border-primary/50 transition-colors flex-1"
+                        >
+                          <div className="flex items-center justify-between mb-4">
+                            <div className="p-3 rounded-lg bg-primary/10 border border-primary/30 group-hover:bg-primary/20 transition-colors">
+                              <Icon className="h-6 w-6 text-primary" />
+                            </div>
+                            <ArrowRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                          </div>
+                          <h3 className="font-display text-sm font-semibold mb-1">{parent.name}</h3>
+                          <p className="text-xs text-muted-foreground">{parent.description || 'Browse products'}</p>
+                        </Link>
+                        {subs.length > 0 && (
+                          <div className="mt-2 pl-2 border-l-2 border-primary/20 space-y-1">
+                            {subs.map((sub) => {
+                              const SubIcon = iconMap[sub.icon || 'Cog'] || Cog;
+                              return (
+                                <Link
+                                  key={sub.id}
+                                  to={`/shop?category=${sub.id}`}
+                                  className="flex items-center gap-2 text-xs text-muted-foreground hover:text-primary transition-colors py-1"
+                                >
+                                  <SubIcon className="h-3.5 w-3.5 shrink-0" />
+                                  <span>{sub.name}</span>
+                                </Link>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </motion.div>
+                    );
+                  })}
+                </div>
+              );
+            })()
           )}
         </div>
       </section>

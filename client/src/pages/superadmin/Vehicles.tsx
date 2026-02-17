@@ -36,12 +36,14 @@ const SuperAdminVehicles: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<any>(null);
   const [itemToDelete, setItemToDelete] = useState<any>(null);
-  const [formData, setFormData] = useState({ name: '', logoUrl: '', brandId: '', modelId: '', yearStart: new Date().getFullYear(), yearEnd: null as number | null });
+  const [formData, setFormData] = useState({ name: '', brandId: '', modelId: '', yearStart: new Date().getFullYear(), yearEnd: null as number | null });
+  const [logoLoadErrors, setLogoLoadErrors] = useState<Set<string>>(new Set());
 
   useEffect(() => { fetchData(); }, []);
 
   const fetchData = async () => {
     setLoading(true);
+    setLogoLoadErrors(new Set());
     try {
       const [brandsData, modelsData, variantsData] = await Promise.all([
         api.getVehicleBrands(),
@@ -57,8 +59,8 @@ const SuperAdminVehicles: React.FC = () => {
     setLoading(false);
   };
 
-  const openAddDialog = () => { setEditingItem(null); setFormData({ name: '', logoUrl: '', brandId: brandFilter !== 'all' ? brandFilter : '', modelId: modelFilter !== 'all' ? modelFilter : '', yearStart: new Date().getFullYear(), yearEnd: null }); setDialogOpen(true); };
-  const openEditDialog = (item: any) => { setEditingItem(item); setFormData({ name: item.name, logoUrl: item.logoUrl || '', brandId: item.brandId || '', modelId: item.modelId || '', yearStart: item.yearStart || new Date().getFullYear(), yearEnd: item.yearEnd || null }); setDialogOpen(true); };
+  const openAddDialog = () => { setEditingItem(null); setFormData({ name: '', brandId: brandFilter !== 'all' ? brandFilter : '', modelId: modelFilter !== 'all' ? modelFilter : '', yearStart: new Date().getFullYear(), yearEnd: null }); setDialogOpen(true); };
+  const openEditDialog = (item: any) => { setEditingItem(item); setFormData({ name: item.name, brandId: item.brandId || '', modelId: item.modelId || '', yearStart: item.yearStart || new Date().getFullYear(), yearEnd: item.yearEnd || null }); setDialogOpen(true); };
 
   const handleSave = async () => {
     if (!formData.name.trim()) { toast({ title: 'Error', description: 'Name is required', variant: 'destructive' }); return; }
@@ -66,7 +68,7 @@ const SuperAdminVehicles: React.FC = () => {
 
     try {
       if (activeTab === 'brands') {
-        const data = { name: formData.name, logoUrl: formData.logoUrl || null };
+        const data = { name: formData.name };
         if (editingItem) {
           await api.updateVehicleBrand(editingItem.id, data);
         } else {
@@ -169,7 +171,23 @@ const SuperAdminVehicles: React.FC = () => {
                     const brandVariants = variants.filter(v => v.model?.brandId === brand.id);
                     return (
                       <TableRow key={brand.id} className="border-border/50">
-                        <TableCell><div className="flex items-center gap-3"><div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center overflow-hidden">{brand.logoUrl ? <img src={brand.logoUrl} alt={brand.name} className="w-full h-full object-contain p-1" /> : <Building className="h-5 w-5 text-muted-foreground" />}</div><span className="font-medium">{brand.name}</span></div></TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-secondary/50 flex items-center justify-center overflow-hidden shrink-0">
+                              {brand.logoUrl && !logoLoadErrors.has(brand.logoUrl) ? (
+                                <img
+                                  src={brand.logoUrl}
+                                  alt=""
+                                  className="w-full h-full object-contain p-1"
+                                  onError={() => setLogoLoadErrors((s) => new Set(s).add(brand.logoUrl!))}
+                                />
+                              ) : (
+                                <Building className="h-5 w-5 text-muted-foreground" />
+                              )}
+                            </div>
+                            <span className="font-medium">{brand.name}</span>
+                          </div>
+                        </TableCell>
                         <TableCell className="hidden sm:table-cell"><Badge variant="outline">{brandModels.length}</Badge></TableCell>
                         <TableCell className="hidden sm:table-cell"><Badge variant="outline">{brandVariants.length}</Badge></TableCell>
                         <TableCell className="text-right"><Button variant="ghost" size="icon" onClick={() => openEditDialog(brand)}><Edit className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive" onClick={() => { setItemToDelete(brand); setDeleteDialogOpen(true); }}><Trash2 className="h-4 w-4" /></Button></TableCell>
@@ -228,7 +246,6 @@ const SuperAdminVehicles: React.FC = () => {
           <DialogHeader><DialogTitle>{editingItem ? 'Edit' : 'Add'} {activeTab === 'brands' ? 'Brand' : activeTab === 'models' ? 'Model' : 'Variant'}</DialogTitle></DialogHeader>
           <div className="space-y-4 py-4">
             <div><Label>Name *</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder={activeTab === 'brands' ? 'e.g., Toyota' : activeTab === 'models' ? 'e.g., Corolla' : 'e.g., SE, LE'} /></div>
-            {activeTab === 'brands' && <div><Label>Logo URL</Label><Input value={formData.logoUrl} onChange={(e) => setFormData({ ...formData, logoUrl: e.target.value })} placeholder="https://..." /></div>}
             {activeTab === 'models' && <div><Label>Brand *</Label><Select value={formData.brandId} onValueChange={(v) => setFormData({ ...formData, brandId: v })}><SelectTrigger><SelectValue placeholder="Select brand" /></SelectTrigger><SelectContent className="glass-card">{brands.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent></Select></div>}
             {activeTab === 'variants' && (
               <>
