@@ -7,18 +7,27 @@ const categorySchema = new mongoose.Schema({
     trim: true,
   },
   slug: {
-    type: String, // URL-friendly name (e.g., "brake-pads")
+    type: String,
     lowercase: true,
     unique: true,
   },
   parent: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Category', // Points to itself
+    ref: 'Category',
+    default: null,
+  },
+  description: {
+    type: String,
+    default: null,
+  },
+  icon: {
+    type: String,
     default: null,
   },
   image: {
-    type: String, // URL to an icon (optional for now)
-  }
+    type: String,
+    default: null,
+  },
 });
 
 module.exports = mongoose.model('Category', categorySchema);

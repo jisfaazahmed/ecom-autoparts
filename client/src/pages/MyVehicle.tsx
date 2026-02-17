@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
 import { api, ApiUserVehicle } from '@/lib/api';
+import { useStore } from '@/store/useStore';
 import Navbar from '@/components/layout/Navbar';
 import VehicleSelector from '@/components/vehicle/VehicleSelector';
 import {
@@ -24,6 +25,7 @@ import {
 const MyVehicle: React.FC = () => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { setUserVehicle } = useStore();
   const [vehicles, setVehicles] = useState<ApiUserVehicle[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -34,6 +36,19 @@ const MyVehicle: React.FC = () => {
     try {
       const data = await api.getUserVehicles();
       setVehicles(data || []);
+      const active = (data || []).find((v) => v.isActive);
+      if (active) {
+        setUserVehicle({
+          id: active.id,
+          brand: active.brand?.name ?? '',
+          model: active.model?.name ?? '',
+          variant: active.variant?.name ?? '',
+          year: active.year,
+          vin: active.vin,
+        });
+      } else {
+        setUserVehicle(null);
+      }
     } catch (error) {
       toast({
         title: 'Error',
@@ -53,6 +68,17 @@ const MyVehicle: React.FC = () => {
 
     try {
       await api.setActiveVehicle(vehicleId);
+      const v = vehicles.find((ve) => ve.id === vehicleId);
+      if (v) {
+        setUserVehicle({
+          id: v.id,
+          brand: v.brand?.name ?? '',
+          model: v.model?.name ?? '',
+          variant: v.variant?.name ?? '',
+          year: v.year,
+          vin: v.vin,
+        });
+      }
       toast({
         title: 'Success',
         description: 'Active vehicle updated',

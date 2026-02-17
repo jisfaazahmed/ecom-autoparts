@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { 
   Search, ShoppingCart, User, Menu, Car, LogOut, Store, Shield, UserCircle 
 } from 'lucide-react';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -92,6 +93,9 @@ const Navbar: React.FC = () => {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
+          {/* Theme Toggle */}
+          <ThemeToggle />
+          
           {/* Cart */}
           <Link to="/cart">
             <Button variant="ghost" size="icon" className="relative">
