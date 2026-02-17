@@ -59,8 +59,8 @@ const SuperAdminVendors: React.FC = () => {
     try {
       const data = await api.getAllShops();
       setShops(data.data as Shop[]);
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
     }
     setLoading(false);
   };
@@ -85,8 +85,8 @@ const SuperAdminVendors: React.FC = () => {
       setShops(shops.map(s => s.id === shopId ? { ...s, status } : s));
       if (selectedShop?.id === shopId) setSelectedShop({ ...selectedShop, status });
       toast({ title: 'Updated', description: `Shop status changed to ${status}` });
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
     }
   };
 
@@ -99,8 +99,8 @@ const SuperAdminVendors: React.FC = () => {
       setSelectedShop({ ...selectedShop, commissionRate: newCommissionRate });
       toast({ title: 'Updated', description: `Commission rate set to ${newCommissionRate}%` });
       setCommissionDialogOpen(false);
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
     }
     setUpdatingCommission(false);
   };

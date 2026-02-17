@@ -120,8 +120,8 @@ const AdminProducts: React.FC = () => {
       }
       setProductDialogOpen(false);
       fetchData();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to save product', variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to save product', variant: 'destructive' });
     }
     setSaving(false);
   };
@@ -135,8 +135,8 @@ const AdminProducts: React.FC = () => {
       setDeleteDialogOpen(false);
       setProductToDelete(null);
       fetchData();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to delete product', variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to delete product', variant: 'destructive' });
     }
     setSaving(false);
   };
@@ -146,8 +146,8 @@ const AdminProducts: React.FC = () => {
       await api.updateProduct(product.id, { isActive: !product.isActive });
       setProducts(products.map(p => p.id === product.id ? { ...p, isActive: !p.isActive } : p));
       toast({ title: product.isActive ? 'Deactivated' : 'Activated', description: `Product is now ${product.isActive ? 'hidden' : 'visible'}` });
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to update product', variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to update product', variant: 'destructive' });
     }
   };
 

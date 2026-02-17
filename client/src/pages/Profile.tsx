@@ -82,10 +82,10 @@ const Profile: React.FC = () => {
         description: 'Your profile has been saved successfully.',
       });
       refreshProfile();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: 'Error',
-        description: error.message || 'Failed to update profile',
+        description: error instanceof Error && error.message ? error.message : 'Failed to update profile',
         variant: 'destructive',
       });
     }

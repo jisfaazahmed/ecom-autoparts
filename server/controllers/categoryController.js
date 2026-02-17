@@ -20,8 +20,8 @@ function toApiCategory(doc) {
 
 // 1. ADD CATEGORY (Super Admin Only) – supports parent (subcategory) and top-level
 exports.addCategory = async (req, res) => {
+  let { name, parentId, description, icon } = req.body;
   try {
-    let { name, parentId, description, icon } = req.body;
     if (!name || !name.trim()) {
       return res.status(400).json({ message: 'Category name is required' });
     }

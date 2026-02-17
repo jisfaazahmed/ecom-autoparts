@@ -106,10 +106,10 @@ const ProductDetail: React.FC = () => {
       
       setNewComment('');
       setNewRating(5);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: 'Error',
-        description: error.message || 'Failed to submit review',
+        description: error instanceof Error && error.message ? error.message : 'Failed to submit review',
         variant: 'destructive',
       });
     }

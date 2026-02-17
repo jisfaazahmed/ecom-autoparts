@@ -43,9 +43,9 @@ const SuperAdminDashboard: React.FC = () => {
       ]);
 
       setShops(shopsData.data);
-      setTotalSales(ordersData.data.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0));
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      setTotalSales(ordersData.data.reduce((sum: number, o: { totalAmount?: number }) => sum + (o.totalAmount || 0), 0));
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
     }
     setLoading(false);
   };
@@ -55,8 +55,8 @@ const SuperAdminDashboard: React.FC = () => {
       await api.updateShopStatus(shopId, status);
       setShops(shops.map(s => s.id === shopId ? { ...s, status } : s));
       toast({ title: 'Shop Updated', description: `Shop has been ${status}` });
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
     }
   };
 

@@ -142,8 +142,8 @@ export default function Checkout() {
         setAppliedCoupon(null);
         setDiscountAmount(0);
       }
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to validate coupon');
+    } catch (error: unknown) {
+      toast.error(error instanceof Error && error.message ? error.message : 'Failed to validate coupon');
       setAppliedCoupon(null);
       setDiscountAmount(0);
     } finally {
@@ -214,9 +214,9 @@ export default function Checkout() {
       } else {
         throw new Error('No checkout URL returned');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Checkout error:', error);
-      toast.error(error.message || 'Failed to create checkout session');
+      toast.error(error instanceof Error && error.message ? error.message : 'Failed to create checkout session');
     } finally {
       setLoading(false);
     }
@@ -253,9 +253,9 @@ export default function Checkout() {
       clearCart();
       toast.success('Order placed successfully!');
       navigate(`/orders/${order.id}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('COD order error:', error);
-      toast.error(error.message || 'Failed to place order');
+      toast.error(error instanceof Error && error.message ? error.message : 'Failed to place order');
     } finally {
       setLoading(false);
     }

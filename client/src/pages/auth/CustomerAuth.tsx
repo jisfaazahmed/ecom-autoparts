@@ -45,7 +45,7 @@ const CustomerAuth: React.FC = () => {
   // Redirect if already logged in
   React.useEffect(() => {
     if (user && role) {
-      const from = (location.state as any)?.from?.pathname || '/';
+      const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
       if (role === 'superadmin') {
         navigate('/superadmin');
       } else if (role === 'admin') {
@@ -79,7 +79,7 @@ const CustomerAuth: React.FC = () => {
     if (!error) {
       // The useAuth hook will update the role, check it after sign in
       // This is handled by the useEffect above after state updates
-      const from = (location.state as any)?.from?.pathname || '/shop';
+      const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/shop';
       navigate(from);
     }
     setLoading(false);
