@@ -74,7 +74,7 @@ const AdminDashboard: React.FC = () => {
       setAddProductOpen(false);
       setNewProduct({ name: '', description: '', price: '', stock: '', sku: '', category_id: '', compatible_variants: [] });
       fetchData();
-    } catch (error: any) {
+    } catch (error) {
       toast({ title: 'Error', description: error.message || 'Failed to add product', variant: 'destructive' });
     }
     setSaving(false);
@@ -89,7 +89,7 @@ const AdminDashboard: React.FC = () => {
       await api.updateOrderStatus(orderId, status);
       setOrders(orders.map(o => o.id === orderId ? { ...o, status } : o));
       toast({ title: 'Order Updated', description: `Order marked as ${status}` });
-    } catch (error: any) {
+    } catch (error) {
       toast({ title: 'Error', description: error.message || 'Failed to update order', variant: 'destructive' });
     }
   };

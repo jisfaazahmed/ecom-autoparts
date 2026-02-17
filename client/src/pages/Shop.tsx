@@ -180,11 +180,24 @@ const Shop: React.FC = () => {
           </SelectTrigger>
           <SelectContent className="glass-card">
             <SelectItem value="all">All Categories</SelectItem>
-            {categories.map((cat) => (
-              <SelectItem key={cat.id} value={cat.id}>
-                {cat.name}
-              </SelectItem>
-            ))}
+            {(() => {
+              const parents = categories.filter((c) => !c.parentId);
+              const getSubs = (parentId: string) => categories.filter((c) => c.parentId === parentId);
+              return (
+                <>
+                  {parents.map((parent) => (
+                    <React.Fragment key={parent.id}>
+                      <SelectItem value={parent.id}>{parent.name}</SelectItem>
+                      {getSubs(parent.id).map((sub) => (
+                        <SelectItem key={sub.id} value={sub.id} className="pl-6">
+                          ↳ {sub.name}
+                        </SelectItem>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </>
+              );
+            })()}
           </SelectContent>
         </Select>
       </div>

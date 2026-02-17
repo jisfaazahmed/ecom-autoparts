@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "nodemon index.js",
     "start": "node index.js",
+    "seed": "node seedSuperAdmin.js",
     "lint": "eslint ."
   },
   "keywords": [],

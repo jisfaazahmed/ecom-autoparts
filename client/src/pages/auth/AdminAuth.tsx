@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Shield, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -54,7 +55,7 @@ const AdminAuth: React.FC = () => {
       });
       setShowForgotPassword(false);
       setResetEmail('');
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: 'Reset Failed',
         description: error.message || 'Failed to send reset email',
@@ -110,10 +111,15 @@ const AdminAuth: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
+      {/* Theme Toggle */}
+      <div className="absolute top-4 right-4 z-10">
+        <ThemeToggle />
+      </div>
+      
       <div className="absolute inset-0 bg-grid-pattern opacity-5" />
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-destructive/10 rounded-full blur-3xl" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl" />
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-destructive/10 rounded-full blur-3xl animate-pulse-glow" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/10 rounded-full blur-3xl animate-pulse-glow" />
       
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -134,7 +140,7 @@ const AdminAuth: React.FC = () => {
           <p className="text-muted-foreground mt-2">Super Admin Portal</p>
         </div>
 
-        <div className="glass-card rounded-2xl p-8 border border-destructive/20">
+        <div className="glass-card rounded-2xl p-8 border border-destructive/20 shadow-2xl">
           <div className="flex items-center gap-2 mb-6 p-3 bg-destructive/10 rounded-lg border border-destructive/20">
             <Shield className="h-5 w-5 text-destructive" />
             <span className="text-sm text-destructive font-medium">Restricted Access</span>

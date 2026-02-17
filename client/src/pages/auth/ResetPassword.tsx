@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { api } from "@/lib/api";
 import { Shield, Eye, EyeOff, Loader2, Mail } from "lucide-react";
 import { toast } from "sonner";
@@ -81,8 +82,17 @@ const ResetPassword = () => {
   // If we have a reset token, show the password reset form
   if (resetToken) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md border-border/50 bg-card/95 backdrop-blur">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
+        {/* Theme Toggle */}
+        <div className="absolute top-4 right-4 z-10">
+          <ThemeToggle />
+        </div>
+        
+        <div className="absolute inset-0 bg-grid-pattern opacity-5" />
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-pulse-glow" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/20 rounded-full blur-3xl animate-pulse-glow" />
+        
+        <Card className="relative w-full max-w-md border-border/50 glass-card shadow-2xl">
           <CardHeader className="text-center space-y-4">
             <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
               <Shield className="h-8 w-8 text-primary" />
@@ -163,8 +173,17 @@ const ResetPassword = () => {
   // Show reset requested confirmation
   if (resetRequested) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md border-border/50 bg-card/95 backdrop-blur">
+      <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
+        {/* Theme Toggle */}
+        <div className="absolute top-4 right-4 z-10">
+          <ThemeToggle />
+        </div>
+        
+        <div className="absolute inset-0 bg-grid-pattern opacity-5" />
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-success/20 rounded-full blur-3xl animate-pulse-glow" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-pulse-glow" />
+        
+        <Card className="relative w-full max-w-md border-border/50 glass-card shadow-2xl">
           <CardHeader className="text-center space-y-4">
             <div className="mx-auto w-16 h-16 bg-success/10 rounded-full flex items-center justify-center">
               <Mail className="h-8 w-8 text-success" />
@@ -202,8 +221,17 @@ const ResetPassword = () => {
 
   // Show request reset form
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md border-border/50 bg-card/95 backdrop-blur">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
+      {/* Theme Toggle */}
+      <div className="absolute top-4 right-4 z-10">
+        <ThemeToggle />
+      </div>
+      
+      <div className="absolute inset-0 bg-grid-pattern opacity-5" />
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-pulse-glow" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/20 rounded-full blur-3xl animate-pulse-glow" />
+      
+      <Card className="relative w-full max-w-md border-border/50 glass-card shadow-2xl">
         <CardHeader className="text-center space-y-4">
           <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center">
             <Shield className="h-8 w-8 text-primary" />

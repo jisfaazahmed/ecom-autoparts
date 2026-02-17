@@ -1,6 +1,6 @@
 // API Client for Express Backend
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // Types
 export interface ApiProfile {
@@ -291,6 +291,10 @@ class ApiClient {
       throw new Error(await this.getErrorMessage(response));
     }
 
+    // 204 No Content has no body - do not parse as JSON
+    if (response.status === 204) {
+      return undefined as T;
+    }
     return response.json();
   }
 

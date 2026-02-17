@@ -74,7 +74,7 @@ const AdminSettings: React.FC = () => {
         logoUrl: formData.logo_url || undefined,
       });
       toast({ title: 'Saved', description: 'Shop settings updated successfully' });
-    } catch (error: any) {
+    } catch (error) {
       toast({ title: 'Error', description: error.message || 'Failed to save settings', variant: 'destructive' });
     }
     setSaving(false);
