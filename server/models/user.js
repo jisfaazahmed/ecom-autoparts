@@ -30,6 +30,18 @@ const userSchema = new mongoose.Schema({
   shopName: {
     type: String, // Only for Vendors
   },
+  // Vendor/shop extra fields (for role ADMIN)
+  phone: { type: String },
+  businessRegistration: { type: String },
+  shopDescription: { type: String },
+  address: { type: String },
+  logoUrl: { type: String },
+  commissionRate: { type: Number, default: 10 },
+  rejectionReason: { type: String },
+  updatedAt: {
+    type: Date,
+    default: Date.now,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
@@ -41,6 +53,7 @@ userSchema.pre('save', function(next) {
   if (this.isModified('role') && this.role === 'ADMIN' && this.isNew) {
     this.status = 'PENDING';
   }
+  this.updatedAt = new Date();
   next();
 });
 

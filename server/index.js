@@ -19,6 +19,8 @@ const productRoutes = require('./routes/productRoutes');
 const vendorProductRoutes = require('./routes/vendorProductRoutes');
 const OrderRoutes = require('./routes/order.routes');
 const cartRoutes = require('./routes/cartRoutes');
+const shopRoutes = require('./routes/shop.routes');
+const userRoutes = require('./routes/user.routes');
 const swaggerUI = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
 
@@ -47,6 +49,8 @@ app.use('/api/products', productRoutes);
 app.use('/api/offers', vendorProductRoutes);
 app.use('/api/orders', OrderRoutes);  // Order Management
 app.use('/api/cart', cartRoutes);
+app.use('/api/shops', shopRoutes);   // Shops (vendor list, status, commission)
+app.use('/api/users', userRoutes);   // User profile (for vendor details)
 
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpecs));
 console.log("📄 Documentation available at http://localhost:5000/api-docs");
