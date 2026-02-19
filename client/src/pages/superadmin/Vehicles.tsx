@@ -34,8 +34,8 @@ const SuperAdminVehicles: React.FC = () => {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<any>(null);
-  const [itemToDelete, setItemToDelete] = useState<any>(null);
+  const [editingItem, setEditingItem] = useState<VehicleBrand | VehicleModel | VehicleVariant | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<VehicleBrand | VehicleModel | VehicleVariant | null>(null);
   const [formData, setFormData] = useState({ name: '', brandId: '', modelId: '', yearStart: new Date().getFullYear(), yearEnd: null as number | null });
   const [logoLoadErrors, setLogoLoadErrors] = useState<Set<string>>(new Set());
 
@@ -53,14 +53,14 @@ const SuperAdminVehicles: React.FC = () => {
       setBrands(brandsData as VehicleBrand[]);
       setModels(modelsData as VehicleModel[]);
       setVariants(variantsData as VehicleVariant[]);
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
     }
     setLoading(false);
   };
 
   const openAddDialog = () => { setEditingItem(null); setFormData({ name: '', brandId: brandFilter !== 'all' ? brandFilter : '', modelId: modelFilter !== 'all' ? modelFilter : '', yearStart: new Date().getFullYear(), yearEnd: null }); setDialogOpen(true); };
-  const openEditDialog = (item: any) => { setEditingItem(item); setFormData({ name: item.name, brandId: item.brandId || '', modelId: item.modelId || '', yearStart: item.yearStart || new Date().getFullYear(), yearEnd: item.yearEnd || null }); setDialogOpen(true); };
+  const openEditDialog = (item: VehicleBrand | VehicleModel | VehicleVariant) => { setEditingItem(item); setFormData({ name: item.name, brandId: 'brandId' in item ? item.brandId || '' : '', modelId: 'modelId' in item ? item.modelId || '' : '', yearStart: 'yearStart' in item ? item.yearStart || new Date().getFullYear() : new Date().getFullYear(), yearEnd: 'yearEnd' in item ? item.yearEnd || null : null }); setDialogOpen(true); };
 
   const handleSave = async () => {
     if (!formData.name.trim()) { toast({ title: 'Error', description: 'Name is required', variant: 'destructive' }); return; }
@@ -96,8 +96,8 @@ const SuperAdminVehicles: React.FC = () => {
       }
       setDialogOpen(false);
       fetchData();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
     }
     setSaving(false);
   };
@@ -117,8 +117,8 @@ const SuperAdminVehicles: React.FC = () => {
       setDeleteDialogOpen(false);
       setItemToDelete(null);
       fetchData();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
     }
     setSaving(false);
   };

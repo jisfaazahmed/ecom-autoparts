@@ -23,6 +23,8 @@ const shopRoutes = require('./routes/shop.routes');
 const userRoutes = require('./routes/user.routes');
 const swaggerUI = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
+const garageRoutes = require('./routes/garageRoutes');
+const wishlistRoutes = require('./routes/wishlistRoutes');
 
 const app = express();
 app.use(cors());
@@ -49,6 +51,8 @@ app.use('/api/products', productRoutes);
 app.use('/api/offers', vendorProductRoutes);
 app.use('/api/orders', OrderRoutes);  // Order Management
 app.use('/api/cart', cartRoutes);
+app.use('/api/garage', garageRoutes);  // My Garage
+app.use('/api/wishlist', wishlistRoutes);  // Wishlist
 app.use('/api/shops', shopRoutes);   // Shops (vendor list, status, commission)
 app.use('/api/users', userRoutes);   // User profile (for vendor details)
 

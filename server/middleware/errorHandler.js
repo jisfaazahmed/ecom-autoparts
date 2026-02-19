@@ -3,7 +3,7 @@ const ApiResponse = require('../utils/response');
 /**
  * Global Error Handler Middleware
  */
-const errorHandler = (err, req, res, next) => {
+const errorHandler = (err, req, res) => {
   console.error('❌ Error occurred:', err);
 
   // Default error values

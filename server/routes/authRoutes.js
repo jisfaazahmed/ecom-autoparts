@@ -77,5 +77,7 @@ router.post('/register/seller', authController.registerSeller);
 router.post('/login', authController.login);
 
 router.get('/me', verifyToken, authController.getMe);
+router.put('/profile', verifyToken, authController.updateProfile);
+router.post('/change-password', verifyToken, authController.changePassword);
 
 module.exports = router;

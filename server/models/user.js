@@ -16,6 +16,12 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  phone: { type: String },
+  address: { type: String },
+  city: { type: String },
+  postalCode: { type: String },
+  avatarUrl: { type: String },
+
   role: {
     type: String,
     enum: ['SUPER_ADMIN', 'ADMIN', 'CUSTOMER'],
@@ -30,6 +36,7 @@ const userSchema = new mongoose.Schema({
   shopName: {
     type: String, // Only for Vendors
   },
+
   // Vendor/shop extra fields (for role ADMIN)
   phone: { type: String },
   businessRegistration: { type: String },
@@ -46,7 +53,17 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-});
+  // Saved vehicles for "My Garage"
+  savedVehicles: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Vehicle'
+  }],
+  // Wishlist - saved products
+  wishlist: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Product'
+  }],
+}, { timestamps: true });
 
 // MIDDLEWARE: Force PENDING status for new Admins (Vendors)
 userSchema.pre('save', function(next) {

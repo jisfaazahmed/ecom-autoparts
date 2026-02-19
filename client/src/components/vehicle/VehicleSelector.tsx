@@ -180,8 +180,8 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
       toast.success(`Vehicle added: ${vehicle.year} ${vehicle.brand} ${vehicle.model}`);
       resetSelections();
       onVehicleAdded?.();
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to save vehicle');
+    } catch (error: unknown) {
+      toast.error(error instanceof Error && error.message ? error.message : 'Failed to save vehicle');
     }
     
     setLoading(false);
