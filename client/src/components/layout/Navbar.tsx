@@ -1,8 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
-  Search, ShoppingCart, User, Menu, Car, LogOut, Store, Shield, UserCircle 
+  Search, ShoppingCart, User, Menu, Car, LogOut, Store, Shield, UserCircle, Star, ChevronDown 
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Button } from '@/components/ui/button';
@@ -18,19 +18,57 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
+import { api, ApiUserVehicle } from '@/lib/api';
 
 const Navbar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { cart, getCartCount, userVehicle } = useStore();
+  const { cart, getCartCount, userVehicle, setUserVehicle } = useStore();
   const { user, profile, role, signOut, loading } = useAuth();
   const cartCount = getCartCount();
+  const [savedVehicles, setSavedVehicles] = useState<ApiUserVehicle[]>([]);
+  const [vehiclesLoading, setVehiclesLoading] = useState(false);
 
   const navLinks = [
     { href: '/shop', label: 'Shop' },
     { href: '/categories', label: 'Categories' },
     { href: '/deals', label: 'Deals' },
   ];
+
+  const fetchSavedVehicles = useCallback(async () => {
+    if (!user) return;
+    setVehiclesLoading(true);
+    try {
+      const data = await api.getUserVehicles();
+      setSavedVehicles(data || []);
+    } catch {
+      // fail silently
+    }
+    setVehiclesLoading(false);
+  }, [user]);
+
+  useEffect(() => {
+    fetchSavedVehicles();
+  }, [fetchSavedVehicles]);
+
+  const handleSwitchVehicle = async (vehicle: ApiUserVehicle) => {
+    try {
+      await api.setActiveVehicle(vehicle.id);
+      setUserVehicle({
+        id: vehicle.id,
+        brand: vehicle.brand?.name ?? '',
+        model: vehicle.model?.name ?? '',
+        variant: vehicle.variant?.name ?? '',
+        year: vehicle.year,
+        vin: vehicle.vin,
+      });
+      setSavedVehicles((prev) =>
+        prev.map((v) => ({ ...v, isActive: v.id === vehicle.id }))
+      );
+    } catch {
+      // fail silently
+    }
+  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -81,14 +119,55 @@ const Navbar: React.FC = () => {
           </div>
         </div>
 
-        {/* Vehicle Badge */}
-        {userVehicle && (
-          <Link to="/my-vehicle">
-            <Badge variant="outline" className="hidden md:flex items-center gap-2 border-primary/50 text-primary">
-              <Car className="h-3 w-3" />
-              {userVehicle.year} {userVehicle.brand} {userVehicle.model}
-            </Badge>
-          </Link>
+        {/* Vehicle Switcher */}
+        {user && (
+          <div className="hidden md:flex items-center">
+            {savedVehicles.length > 0 ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-2 border-primary/50 text-primary hover:border-primary">
+                    <Car className="h-3.5 w-3.5" />
+                    {userVehicle
+                      ? `${userVehicle.year} ${userVehicle.brand} ${userVehicle.model}`
+                      : 'Select Vehicle'}
+                    <ChevronDown className="h-3 w-3 opacity-50" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64 glass-card border-border/50">
+                  <div className="px-2 py-1.5">
+                    <p className="text-xs font-medium text-muted-foreground">My Vehicles</p>
+                  </div>
+                  <DropdownMenuSeparator />
+                  {savedVehicles.map((v) => (
+                    <DropdownMenuItem
+                      key={v.id}
+                      onClick={() => handleSwitchVehicle(v)}
+                      className="flex items-center justify-between gap-2 cursor-pointer"
+                    >
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium">
+                          {v.nickname || `${v.brand?.name} ${v.model?.name}`}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {v.year} {v.brand?.name} {v.model?.name} {v.variant?.name}
+                        </span>
+                      </div>
+                      {v.isActive && (
+                        <Star className="h-3.5 w-3.5 text-primary fill-primary shrink-0" />
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link to="/my-vehicle" className="flex items-center gap-2 text-primary">
+                      <Car className="h-4 w-4" />
+                      Manage Vehicles
+                    </Link>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : null}
+          </div>
         )}
 
         {/* Actions */}
@@ -140,7 +219,7 @@ const Navbar: React.FC = () => {
                     <Link to="/profile">My Profile</Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link to="/my-vehicle">My Vehicle</Link>
+                    <Link to="/my-vehicle">My Vehicles</Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link to="/orders">My Orders</Link>
@@ -208,6 +287,10 @@ const Navbar: React.FC = () => {
                 <DropdownMenuSeparator />
                 {user ? (
                   <>
+                    <Link to="/my-vehicle" className="text-lg font-medium transition-colors hover:text-primary flex items-center gap-2">
+                      <Car className="h-5 w-5" />
+                      My Vehicles
+                    </Link>
                     <Link to="/orders" className="text-lg font-medium transition-colors hover:text-primary">
                       My Orders
                     </Link>

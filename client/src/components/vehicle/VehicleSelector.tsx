@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Car, Search, Check, X, Loader2 } from 'lucide-react';
+import { Car, Search, Check, X, Loader2, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -53,6 +53,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedVariant, setSelectedVariant] = useState('');
   const [selectedYear, setSelectedYear] = useState('');
+  const [nickname, setNickname] = useState('');
 
   // Fetch brands on mount
   useEffect(() => {
@@ -127,6 +128,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
     setSelectedModel('');
     setSelectedVariant('');
     setSelectedYear('');
+    setNickname('');
     setVin('');
   };
 
@@ -164,6 +166,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
         modelId: selectedModel,
         variantId: selectedVariant,
         year: parseInt(selectedYear),
+        ...(nickname.trim() && { nickname: nickname.trim() }),
       });
 
       // Also update local store for compatibility filtering
@@ -360,6 +363,26 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
               )}
             </AnimatePresence>
 
+            {/* Nickname (optional) */}
+            <AnimatePresence>
+              {selectedYear && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-2"
+                >
+                  <Label>Nickname <span className="text-muted-foreground text-xs">(optional)</span></Label>
+                  <Input
+                    placeholder='e.g., "Daily Driver", "Weekend Car"'
+                    value={nickname}
+                    onChange={(e) => setNickname(e.target.value)}
+                    className="bg-secondary/50"
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <Button
               onClick={handleManualSave}
               disabled={!selectedYear || loading}
@@ -377,26 +400,17 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
           </TabsContent>
         </Tabs>
 
-        {/* Current Vehicle */}
+        {/* Active Vehicle Info */}
         {userVehicle && (
           <div className="mt-4 p-3 rounded-lg bg-secondary/50 border border-border/50">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Star className="h-3.5 w-3.5 text-primary fill-primary" />
               <div>
-                <p className="text-sm text-muted-foreground">Current Vehicle</p>
-                <p className="font-medium">
+                <p className="text-xs text-muted-foreground">Active Vehicle</p>
+                <p className="font-medium text-sm">
                   {userVehicle.year} {userVehicle.brand} {userVehicle.model} {userVehicle.variant}
                 </p>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  setUserVehicle(null);
-                  toast.info('Vehicle removed');
-                }}
-              >
-                <X className="h-4 w-4" />
-              </Button>
             </div>
           </div>
         )}
