@@ -95,22 +95,22 @@ const App = () => (
             
             {/* Admin routes */}
             <Route path="/admin" element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRole="admin" requireApprovedShop>
                 <AdminDashboard />
               </ProtectedRoute>
             } />
             <Route path="/admin/products" element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRole="admin" requireApprovedShop>
                 <AdminProducts />
               </ProtectedRoute>
             } />
             <Route path="/admin/orders" element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRole="admin" requireApprovedShop>
                 <AdminOrders />
               </ProtectedRoute>
             } />
             <Route path="/admin/settings" element={
-              <ProtectedRoute requiredRole="admin">
+              <ProtectedRoute requiredRole="admin" requireApprovedShop>
                 <AdminSettings />
               </ProtectedRoute>
             } />

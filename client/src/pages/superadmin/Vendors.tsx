@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
 import { Card, CardContent } from '@/components/ui/card';
 import AdminLayout from '@/components/layout/AdminLayout';
@@ -27,6 +28,7 @@ interface Shop {
   businessRegistration: string | null;
   logoUrl: string | null;
   commissionRate: number | null;
+  rejectionReason: string | null;
   createdAt: string;
 }
 
@@ -51,6 +53,11 @@ const SuperAdminVendors: React.FC = () => {
   const [commissionDialogOpen, setCommissionDialogOpen] = useState(false);
   const [newCommissionRate, setNewCommissionRate] = useState(10);
   const [updatingCommission, setUpdatingCommission] = useState(false);
+
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectTargetShop, setRejectTargetShop] = useState<Shop | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [updatingReject, setUpdatingReject] = useState(false);
 
   useEffect(() => { fetchShops(); }, []);
 
@@ -79,14 +86,37 @@ const SuperAdminVendors: React.FC = () => {
     setLoadingDetails(false);
   };
 
-  const updateShopStatus = async (shopId: string, status: 'approved' | 'rejected' | 'pending') => {
+  const updateShopStatus = async (shopId: string, status: 'approved' | 'rejected' | 'pending', reason?: string) => {
     try {
-      await api.updateShopStatus(shopId, status);
-      setShops(shops.map(s => s.id === shopId ? { ...s, status } : s));
-      if (selectedShop?.id === shopId) setSelectedShop({ ...selectedShop, status });
+      await api.updateShopStatus(shopId, status, reason);
+      const updated = { status, ...(status === 'rejected' && reason ? { rejectionReason: reason } : { rejectionReason: null }) };
+      setShops(shops.map(s => s.id === shopId ? { ...s, ...updated } : s));
+      if (selectedShop?.id === shopId) setSelectedShop({ ...selectedShop, ...updated });
       toast({ title: 'Updated', description: `Shop status changed to ${status}` });
+
     } catch (error: unknown) {
       toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
+      setRejectDialogOpen(false);
+      setRejectTargetShop(null);
+      setRejectReason('');
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const openRejectDialog = (shop: Shop) => {
+    setRejectTargetShop(shop);
+    setRejectReason('');
+    setRejectDialogOpen(true);
+  };
+
+  const confirmReject = async () => {
+    if (!rejectTargetShop) return;
+    setUpdatingReject(true);
+    try {
+      await updateShopStatus(rejectTargetShop.id, 'rejected', rejectReason.trim() || undefined);
+    } finally {
+      setUpdatingReject(false);
     }
   };
 
@@ -176,7 +206,7 @@ const SuperAdminVendors: React.FC = () => {
                           <DropdownMenuItem onClick={() => openShopDetails(shop)}><Eye className="h-4 w-4 mr-2" />View Details</DropdownMenuItem>
                           <DropdownMenuSeparator />
                           {shop.status !== 'approved' && <DropdownMenuItem onClick={() => updateShopStatus(shop.id, 'approved')}><CheckCircle className="h-4 w-4 mr-2 text-success" />Approve</DropdownMenuItem>}
-                          {shop.status !== 'rejected' && <DropdownMenuItem onClick={() => updateShopStatus(shop.id, 'rejected')}><XCircle className="h-4 w-4 mr-2 text-destructive" />Reject</DropdownMenuItem>}
+                          {shop.status !== 'rejected' && <DropdownMenuItem onClick={() => openRejectDialog(shop)}><XCircle className="h-4 w-4 mr-2 text-destructive" />Reject</DropdownMenuItem>}
                           {shop.status !== 'pending' && <DropdownMenuItem onClick={() => updateShopStatus(shop.id, 'pending')}><Clock className="h-4 w-4 mr-2 text-warning" />Set Pending</DropdownMenuItem>}
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -228,12 +258,19 @@ const SuperAdminVendors: React.FC = () => {
                 </div>
               </div>
 
+              {selectedShop?.status === 'rejected' && selectedShop?.rejectionReason && (
+                <div className="glass-card p-4 bg-destructive/10 border border-destructive/20">
+                  <Label className="text-destructive">Rejection reason</Label>
+                  <p className="text-sm mt-1">{selectedShop.rejectionReason}</p>
+                </div>
+              )}
+
               <div>
                 <Label className="mb-2 block">Update Status</Label>
                 <div className="flex flex-wrap gap-2">
                   <Button variant={selectedShop?.status === 'approved' ? 'default' : 'outline'} size="sm" onClick={() => updateShopStatus(selectedShop!.id, 'approved')} disabled={selectedShop?.status === 'approved'}><CheckCircle className="h-4 w-4 mr-1" />Approve</Button>
                   <Button variant={selectedShop?.status === 'pending' ? 'default' : 'outline'} size="sm" onClick={() => updateShopStatus(selectedShop!.id, 'pending')} disabled={selectedShop?.status === 'pending'}><Clock className="h-4 w-4 mr-1" />Pending</Button>
-                  <Button variant={selectedShop?.status === 'rejected' ? 'default' : 'outline'} size="sm" onClick={() => updateShopStatus(selectedShop!.id, 'rejected')} disabled={selectedShop?.status === 'rejected'}><XCircle className="h-4 w-4 mr-1" />Reject</Button>
+                  <Button variant={selectedShop?.status === 'rejected' ? 'default' : 'outline'} size="sm" onClick={() => selectedShop?.status === 'rejected' ? undefined : openRejectDialog(selectedShop!)} disabled={selectedShop?.status === 'rejected'}><XCircle className="h-4 w-4 mr-1" />Reject</Button>
                 </div>
               </div>
             </div>
@@ -249,6 +286,23 @@ const SuperAdminVendors: React.FC = () => {
             <Slider value={[newCommissionRate]} onValueChange={(v) => setNewCommissionRate(v[0])} max={30} min={0} step={1} />
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setCommissionDialogOpen(false)}>Cancel</Button><Button onClick={updateCommissionRate} disabled={updatingCommission}>{updatingCommission && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Save</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rejectDialogOpen} onOpenChange={(open) => { if (!open) { setRejectDialogOpen(false); setRejectTargetShop(null); setRejectReason(''); } }}>
+        <DialogContent className="glass-card">
+          <DialogHeader>
+            <DialogTitle>Reject vendor</DialogTitle>
+            <DialogDescription>Optionally provide a reason to show the vendor. {rejectTargetShop?.name} will be set to rejected.</DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="reject-reason">Reason (optional)</Label>
+            <Textarea id="reject-reason" className="mt-2 min-h-[80px]" placeholder="e.g. Incomplete documentation" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRejectDialogOpen(false); setRejectTargetShop(null); setRejectReason(''); }}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmReject} disabled={updatingReject}>{updatingReject && <Loader2 className="h-4 w-4 animate-spin mr-2" />}Reject</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </AdminLayout>

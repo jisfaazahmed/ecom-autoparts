@@ -363,6 +363,7 @@ class ApiClient {
     shopName: string;
     shopDescription?: string;
     businessRegistration?: string;
+    address?: string;
   }): Promise<AuthResponse> {
     const response = await this.request<AuthResponse>('/auth/register/seller', {
       method: 'POST',
@@ -669,10 +670,10 @@ class ApiClient {
     });
   }
 
-  async updateShopStatus(id: string, status: string): Promise<ApiShop> {
+  async updateShopStatus(id: string, status: string, reason?: string): Promise<ApiShop> {
     return this.request<ApiShop>(`/shops/${id}/status`, {
       method: 'PUT',
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, ...(reason != null && reason !== '' ? { reason } : {}) }),
     });
   }
 
