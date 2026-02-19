@@ -40,13 +40,21 @@ exports.register = async (req, res) => {
     const roleLower = (user.role || '').toLowerCase().replace('_', '');
     const mappedRole = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
 
-    jwt.sign(payload, 'secret123', { expiresIn: '1d' }, (err, token) => {
+    jwt.sign(payload, process.env.JWT_SECRET || 'secret123', { expiresIn: '1d' }, (err, token) => {
       if (err) throw err;
       res.status(201).json({
-    res.status(201).json({
-      message: role === 'ADMIN'
-        ? 'Registration successful! Wait for Super Admin approval.'
-        : 'Registration successful!'
+        message: role === 'ADMIN'
+          ? 'Registration successful! Wait for Super Admin approval.'
+          : 'Registration successful!',
+        accessToken: token,
+        refreshToken: token,
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.name,
+          role: mappedRole,
+        },
+      });
     });
   } catch (err) {
     console.error(err);
@@ -94,6 +102,7 @@ exports.registerSeller = async (req, res) => {
         return res.status(500).json({ message: 'Server error' });
       }
       const roleLower = (user.role || '').toLowerCase().replace('_', '');
+      const mappedRole = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
       res.status(201).json({
         message: 'Registration successful! Wait for Super Admin approval.',
         accessToken: token,
@@ -103,11 +112,6 @@ exports.registerSeller = async (req, res) => {
           email: user.email,
           fullName: user.name,
           role: mappedRole,
-        },
-        message: role === 'ADMIN'
-          ? 'Registration successful! Wait for Super Admin approval.'
-          : 'Registration successful!',
-          role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer',
         },
       });
     });
@@ -163,19 +167,6 @@ exports.getMe = async (req, res) => {
     const user = await User.findById(req.user.id).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
     const roleLower = (user.role || '').toLowerCase().replace('_', '');
-    const mappedRole = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
-    res.json({
-      id: user.id,
-      email: user.email,
-      fullName: user.name,
-      phone: user.phone || null,
-      address: user.address || null,
-      city: user.city || null,
-      postalCode: user.postalCode || null,
-      avatarUrl: user.avatarUrl || null,
-      role: mappedRole,
-      userRoles: [{ role: mappedRole }],
-    });
     const role = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
 
     const response = {
