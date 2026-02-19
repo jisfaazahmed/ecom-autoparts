@@ -65,7 +65,7 @@ const SuperAdminVendors: React.FC = () => {
     setLoading(true);
     try {
       const data = await api.getAllShops();
-      setShops(data.data as Shop[]);
+      setShops((data.data as unknown) as Shop[]);
     } catch (error: unknown) {
       toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
     }
@@ -93,14 +93,11 @@ const SuperAdminVendors: React.FC = () => {
       setShops(shops.map(s => s.id === shopId ? { ...s, ...updated } : s));
       if (selectedShop?.id === shopId) setSelectedShop({ ...selectedShop, ...updated });
       toast({ title: 'Updated', description: `Shop status changed to ${status}` });
-
     } catch (error: unknown) {
       toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
       setRejectDialogOpen(false);
       setRejectTargetShop(null);
       setRejectReason('');
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
     }
   };
 
