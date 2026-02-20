@@ -172,7 +172,8 @@ class ShippingService {
                 alternatePhone: order.shippingAddress.alternatePhone,
                 addressLine1: order.shippingAddress.addressLine1,
                 addressLine2: order.shippingAddress.addressLine2,
-                district: this.getDistrict(order.shippingAddress.city),
+                city: order.shippingAddress.city,
+                district: order.shippingAddress.district,
                 postalCode: order.shippingAddress.postalCode,
                 addressType: order.shippingAddress.addressType
             },
@@ -461,9 +462,9 @@ class ShippingService {
 
         // Update order status
         const order = await Order.findById(shipping.order);
-        const allItemsDelivered = order.items.every(item => {
-            item.status === 'delivered';
-        });
+        const allItemsDelivered = order.items.every(item => 
+            item.status === 'delivered'
+        );
 
         if (allItemsDelivered) {
             order.overallStatus = 'delivered';

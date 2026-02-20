@@ -1,8 +1,8 @@
 const Order = require('../models/order.model');
+const OrderItem = require('../models/orderItem.model');
 const Product = require('../models/product');
 const OrderTimeLine = require('../models/timeline.model')
 const Cart = require('../models/Cart');
-const product = require('../models/product');
 
 class OrderService {
 
@@ -38,27 +38,31 @@ class OrderService {
 
             const totalAmount = itemTotal + shippingCharge + texAmount - discountAmount;
 
-            const orderItem = cart.item.map(item => ({
-                product: item.product._id,
-                vendor: item.product.vendor || item.product.createBy,
-                name: item.product.name,
-                image: item.product.images?.[0] || '',
-                quantity: item.quantity,
-                price: item.product.price,
-                discount: item.product.discount || 0,
-                finalPrice: item.product.price * item.quantity,
-                status: 'pending',
-                statusHistory: [{
+            // Create OrderItem documents
+            const orderItemDocs = await OrderItem.create(
+                cart.items.map(item => ({
+                    product: item.product._id,
+                    vendor: item.product.vendor || item.product.createdBy,
+                    name: item.product.name,
+                    image: item.product.images?.[0] || '',
+                    quantity: item.quantity,
+                    price: item.product.price,
+                    discount: item.product.discount || 0,
+                    finalPrice: item.product.price * item.quantity,
                     status: 'pending',
-                    timestamp: new Date(),
-                    note: 'Order placed'
-                }]
-            }));
+                    statusHistory: [{
+                        status: 'pending',
+                        timestamp: new Date(),
+                        note: 'Order placed'
+                    }]
+                })),
+                { session }
+            );
 
             //Create Order
             const order = new Order({
                 user: userId,
-                items: orderItem,
+                items: orderItemDocs.map(item => item._id),
                 shippingAddress,
                 itemTotal,
                 shippingCharge,
@@ -68,7 +72,7 @@ class OrderService {
                 totalAmount,
                 paymentMethod,
                 paymentStatus: paymentMethod === 'cod' ? 'pending' : 'processing',
-                overallStatus: 'panding',
+                overallStatus: 'pending',
                 deliveryInstructions,
                 estimatedDeliveryDate: this.calculateEstimateDelivery(orderData.shippingMethod || 'standard'),
                 shippingMethod: orderData.shippingMethod || 'standard',
@@ -80,9 +84,9 @@ class OrderService {
 
             //stock update
             for (const item of cart.items) {
-                await product.findByIdAndUpdate(
+                await Product.findByIdAndUpdate(
                     item.product._id,
-                    { $inc: { stock: -item.quantity, soldCount: item.q } },
+                    { $inc: { stock: -item.quantity, soldCount: item.quantity } },
                     { session }
                 );
             }
@@ -95,10 +99,10 @@ class OrderService {
                 description: `Order ${order.orderNumber} has been placed successfully`,
                 actor: userId,
                 actorType: 'customer',
-                metadata: { totalAmount, itemCount: orderItem.length }
-            }], { session })
+                metadata: { totalAmount, itemCount: orderItemDocs.length }
+            }], { session });
 
-            await Cart.findByIdAndUpdate(
+            await Cart.findOneAndUpdate(
                 { user: userId },
                 { $set: { items: [] } },
                 { session }
@@ -199,14 +203,18 @@ class OrderService {
     }
 
     async updateItemStatus(orderId, itemId, status, userId, note) {
-        const order = await Order.findById(orderId);
+        const order = await Order.findById(orderId).populate('items');
         if (!order) {
             throw new Error('Order not found');
         }
 
-        const item = order.items.id(itemId);
+        const item = await OrderItem.findById(itemId);
         if (!item) {
             throw new Error('Order item not found');
+        }
+
+        if (!order.items.some(i => i._id.toString() === itemId.toString())) {
+            throw new Error('Order item does not belong to this order');
         }
 
         if (!this.isValidStatusTransition(item.status, status)) {
@@ -221,7 +229,11 @@ class OrderService {
             updatedBy: userId
         });
 
-        order.overallStatus = this.calculateOverallStatus(order.items);
+        await item.save();
+
+        // Recalculate overall order status
+        const allItems = await OrderItem.find({ _id: { $in: order.items } });
+        order.overallStatus = this.calculateOverallStatus(allItems);
         await order.save();
 
         // timeline create
@@ -306,6 +318,58 @@ class OrderService {
         return 'pending';
     }
 
+    // Update payment status (for lifecycle: Pending → Paid → Processing)
+    async updatePaymentStatus(orderId, paymentStatus, transactionId = null) {
+        const order = await Order.findById(orderId);
+        
+        if (!order) {
+            throw new Error('Order not found');
+        }
+
+        const validPaymentStatuses = ['pending', 'processing', 'completed', 'failed', 'refunded', 'partially_refunded'];
+        if (!validPaymentStatuses.includes(paymentStatus)) {
+            throw new Error('Invalid payment status');
+        }
+
+        order.paymentStatus = paymentStatus;
+        if (transactionId) {
+            order.transactionId = transactionId;
+        }
+
+        // Auto-update order status when payment is completed
+        if (paymentStatus === 'completed') {
+            order.paidAmount = order.totalAmount;
+            
+            // Update all order items to confirmed
+            const orderItems = await OrderItem.find({ _id: { $in: order.items } });
+            for (const item of orderItems) {
+                if (item.status === 'pending') {
+                    item.status = 'confirmed';
+                    item.statusHistory.push({
+                        status: 'confirmed',
+                        timestamp: new Date(),
+                        note: 'Payment received, order confirmed'
+                    });
+                    await item.save();
+                }
+            }
+
+            order.overallStatus = 'confirmed';
+
+            await OrderTimeLine.create({
+                order: orderId,
+                event: 'payment_completed',
+                title: 'Payment Completed',
+                description: `Payment of ${order.totalAmount} received successfully`,
+                actorType: 'system',
+                metadata: { amount: order.totalAmount, transactionId }
+            });
+        }
+
+        await order.save();
+        return order;
+    }
+
     //COD verification
     async initiateCODVerification(orderId) {
         const order = await Order.findById(orderId).populate('user');
@@ -351,7 +415,7 @@ class OrderService {
             };
         }
 
-        await order.svae();
+        await order.save();
         return order;
     }
 
@@ -383,8 +447,10 @@ class OrderService {
                 approvedAt: new Date()
             };
 
-            // Cancell all items
-            order.items.forEach(item => {
+            // Cancel all order items
+            const orderItems = await OrderItem.find({ _id: { $in: order.items } }).session(session);
+            
+            for (const item of orderItems) {
                 item.status = 'cancelled';
                 item.cancellationReason = reason;
                 item.statusHistory.push({
@@ -393,18 +459,18 @@ class OrderService {
                     note: reason,
                     updatedBy: userId
                 });
-            });
+                await item.save({ session });
+            }
 
             await order.save({ session });
 
             //restore stock
-
-            for (const item of order.items) {
-                await product.findByIdAndUpdate(
+            for (const item of orderItems) {
+                await Product.findByIdAndUpdate(
                     item.product,
                     { $inc: { stock: item.quantity, soldCount: -item.quantity } },
                     { session }
-                )
+                );
             }
 
             // Create timeline event
@@ -456,7 +522,7 @@ class OrderService {
 
     //get order detail
     async getOrderDetails(orderId, userId) {
-        const order = await order.findById(orderId)
+        const order = await Order.findById(orderId)
             .populate('user', 'name email')
             .populate('items.product')
             .populate('items.vendor', 'name email storeName');
