@@ -134,6 +134,23 @@ export interface ApiOrderItem {
   product?: ApiProduct;
 }
 
+export interface ApiCartItem {
+  product: string | ApiProduct;
+  quantity: number;
+  price: number;
+  _id?: string;
+}
+
+export interface ApiCart {
+  _id?: string;
+  user: string;
+  items: ApiCartItem[];
+  totalItems: number;
+  totalPrice: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ApiCoupon {
   id: string;
   code: string;
@@ -363,6 +380,7 @@ class ApiClient {
     shopName: string;
     shopDescription?: string;
     businessRegistration?: string;
+    address?: string;
   }): Promise<AuthResponse> {
     const response = await this.request<AuthResponse>('/auth/register/seller', {
       method: 'POST',
@@ -590,6 +608,71 @@ class ApiClient {
     });
   }
 
+  async cancelOrder(id: string, reason?: string): Promise<{ message: string; data: ApiOrder }> {
+    return this.request<{ message: string; data: ApiOrder }>(`/orders/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async trackOrder(trackingNumber: string): Promise<{
+    order: ApiOrder;
+    timeline: Array<{
+      event: string;
+      title: string;
+      description?: string;
+      createdAt: string;
+    }>;
+  }> {
+    return this.request(`/orders/track/${trackingNumber}`);
+  }
+
+  // ============ CART ============
+
+  async getCart(): Promise<{ success: boolean; cart: ApiCart }> {
+    return this.request('/cart');
+  }
+
+  async addToCart(data: { productId: string; quantity: number }): Promise<{ success: boolean; message: string; cart: ApiCart }> {
+    return this.request('/cart', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateCartItem(productId: string, quantity: number): Promise<{ success: boolean; message: string; cart: ApiCart }> {
+    return this.request(`/cart/${productId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ quantity }),
+    });
+  }
+
+  async removeFromCart(productId: string): Promise<{ success: boolean; message: string; cart: ApiCart }> {
+    return this.request(`/cart/${productId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async clearCart(): Promise<{ success: boolean; message: string; cart: ApiCart }> {
+    return this.request('/cart', {
+      method: 'DELETE',
+    });
+  }
+
+  async reorder(orderId: string): Promise<{ message: string }> {
+    const order = await this.getOrder(orderId);
+    
+    // Add all order items to cart
+    for (const item of order.items || []) {
+      await this.addToCart({
+        productId: item.productId,
+        quantity: item.quantity,
+      });
+    }
+    
+    return { message: 'Items added to cart successfully' };
+  }
+
   // ============ SHOPS ============
 
   async getShops(params?: {
@@ -669,10 +752,10 @@ class ApiClient {
     });
   }
 
-  async updateShopStatus(id: string, status: string): Promise<ApiShop> {
+  async updateShopStatus(id: string, status: string, reason?: string): Promise<ApiShop> {
     return this.request<ApiShop>(`/shops/${id}/status`, {
       method: 'PUT',
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, ...(reason != null && reason !== '' ? { reason } : {}) }),
     });
   }
 

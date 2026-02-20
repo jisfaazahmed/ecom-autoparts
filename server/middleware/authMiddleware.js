@@ -10,7 +10,7 @@ exports.verifyToken = (req, res, next) => {
 
   try {
     // In production, use process.env.JWT_SECRET
-    const decoded = jwt.verify(token, 'secret123'); 
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret123'); 
     req.user = decoded.user;
     next();
   } catch (err) {

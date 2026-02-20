@@ -61,6 +61,7 @@ interface AuthContextType {
     businessRegistration?: string;
     shopDescription?: string;
     phone?: string;
+    address?: string;
   }) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -257,6 +258,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         shopName: data.shopName,
         businessRegistration: data.businessRegistration,
         shopDescription: data.shopDescription,
+        phone: data.phone,
+        address: data.address,
       });
 
       await fetchUserData();
