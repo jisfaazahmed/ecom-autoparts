@@ -17,7 +17,7 @@ class RefundService {
                 throw new Error('Order not found or unauthorized');
             }
 
-            const orderItem = order.items.indexOf(orderItemId);
+            const orderItem = order.items.id(orderItemId);
             if (!orderItem) {
                 throw new Error('Order Item not found');
             }
@@ -112,7 +112,6 @@ class RefundService {
             });
 
             return refund;
-
         } catch (error) {
             throw Error;
         }

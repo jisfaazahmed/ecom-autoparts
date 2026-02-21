@@ -66,7 +66,7 @@ class PaymentService {
             return payment;
         }
         catch (error) {
-            { throw error; }
+            throw Error;
         }
     }
 
@@ -108,12 +108,12 @@ class PaymentService {
 
         }
         catch (error) {
-            { throw error }
+            throw Error;
         }
     }
 
     //confirm card payment
-    async confirmCardPayment(PayamentIntentId, paymentId) {
+    async confirmCardPayment(PaymentIntentId, paymentId) {
 
         try {
             const payment = await Payment.findById(paymentId);
@@ -122,7 +122,7 @@ class PaymentService {
                 throw new Error('Payment not found');
             }
 
-            const paymentIntent = await stripe.paymentIntents.retrieve(PayamentIntentId);
+            const paymentIntent = await stripe.paymentIntents.retrieve(PaymentIntentId);
 
             if (paymentIntent.status === 'succeeded') {
                 payment.status = 'completed';
@@ -161,7 +161,7 @@ class PaymentService {
             return payment;
         }
         catch (error) {
-            { throw error }
+            throw Error;
         }
     }
 
@@ -195,7 +195,7 @@ class PaymentService {
             });
         }
         catch (error) {
-            { throw error }
+            throw Error;
         }
     }
 
@@ -261,9 +261,8 @@ class PaymentService {
             await payment.save();
             return payment;
         }
-
         catch (error) {
-            throw Error
+            throw Error;
         }
     }
 
@@ -307,9 +306,8 @@ class PaymentService {
 
             return payment;
         }
-
         catch (error) {
-            throw Error
+            throw Error;
         }
     }
 

@@ -105,21 +105,29 @@ module.exports.cancelOrder = async (req, res) => {
             'customer'
         );
 
-        if (!order) {
-            return res.status(404).json({ message: 'Order not found' });
-        }
-
-        if (order.status === 'Shipped' || order.status === 'Delivered') {
-            return res.status(400).json({
-                message: 'Cannot cancel order that has been shipped or delivered'
-            });
-        }
-
-        order.status = 'Cancelled';
-        await order.save();
-
         res.status(200).json({
             message: 'Order cancelled successfully',
+            data: order
+        });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// Update Payment Status (Pending → Paid lifecycle)
+module.exports.updatePaymentStatus = async (req, res) => {
+    try {
+        const { paymentStatus, transactionId } = req.body;
+
+        const order = await orderService.updatePaymentStatus(
+            req.params.id,
+            paymentStatus,
+            transactionId
+        );
+
+        res.status(200).json({
+            success: true,
+            message: 'Payment status updated successfully',
             data: order
         });
     } catch (error) {
