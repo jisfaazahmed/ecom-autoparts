@@ -14,6 +14,9 @@ router.get('/track/:id', orderController.trackOrder);
 router.get('/vendor/orders',   orderController.getVendorOrders);
 router.patch('/:id/item-status',  orderController.updateOrderStatus);
 
+//Payment status update (Admin/System)
+router.patch('/:id/payment-status', orderController.updatePaymentStatus);
+
 //Admin 
 router.post('/:id/verify-cod', orderController.verifyCOD);
 

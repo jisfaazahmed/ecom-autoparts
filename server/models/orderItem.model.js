@@ -4,7 +4,7 @@ const orderItemSchema = new mongoose.Schema({
     product : {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'Product',
-        require: true
+        required: true
     },
     vendor :{
         type : mongoose.Schema.Types.ObjectId,
@@ -16,7 +16,7 @@ const orderItemSchema = new mongoose.Schema({
     quantity:{
         type : Number,
         required: true,
-        nim :1
+        min :1
     },
     price:{
         type: Number,
