@@ -5,22 +5,67 @@ import { CheckCircle, Package, ArrowRight, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import Navbar from '@/components/layout/Navbar';
 import { useStore } from '@/store/useStore';
+import { api } from '@/lib/api';
+import { toast } from 'sonner';
 
 const PaymentSuccess: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { clearCart } = useStore();
   const [cleared, setCleared] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [orderNumber, setOrderNumber] = useState<string>('');
   
   const sessionId = searchParams.get('session_id');
+  const orderId = searchParams.get('order_id');
 
   useEffect(() => {
-    // Clear cart on successful payment
-    if (!cleared) {
-      clearCart();
-      setCleared(true);
-    }
-  }, [clearCart, cleared]);
+    const verifyPayment = async () => {
+      if (!sessionId || !orderId) {
+        toast.error('Invalid payment session');
+        navigate('/orders');
+        return;
+      }
+
+      try {
+        // Fetch order details to confirm payment
+        const order = await api.getOrder(orderId);
+        
+        if (order && order.paymentStatus === 'completed') {
+          setOrderNumber(order.orderNumber || '');
+          
+          // Clear cart on successful payment
+          if (!cleared) {
+            clearCart();
+            setCleared(true);
+          }
+        } else {
+          toast.info('Payment is being processed...');
+        }
+      } catch (error) {
+        console.error('Error verifying payment:', error);
+        toast.error('Failed to verify payment');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    verifyPayment();
+  }, [sessionId, orderId, clearCart, cleared, navigate]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navbar />
+        <div className="container py-16 flex items-center justify-center">
+          <div className="text-center">
+            <Loader2 className="h-12 w-12 animate-spin mx-auto mb-4 text-primary" />
+            <p className="text-muted-foreground">Verifying your payment...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -55,12 +100,17 @@ const PaymentSuccess: React.FC = () => {
               <Package className="h-5 w-5" />
               <span className="font-medium">Order Confirmed</span>
             </div>
+            {orderNumber && (
+              <p className="text-sm font-semibold mt-3 text-foreground">
+                Order #{orderNumber}
+              </p>
+            )}
             <p className="text-sm text-muted-foreground mt-2">
               You will receive an email confirmation shortly with your order details.
             </p>
             {sessionId && (
               <p className="text-xs text-muted-foreground mt-2">
-                Session: {sessionId.slice(0, 20)}...
+                Transaction ID: {sessionId.slice(0, 20)}...
               </p>
             )}
           </div>

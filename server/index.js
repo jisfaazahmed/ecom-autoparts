@@ -19,10 +19,17 @@ const productRoutes = require('./routes/productRoutes');
 const vendorProductRoutes = require('./routes/vendorProductRoutes');
 const OrderRoutes = require('./routes/order.routes');
 const cartRoutes = require('./routes/cartRoutes');
+const paymentRoutes = require('./routes/payment.routes');
 const swaggerUI = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
 
 const app = express();
+
+// === IMPORTANT: Stripe webhook needs raw body before json parsing ===
+// Apply raw body parsing ONLY for webhook endpoint
+app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
+
+// Apply JSON parsing for all other routes
 app.use(cors());
 app.use(express.json());
 
@@ -47,7 +54,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/offers', vendorProductRoutes);
 app.use('/api/orders', OrderRoutes);  // Order Management
 app.use('/api/cart', cartRoutes);
-
+app.use('/api/payments', paymentRoutes); 
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpecs));
 console.log("📄 Documentation available at http://localhost:5000/api-docs");
 

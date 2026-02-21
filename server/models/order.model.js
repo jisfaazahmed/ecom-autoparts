@@ -90,9 +90,15 @@ const orderSchema = new mongoose.Schema({
         ref: 'Payment'
     },
     transectionId: String,
+    transactionId: String, // Stripe/payment gateway transaction ID
+    stripeSessionId: String, // Stripe checkout session ID
     paidAmount: {
         type: Number,
         default: 0
+    },
+    currency: {
+        type: String,
+        default: 'LKR'
     },
 
     //Status

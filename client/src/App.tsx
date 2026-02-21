@@ -92,7 +92,6 @@ const App = () => (
                 <PaymentCancel />
               </ProtectedRoute>
             } />
-            
             {/* Admin routes */}
             <Route path="/admin" element={
               <ProtectedRoute requiredRole="admin">

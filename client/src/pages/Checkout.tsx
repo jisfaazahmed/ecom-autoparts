@@ -142,7 +142,7 @@ export default function Checkout() {
         setAppliedCoupon(null);
         setDiscountAmount(0);
       }
-    } catch (error: any) {
+    } catch (error) {
       toast.error(error.message || 'Failed to validate coupon');
       setAppliedCoupon(null);
       setDiscountAmount(0);
@@ -199,13 +199,19 @@ export default function Checkout() {
         quantity: item.quantity,
       }));
 
-      const result = await api.createCheckoutSession({
+      // First create the order
+      const order = await api.createOrder({
         items: orderItems,
         shippingAddress: form.address,
         shippingCity: form.city,
         shippingPostalCode: form.postalCode,
         shopId,
         couponCode: appliedCoupon?.code,
+      });
+
+      // Then create checkout session with the orderId
+      const result = await api.createCheckoutSession({
+        orderId: order.id,
       });
 
       // Redirect to Stripe Checkout

@@ -103,9 +103,14 @@ export interface ApiCategory {
 
 export interface ApiOrder {
   id: string;
+  _id?: string;
+  orderNumber?: string;
   customerId: string;
   shopId: string;
   status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+  overallStatus?: string;
+  paymentStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'refunded' | 'partially_refunded';
+  paymentMethod?: string;
   totalAmount: number;
   shippingAddress: string;
   shippingCity?: string;
@@ -113,6 +118,8 @@ export interface ApiOrder {
   trackingNumber?: string;
   notes?: string;
   stripePaymentId?: string;
+  stripeSessionId?: string;
+  transactionId?: string;
   couponId?: string;
   discountAmount?: number;
   commissionAmount?: number;
@@ -977,20 +984,44 @@ class ApiClient {
   // ============ CHECKOUT ============
 
   async createCheckoutSession(data: {
-    items: { productId: string; quantity: number }[];
-    shippingAddress: string;
-    shippingCity: string;
-    shippingPostalCode: string;
-    shopId: string;
-    couponCode?: string;
+    orderId: string;
   }): Promise<{ sessionId: string; url: string }> {
     return this.request<{ sessionId: string; url: string }>(
-      '/checkout/create-session',
+      '/payments/create-checkout-session',
       {
         method: 'POST',
         body: JSON.stringify(data),
       }
     );
+  }
+
+  // ============ PAYMENTS ============
+
+  async getPaymentDetails(paymentId: string): Promise<any> {
+    return this.request(`/payments/${paymentId}`);
+  }
+
+  async getUserPayments(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+    return this.request(`/payments/my-payments?${searchParams.toString()}`);
+  }
+
+  async confirmPayment(sessionId: string, orderId: string): Promise<any> {
+    return this.request('/payments/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId, orderId }),
+    });
   }
 
   // ============ FILE UPLOAD ============
