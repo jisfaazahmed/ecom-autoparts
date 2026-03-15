@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ShoppingCart, CreditCard, Truck, Check, AlertCircle, Loader2, Tag } from 'lucide-react';
@@ -13,14 +13,7 @@ import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
 import { api, ApiCoupon } from '@/lib/api';
 import { toast } from 'sonner';
-
-// Format currency helper
-const formatCurrency = (amount: number) => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(amount / 100);
-};
+import { formatLKR } from '@/lib/currency';
 
 interface StockIssue {
   productId: string;
@@ -64,32 +57,7 @@ export default function Checkout() {
     postalCode: '',
   });
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      toast.error('Please login to checkout');
-      navigate('/auth/customer?redirect=/checkout');
-      return;
-    }
-
-    if (cart.length === 0) {
-      navigate('/cart');
-      return;
-    }
-
-    // Check stock on mount
-    checkStock();
-  }, [isAuthenticated, cart.length]);
-
-  useEffect(() => {
-    if (user) {
-      setForm((prev) => ({
-        ...prev,
-        email: user.email || prev.email,
-      }));
-    }
-  }, [user]);
-
-  const checkStock = async () => {
+  const checkStock = useCallback(async () => {
     try {
       const items = cart.map((item) => ({
         productId: item.product.id,
@@ -114,18 +82,47 @@ export default function Checkout() {
     } catch (error) {
       console.error('Error checking stock:', error);
     }
-  };
+  }, [cart]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      toast.error('Please login to checkout');
+      navigate('/auth/customer?redirect=/checkout');
+      return;
+    }
+
+    if (cart.length === 0) {
+      navigate('/cart');
+      return;
+    }
+
+    // Check stock on mount
+    checkStock();
+  }, [isAuthenticated, cart.length, navigate, checkStock]);
+
+  useEffect(() => {
+    if (user) {
+      setForm((prev) => ({
+        ...prev,
+        email: user.email || prev.email,
+      }));
+    }
+  }, [user]);
 
   const cartTotal = getCartTotal();
   const finalTotal = cartTotal + SHIPPING_COST - discountAmount;
 
   // Get unique shop IDs from cart
-  const shopIds = [...new Set(cart.map((item) => item.product.shopId))];
+  const shopIds = [...new Set(cart.map((item) => item.product.shopId))].filter(Boolean);
   const shopId = shopIds[0]; // For simplicity, assume single shop checkout
 
   const validateCoupon = async () => {
     if (!couponCode.trim()) {
       toast.error('Please enter a coupon code');
+      return;
+    }
+    if (!shopId) {
+      toast.error('Cannot validate coupon without a shop.');
       return;
     }
 
@@ -143,7 +140,7 @@ export default function Checkout() {
         setDiscountAmount(0);
       }
     } catch (error) {
-      toast.error(error.message || 'Failed to validate coupon');
+      toast.error('Failed to validate coupon');
       setAppliedCoupon(null);
       setDiscountAmount(0);
     } finally {
@@ -190,6 +187,10 @@ export default function Checkout() {
     if (!validateShippingForm()) {
       return;
     }
+    if (!shopId) {
+      toast.error('Cannot create order without a shop.');
+      return;
+    }
 
     setLoading(true);
 
@@ -220,9 +221,9 @@ export default function Checkout() {
       } else {
         throw new Error('No checkout URL returned');
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Checkout error:', error);
-      toast.error(error.message || 'Failed to create checkout session');
+      toast.error('Failed to create checkout session');
     } finally {
       setLoading(false);
     }
@@ -235,6 +236,10 @@ export default function Checkout() {
     }
 
     if (!validateShippingForm()) {
+      return;
+    }
+    if (!shopId) {
+      toast.error('Cannot create order without a shop.');
       return;
     }
 
@@ -259,9 +264,9 @@ export default function Checkout() {
       clearCart();
       toast.success('Order placed successfully!');
       navigate(`/orders/${order.id}`);
-    } catch (error: any) {
+    } catch (error) {
       console.error('COD order error:', error);
-      toast.error(error.message || 'Failed to place order');
+      toast.error( 'Failed to place order');
     } finally {
       setLoading(false);
     }
@@ -525,11 +530,11 @@ export default function Checkout() {
                           <div className="flex-1">
                             <p className="font-medium">{item.product.name}</p>
                             <p className="text-sm text-muted-foreground">
-                              Qty: {item.quantity} × {formatCurrency(item.product.price)}
+                              Qty: {item.quantity} × {formatLKR(item.product.price)}
                             </p>
                           </div>
                           <p className="font-medium">
-                            {formatCurrency(item.product.price * item.quantity)}
+                            {formatLKR(item.product.price * item.quantity)}
                           </p>
                         </div>
                       ))}
@@ -602,7 +607,7 @@ export default function Checkout() {
                       <span className="text-muted-foreground">
                         {item.product.name} × {item.quantity}
                       </span>
-                      <span>{formatCurrency(item.product.price * item.quantity)}</span>
+                      <span>{formatLKR(item.product.price * item.quantity)}</span>
                     </div>
                   ))}
                 </div>
@@ -647,23 +652,22 @@ export default function Checkout() {
                     </div>
                   )}
                 </div>
-
                 <Separator />
 
                 {/* Totals */}
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Subtotal</span>
-                    <span>{formatCurrency(cartTotal)}</span>
+                    <span>{formatLKR(cartTotal)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Shipping</span>
-                    <span>{formatCurrency(SHIPPING_COST)}</span>
+                    <span>{formatLKR(SHIPPING_COST)}</span>
                   </div>
                   {discountAmount > 0 && (
                     <div className="flex justify-between text-sm text-green-500">
                       <span>Discount</span>
-                      <span>-{formatCurrency(discountAmount)}</span>
+                      <span>-{formatLKR(discountAmount)}</span>
                     </div>
                   )}
                 </div>
@@ -672,7 +676,7 @@ export default function Checkout() {
 
                 <div className="flex justify-between font-semibold text-lg">
                   <span>Total</span>
-                  <span>{formatCurrency(finalTotal)}</span>
+                  <span>{formatLKR(finalTotal)}</span>
                 </div>
               </CardContent>
             </Card>
