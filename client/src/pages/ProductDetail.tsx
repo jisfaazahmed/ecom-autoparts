@@ -55,20 +55,24 @@ const ProductDetail: React.FC = () => {
     if (!product) return;
     
     addToCart({
-      id: product.id,
-      name: product.name,
-      description: product.description || '',
-      price: product.price,
-      image: product.imageUrl || '/placeholder.svg',
-      category: product.category?.name || 'Uncategorized',
-      brand: '',
-      shopId: product.shopId,
-      shopName: product.shop?.name || 'Unknown Shop',
-      stock: product.stock,
-      compatibleVehicles: product.compatibleVariants || [],
-      rating: 0,
-      reviewCount: 0,
-      sku: product.sku || '',
+      id: product.id || product._id || '',
+      product: {
+        id: product.id || product._id || '',
+        name: product.name,
+        description: product.description || '',
+        price: product.price,
+        image: product.imageUrl || '/placeholder.svg',
+        category: product.category?.name || 'Uncategorized',
+        brand: '',
+        shopId: product.shopId,
+        shopName: product.shop?.name || 'Unknown Shop',
+        stock: product.stock,
+        compatibleVehicles: product.compatibleVariants || [],
+        rating: 0,
+        reviewCount: 0,
+        sku: product.sku || '',
+      },
+      quantity: 1
     });
     
     toast({
@@ -90,7 +94,8 @@ const ProductDetail: React.FC = () => {
     setSubmittingReview(true);
     
     try {
-      await api.createProductReview(product.id, {
+      const productId = product.id || product._id || '';
+      await api.createProductReview(productId, {
         rating: newRating,
         comment: newComment || undefined,
       });
@@ -101,7 +106,7 @@ const ProductDetail: React.FC = () => {
       });
       
       // Refresh reviews
-      const reviewsData = await api.getProductReviews(product.id);
+      const reviewsData = await api.getProductReviews(productId);
       setReviews(reviewsData || []);
       
       setNewComment('');

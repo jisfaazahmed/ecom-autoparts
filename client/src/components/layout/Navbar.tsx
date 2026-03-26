@@ -23,7 +23,14 @@ const Navbar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { cart, userVehicle } = useStore();
-  const { user, profile, role, signOut, loading } = useAuth();
+  
+  // Fix: map useAuth return values to what Navbar expects
+  const { user, logout } = useAuth();
+  const signOut = logout;
+  const loading = false;
+  const role = user?.role;
+  const profile = user ? { full_name: user.name } : null;
+
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
 
   const navLinks = [

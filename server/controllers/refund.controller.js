@@ -2,9 +2,9 @@ const refundService = require('../services/refund.service');
 const Refund = require('../models/refund.model');
 
 
-exports.createRefundRequets = async (res, req) => {
+exports.createRefundRequest = async (req, res) => {
     try {
-        const refund = await refundService.creaetRefundRequest(
+        const refund = await refundService.createRefundRequest(
             req.params.orderItemId,
             req.body,
             req.user._id

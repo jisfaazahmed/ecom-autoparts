@@ -20,7 +20,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, isCompatible = true 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    addToCart(product);
+    addToCart({ id: product.id, product, quantity: 1 });
     toast.success(`${product.name} added to cart`);
   };
 

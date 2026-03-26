@@ -72,6 +72,7 @@ export interface ApiShop {
 
 export interface ApiProduct {
   id: string;
+  _id?: string;
   name: string;
   description?: string;
   price: number;
@@ -460,18 +461,19 @@ class ApiClient {
         }
       });
     }
-    const response = await this.request<{
-      products: ApiProduct[];
-      pagination: { page: number; limit: number; total: number; totalPages: number };
-    }>(`/products?${searchParams.toString()}`);
+    const response = await this.request<any>(`/products?${searchParams.toString()}`);
     
     // Transform backend response to match PaginatedResponse
+    // It might be a plain array or { products: [], pagination: {} }
+    const data = Array.isArray(response) ? response : (response.products || response.data || []);
+    const pagination = response.pagination || {};
+
     return {
-      data: response.products,
-      total: response.pagination.total,
-      page: response.pagination.page,
-      limit: response.pagination.limit,
-      totalPages: response.pagination.totalPages,
+      data: data,
+      total: pagination.total || data.length || 0,
+      page: pagination.page || 1,
+      limit: pagination.limit || data.length || 10,
+      totalPages: pagination.totalPages || 1,
     };
   }
 

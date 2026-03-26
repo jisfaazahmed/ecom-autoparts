@@ -33,14 +33,14 @@ module.exports.calculateShipping = async (req, res) => {
     }
 };
 
-module.exports.schdulePickup = async (res, req) => {
+module.exports.schedulePickup = async (req, res) => {
 
     try {
         const shipping = await shippingService.schedulePickup(
             req.params.shippingId,
             req.body
         );
-        res.status.json(shipping);
+        res.status(200).json(shipping);
     } catch (error) {
         res.status(500).json({
             success: false,
@@ -64,7 +64,7 @@ module.exports.updateStatus = async (req, res) => {
     }
 }
 
-module.exports.recordDelivery = async (res, req) => {
+module.exports.recordDeliveryAttempt = async (req, res) => {
     try {
         const shipping = await shippingService.recordDeliveryAttempt(
             req.params.shippingId,
@@ -82,7 +82,7 @@ module.exports.recordDelivery = async (res, req) => {
     }
 }
 
-module.exports.confirmDelivery = async (res, req) => {
+module.exports.confirmDelivery = async (req, res) => {
     try {
         const shipping = await shippingService.confirmDelivery(
             req.params.shippingId,
@@ -112,7 +112,7 @@ module.exports.trackShipment = async (res, req) => {
     }
 }
 
-exports.getVendorShipments = async (req, res) => {
+module.exports.getVendorShipments = async (req, res) => {
     try {
         const { status, page = 1, limit = 10 } = req.query;
 

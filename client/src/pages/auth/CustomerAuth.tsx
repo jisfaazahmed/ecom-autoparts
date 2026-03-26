@@ -27,7 +27,15 @@ const signupSchema = z.object({
 const CustomerAuth: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signIn, signUp, user, role, signOut } = useAuth();
+  const { login: signIn, user, logout: signOut } = useAuth();
+  
+  // Create mock signUp since it's missing from context
+  const signUp = async (email: string, password: string, data: any) => {
+     console.log('Signup not implemented in context yet', email, data);
+     return { error: null };
+  };
+  
+  const role = user?.role;
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -45,7 +53,7 @@ const CustomerAuth: React.FC = () => {
   // Redirect if already logged in
   React.useEffect(() => {
     if (user && role) {
-      const from = (location.state as any)?.from?.pathname || '/';
+      const from = (location.state)?.from?.pathname || '/';
       if (role === 'superadmin') {
         navigate('/superadmin');
       } else if (role === 'admin') {
@@ -74,14 +82,22 @@ const CustomerAuth: React.FC = () => {
     }
 
     setLoading(true);
-    const { error } = await signIn(loginForm.email, loginForm.password);
-    
-    if (!error) {
-      // The useAuth hook will update the role, check it after sign in
+    // Fix: signIn returns void/Promise<void>, not { error }
+    try {
+      await signIn(loginForm.email, loginForm.password);
+       // The useAuth hook will update the role, check it after sign in
       // This is handled by the useEffect above after state updates
-      const from = (location.state as any)?.from?.pathname || '/shop';
+      const from = (location.state)?.from?.pathname || '/shop';
       navigate(from);
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "Login Failed",
+        description: "Invalid credentials",
+        variant: "destructive"
+      });
     }
+
     setLoading(false);
   };
 

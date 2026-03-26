@@ -49,7 +49,9 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { role, signOut } = useAuth();
+  const { user, logout } = useAuth();
+  const role = user?.role;
+  const signOut = logout;
 
   const links = role === 'superadmin' ? superAdminLinks : adminLinks;
 
