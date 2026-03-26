@@ -22,9 +22,9 @@ import { Badge } from '@/components/ui/badge';
 const Navbar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { cart, getCartCount, userVehicle } = useStore();
+  const { cart, userVehicle } = useStore();
   const { user, profile, role, signOut, loading } = useAuth();
-  const cartCount = getCartCount();
+  const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
 
   const navLinks = [
     { href: '/shop', label: 'Shop' },

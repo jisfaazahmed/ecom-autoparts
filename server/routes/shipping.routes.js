@@ -1,14 +1,15 @@
-const router = require('express').Router;
+const router = require('express').Router();
 const shippingController = require('../controllers/shipping.controller');
+const { verifyToken } = require('../middleware/authMiddleware');
 
 // Public routes
 router.get('/track/:trackingNumber', shippingController.trackShipment);
 
 // Customer routes
-router.post('/calculate', shippingController.calculateShipping);
-router.get('/my-shipments', shippingController.getCustomerShipments);
-router.post('/:shippingId/rate', shippingController.submitRating);
-router.post('/:shippingId/issue', shippingController.reportIssue);
+router.post('/calculate', verifyToken, shippingController.calculateShipping);
+router.get('/my-shipments', verifyToken, shippingController.getCustomerShipments);
+router.post('/:shippingId/rate', verifyToken, shippingController.submitRating);
+router.post('/:shippingId/issue', verifyToken, shippingController.reportIssue);
 
 // Vendor routes
 router.post('/create/:orderId', shippingController.createShipping);

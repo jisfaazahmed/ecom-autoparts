@@ -15,17 +15,21 @@ interface CartItem {
 
 interface StoreState {
   cart: CartItem[];
+  userVehicle: any | null;
   addToCart: (item: CartItem) => void;
   removeFromCart: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
   clearCart: () => void;
   getCartTotal: () => number;
+  getCartCount: () => number;
+  setUserVehicle: (vehicle: any | null) => void;
 }
 
 export const useStore = create<StoreState>()(
   persist(
     (set, get) => ({
       cart: [],
+      userVehicle: null,
       addToCart: (item) =>
         set((state) => {
           const existing = state.cart.find((i) => i.id === item.id);
@@ -53,9 +57,15 @@ export const useStore = create<StoreState>()(
         const { cart } = get();
         return cart.reduce((total, item) => total + (item.product.price * item.quantity), 0);
       },
+      getCartCount: () => {
+        const { cart } = get();
+        return cart.reduce((count, item) => count + item.quantity, 0);
+      },
+      setUserVehicle: (vehicle) => set({ userVehicle: vehicle }),
     }),
     {
       name: 'cart-storage',
+      partialize: (state) => ({ cart: state.cart, userVehicle: state.userVehicle }),
     }
   )
 );

@@ -1,11 +1,12 @@
 const router = require('express').Router();
 const orderController = require('../controllers/order.controller');
+const { verifyToken } = require('../middleware/authMiddleware');
 
 //customer
-router.post('/', orderController.createOrder);
-router.get('/my_orders', orderController.getAllOrders);
-router.get('/:id',  orderController.getOrderById);
-router.post('/:id/cancel', orderController.cancelOrder)
+router.post('/', verifyToken, orderController.createOrder);
+router.get('/my_orders', verifyToken, orderController.getAllOrders);
+router.get('/:id', verifyToken, orderController.getOrderById);
+router.post('/:id/cancel', verifyToken, orderController.cancelOrder)
 
 //track
 router.get('/track/:id', orderController.trackOrder);
