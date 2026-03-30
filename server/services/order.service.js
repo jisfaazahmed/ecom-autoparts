@@ -8,65 +8,76 @@ class OrderService {
 
     // Create Order
     async createOrder(userId, orderData) {
-        const session = await Order.startSession();
-        session.startTransaction();
-
         try {
-            const { shippingAddress, paymentMethod, deliveryInstructions, couponCode } = orderData;
+            const { shippingAddress, shippingCity, shippingPostalCode, fullName, phone, shippingCountry = 'Sri Lanka', paymentMethod = 'cod', deliveryInstructions, couponCode, items = [] } = orderData;
 
-            const cart = await Cart.findOne({ user: userId }).populate('item.product');
+            const normalizedShippingAddress = typeof shippingAddress === 'string'
+                ? {
+                    fullName: fullName || 'Guest Customer',
+                    phone: phone || 'N/A',
+                    addressLine1: shippingAddress,
+                    city: shippingCity || '',
+                    postalCode: shippingPostalCode || '',
+                    country: shippingCountry || 'Sri Lanka'
+                }
+                : shippingAddress;
 
-            if (!cart || cart.items.length === 0) {
-                throw new Error('Cart is empty ');
+            if (!normalizedShippingAddress?.addressLine1 || !normalizedShippingAddress?.city || !normalizedShippingAddress?.postalCode) {
+                throw new Error('Shipping address is incomplete');
             }
 
-            // stock availablity
-            for (const item of cart.items) {
-                const product = await Product.findById(item.product._id);
+            if (!items || !Array.isArray(items) || items.length === 0) {
+                throw new Error('No items provided for order');
+            }
+
+            // Load products and check stock
+            const enrichedItems = [];
+            for (const item of items) {
+                const product = await Product.findById(item.productId || item.product);
+                if (!product) {
+                    throw new Error('Product not found');
+                }
                 if (product.stock < item.quantity) {
                     throw new Error(`${product.name} stock not available`);
                 }
+                enrichedItems.push({ product, quantity: item.quantity });
             }
 
-            const itemTotal = cart.items.reduce((sum, item) => {
-                return sum + (item.product.price * item.quantity);
-            }, 0);
-
-            const shippingCharge = this.calculateShipping(cart.items, shippingAddress);
+            const itemTotal = enrichedItems.reduce((sum, { product, quantity }) => sum + (product.price * quantity), 0);
+            const shippingCharge = this.calculateShipping(enrichedItems.map(({ product, quantity }) => ({ product, quantity })), { city: normalizedShippingAddress.city || '' });
             const texAmount = this.calculateTax(itemTotal);
             const discountAmount = couponCode ? await this.applyCoupon(couponCode, itemTotal) : 0;
-
             const totalAmount = itemTotal + shippingCharge + texAmount - discountAmount;
 
-            // Create OrderItem documents
             const orderItemDocs = await OrderItem.create(
-                cart.items.map(item => ({
-                    product: item.product._id,
-                    vendor: item.product.vendor || item.product.createdBy,
-                    name: item.product.name,
-                    image: item.product.images?.[0] || '',
-                    quantity: item.quantity,
-                    price: item.product.price,
-                    discount: item.product.discount || 0,
-                    finalPrice: item.product.price * item.quantity,
-                    status: 'pending',
-                    statusHistory: [{
+                enrichedItems.map(({ product, quantity }) => {
+                    const vendor = product.vendor || product.createdBy || product.shopId || product.owner || product.seller;
+                    return {
+                        product: product._id,
+                        vendor: vendor || undefined,
+                        name: product.name,
+                        image: product.images?.[0] || '',
+                        quantity,
+                        price: product.price,
+                        discount: product.discount || 0,
+                        finalPrice: product.price * quantity,
                         status: 'pending',
-                        timestamp: new Date(),
-                        note: 'Order placed'
-                    }]
-                })),
-                { session }
+                        statusHistory: [{
+                            status: 'pending',
+                            timestamp: new Date(),
+                            note: 'Order placed'
+                        }]
+                    };
+                })
             );
 
-            //Create Order
             const order = new Order({
                 user: userId,
                 items: orderItemDocs.map(item => item._id),
-                shippingAddress,
-                itemTotal,
-                shippingCharge,
-                texAmount,
+                shippingAddress: normalizedShippingAddress,
+                itemsTotal: itemTotal,
+                shippingCharges: shippingCharge,
+                taxAmount: texAmount,
                 discountAmount,
                 couponDiscount: discountAmount,
                 totalAmount,
@@ -80,14 +91,13 @@ class OrderService {
                 userAgent: orderData.userAgent
             });
 
-            await order.save({ session });
+            await order.save();
 
             //stock update
-            for (const item of cart.items) {
+            for (const { product, quantity } of enrichedItems) {
                 await Product.findByIdAndUpdate(
-                    item.product._id,
-                    { $inc: { stock: -item.quantity, soldCount: item.quantity } },
-                    { session }
+                    product._id,
+                    { $inc: { stock: -quantity, soldCount: quantity } }
                 );
             }
 
@@ -97,18 +107,10 @@ class OrderService {
                 event: 'order_placed',
                 title: 'Order Placed',
                 description: `Order ${order.orderNumber} has been placed successfully`,
-                actor: userId,
-                actorType: 'customer',
+                actor: userId || null,
+                actorType: userId ? 'customer' : 'guest',
                 metadata: { totalAmount, itemCount: orderItemDocs.length }
-            }], { session });
-
-            await Cart.findOneAndUpdate(
-                { user: userId },
-                { $set: { items: [] } },
-                { session }
-            )
-
-            await session.commitTransaction();
+            }]);
 
             //Notification
             this.sendOrderNotification(order, 'order Placed');
@@ -116,11 +118,7 @@ class OrderService {
             return order;
         }
         catch (error) {
-            await session.abortTransaction();
             throw error;
-        }
-        finally {
-            session.endSession();
         }
     }
 
@@ -140,49 +138,55 @@ class OrderService {
     //calculate shipping
 
     getZoneMultiplier(city) {
+        if (!city) return 0;
+
+        const normalizedCity = city.toString().trim().toLowerCase();
         const zone1 = ['colombo'];
         const zone2 = ['gampaha', 'kaluthara'];
         const zone3 = [
             'kurunegala',
-            'Kandy',
-            'Matale',
-            'Nuwara Eliya',
-            'Galle',
-            'Matara',
-            'Hambantota',
-            'Puttalam',
-            'Anuradhapura',
-            'Polonnaruwa',
-            'Badulla',
-            'Monaragala',
-            'Ratnapura',
-            'Kegalle',
-            'Trincomalee',
-            'Batticaloa',
-            'Ampara',
-            'Jaffna',
-            'Vavuniya',
-            'Mannar',
-            'Kilinochchi',
-            'Mullaitivu'];
+            'kandy',
+            'matale',
+            'nuwara eliya',
+            'galle',
+            'matara',
+            'hambantota',
+            'puttalam',
+            'anuradhapura',
+            'polonnaruwa',
+            'badulla',
+            'monaragala',
+            'ratnapura',
+            'kegalle',
+            'trincomalee',
+            'batticaloa',
+            'ampara',
+            'jaffna',
+            'vavuniya',
+            'mannar',
+            'kilinochchi',
+            'mullaitivu'
+        ];
 
-        if (zone1.includes(city)) return 100;
-        if (zone2.includes(city)) return 200;
-        if (zone3.includes(city)) return 300;
+        if (zone1.includes(normalizedCity)) return 100;
+        if (zone2.includes(normalizedCity)) return 200;
+        if (zone3.includes(normalizedCity)) return 300;
+        return 0;
     }
 
 
     calculateShipping(items, address) {
         const totalWeight = items.reduce((sum, item) => {
             return sum + (item.product.weight || 0.5) * item.quantity;
-        });
+        }, 0);
 
         const baserate = 300;
         const weightRate = totalWeight * 50;
         const zoneMultiplier = this.getZoneMultiplier(address.city);
         const handlefee = 300;
 
-        return Math.round(baserate + weightRate + zoneMultiplier + handlefee);
+        const shipping = baserate + weightRate + zoneMultiplier + handlefee;
+        return Number.isFinite(shipping) ? Math.round(shipping) : 0;
     }
 
     calculateTax(amount) {

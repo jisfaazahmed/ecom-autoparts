@@ -5,7 +5,8 @@ const OrderTimeLine = require('../models/timeline.model');
 //new order
 module.exports.createOrder = async (req, res) => {
     try {
-        const newOrder = await orderService.createOrder(req.user._id, {
+        const userId = req.user?.id || req.user?._id || null;
+        const newOrder = await orderService.createOrder(userId, {
             ...req.body,
             ipAddress: req.ip,
             userAgent: req.get('user-agent')
@@ -24,7 +25,8 @@ module.exports.createOrder = async (req, res) => {
 //Get order by ID
 module.exports.getOrderById = async (req, res) => {
     try {
-        const { order, timeline } = await orderService.getOrderDetails(req.params.id, req.user._id);
+        const userId = req.user?.id || req.user?._id;
+        const { order, timeline } = await orderService.getOrderDetails(req.params.id, userId);
 
         if (!order) {
             return res.status(404).json({ message: 'Order Not found' });
@@ -41,7 +43,8 @@ module.exports.getOrderById = async (req, res) => {
 module.exports.getAllOrders = async (req, res) => {
     try {
         const { status, page = 1, limit = 10 } = req.query;
-        const query = { user: req.user._id };
+        const userId = req.user?.id || req.user?._id;
+        const query = { user: userId };
         if (status) query.overallStatus = status;
 
         const orders = await order.find(query)
@@ -50,7 +53,7 @@ module.exports.getAllOrders = async (req, res) => {
             .skip((page - 1) * limit)
             .limit(limit * 1);
 
-        const total = await order.countDocuments();
+        const total = await order.countDocuments(query);
 
 
         res.status(200).json({
@@ -97,10 +100,11 @@ module.exports.updateOrderStatus = async (req, res) => {
 module.exports.cancelOrder = async (req, res) => {
     try {
         const { reason } = req.body;
+        const userId = req.user?.id || req.user?._id;
 
         const order = await orderService.cancelOrder(
             req.params.id,
-            req.user._id,
+            userId,
             reason,
             'customer'
         );

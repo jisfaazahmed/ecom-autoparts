@@ -607,6 +607,10 @@ class ApiClient {
     shippingAddress: string;
     shippingCity: string;
     shippingPostalCode: string;
+    fullName?: string;
+    phone?: string;
+    shippingCountry?: string;
+    paymentMethod?: 'cod' | 'card' | 'wallet' | 'bank_transfer' | 'installment';
     shopId?: string;
     couponCode?: string;
     notes?: string;

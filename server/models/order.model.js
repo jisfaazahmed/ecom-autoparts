@@ -9,7 +9,7 @@ const orderSchema = new mongoose.Schema({
     user: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: false
     },
     items: [{
         type: mongoose.Schema.Types.ObjectId,
@@ -161,25 +161,34 @@ const orderSchema = new mongoose.Schema({
     },
 
     
-});
+}, { timestamps: true });
 
-orderSchema.pre('save', async function (next){
-    if (this.isNew){
-        const date = new Date();
-        const year = date.getFullYear().toString().slice(-2);
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2,'0');
+orderSchema.pre('validate', async function (next) {
+    if (this.orderNumber) return next();
 
-        const count = await mongoose.model('order').countDocuments({
-            createAt: {
-                $gte: new Date(date.setHours(0,0,0,0)),
-                $lt: new Date(date.setHours(23,59,59,999))
+    try {
+        const now = new Date();
+        const startOfDay = new Date(now);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(now);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const count = await this.constructor.countDocuments({
+            createdAt: {
+                $gte: startOfDay,
+                $lt: endOfDay
             }
         });
 
-        this.orderNumber =`ORD${year}${month}${day},${String(count+1).padStart(5,'0')}`;
+        const year = now.getFullYear().toString().slice(-2);
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+
+        this.orderNumber = `ORD${year}${month}${day}-${String(count + 1).padStart(5, '0')}`;
+        next();
+    } catch (err) {
+        next(err);
     }
-    next();
 });
 
 orderSchema.index({orderNumber : 1});

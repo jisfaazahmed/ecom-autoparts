@@ -54,7 +54,7 @@ const timelineSchema = new mongoose.Schema({
     },
     actorType: {
         type: String,
-        enum: ['customer', 'vendor', 'admin', 'system', 'courier']
+        enum: ['customer', 'vendor', 'admin', 'system', 'courier', 'guest']
     },
     location: {
         city: String,

@@ -27,13 +27,7 @@ const signupSchema = z.object({
 const CustomerAuth: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login: signIn, user, logout: signOut } = useAuth();
-  
-  // Create mock signUp since it's missing from context
-  const signUp = async (email: string, password: string, data: any) => {
-     console.log('Signup not implemented in context yet', email, data);
-     return { error: null };
-  };
+    const { login: signIn, signUp, user, logout: signOut } = useAuth();
   
   const role = user?.role;
   const { toast } = useToast();
@@ -119,8 +113,10 @@ const CustomerAuth: React.FC = () => {
     }
 
     setLoading(true);
-    const { error } = await signUp(signupForm.email, signupForm.password, {
-      full_name: signupForm.fullName,
+    const { error } = await signUp({
+      email: signupForm.email,
+      password: signupForm.password,
+      fullName: signupForm.fullName,
       phone: signupForm.phone,
     });
     setLoading(false);

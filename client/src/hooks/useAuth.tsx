@@ -18,22 +18,22 @@ interface AuthContextType {
   shop: any | null;
   loading: boolean;
   profile: any | null;
+  signUp: (data: { email: string; password: string; fullName: string; phone?: string }) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   signUpSeller: (data: any) => Promise<{ error: Error | null }>;
   refreshProfile: () => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-
-// Fallback context to prevent crashes if a component renders outside AuthProvider
-const fallbackContext: AuthContextType = {
+// Default context prevents runtime crashes/warnings during fast refresh edge-cases.
+const defaultAuthContext: AuthContextType = {
   user: null,
   isAuthenticated: false,
   role: null,
   shop: null,
   loading: false,
   profile: null,
+  signUp: async () => ({ error: new Error('AuthProvider missing: signUp unavailable') }),
   login: async () => { throw new Error('AuthProvider missing: login unavailable'); },
   logout: () => {},
   signIn: async () => ({ error: new Error('AuthProvider missing: signIn unavailable') }),
@@ -42,9 +42,11 @@ const fallbackContext: AuthContextType = {
   refreshProfile: async () => {},
 };
 
+const AuthContext = createContext<AuthContextType>(defaultAuthContext);
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
-    const token = localStorage.getItem('auth_token');
+    const token = localStorage.getItem('auth_token') || localStorage.getItem('accessToken');
     const storedUser = localStorage.getItem('user');
     if (token && storedUser) {
       try {
@@ -58,26 +60,76 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const [loading, setLoading] = useState(true);
 
+  const mapUser = (apiUser: any): User => ({
+    id: apiUser?.id || apiUser?._id || apiUser?.userId || '',
+    email: apiUser?.email || '',
+    name: apiUser?.fullName || apiUser?.name || 'User',
+    role: (apiUser?.role || apiUser?.userRoles?.[0]?.role || 'customer').toString().toLowerCase(),
+  });
+
+  const setSession = (authResponse: any) => {
+    if (!authResponse?.accessToken || !authResponse?.user) return;
+    const mapped = mapUser(authResponse.user);
+    localStorage.setItem('auth_token', authResponse.accessToken);
+    localStorage.setItem('user', JSON.stringify(mapped));
+    setUser(mapped);
+  };
+
   useEffect(() => {
-    setLoading(false);
-  }, []);
+    const bootstrap = async () => {
+      const token = localStorage.getItem('auth_token') || localStorage.getItem('accessToken');
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+
+      if (user) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const current = await api.getCurrentUser();
+        if (current) {
+          const mapped = mapUser(current);
+          localStorage.setItem('user', JSON.stringify(mapped));
+          localStorage.setItem('auth_token', token);
+          setUser(mapped);
+        }
+      } catch (e) {
+        console.warn('Failed to hydrate user, clearing session');
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('user');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    bootstrap();
+  }, [user]);
 
   const login = async (email: string, password: string) => {
     try {
       const response = await api.login(email, password);
-      // Map ApiUser to User interface
-      const loggedInUser: User = {
-        id: response.user.id || (response.user as any)._id || '',
-        email: response.user.email || '',
-        name: (response.user as any).fullName || (response.user as any).name || 'User',
-        role: (response.user as any).role || 'customer',
-      };
-
-      localStorage.setItem('auth_token', response.accessToken);
-      localStorage.setItem('user', JSON.stringify(loggedInUser));
-      setUser(loggedInUser);
+      setSession(response);
     } catch (error: any) {
       throw new Error(error.message || 'Login failed');
+    }
+  };
+
+  const signUp = async (data: { email: string; password: string; fullName: string; phone?: string }) => {
+    try {
+      const response = await api.register({
+        email: data.email,
+        password: data.password,
+        fullName: data.fullName,
+        phone: data.phone,
+      });
+      setSession(response);
+      return { error: null };
+    } catch (error: any) {
+      return { error };
     }
   };
 
@@ -116,6 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       shop: null,
       loading,
       profile: null,
+      signUp,
       signIn,
       signOut,
       signUpSeller,
@@ -127,10 +180,5 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    console.warn('useAuth called outside AuthProvider; using fallback context');
-    return fallbackContext;
-  }
-  return context;
+  return useContext(AuthContext);
 }
