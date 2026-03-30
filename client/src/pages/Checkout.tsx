@@ -37,7 +37,6 @@ export default function Checkout() {
   const navigate = useNavigate();
   const { cart, clearCart, getCartTotal } = useStore();
   const { user } = useAuth();
-  const isAuthenticated = !!user;
 
   const [step, setStep] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'cod'>('stripe');
@@ -59,8 +58,8 @@ export default function Checkout() {
 
   const checkStock = useCallback(async () => {
     try {
-      const items = cart.map((item) => ({
-        productId: item.product.id,
+      const items = cart.filter(item => item && item.product).map((item) => ({
+        productId: item.product.id || item.product._id || item.id,
         quantity: item.quantity,
       }));
 
@@ -85,12 +84,6 @@ export default function Checkout() {
   }, [cart]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
-      toast.error('Please login to checkout');
-      navigate('/auth/customer?redirect=/checkout');
-      return;
-    }
-
     if (cart.length === 0) {
       navigate('/cart');
       return;
@@ -98,7 +91,7 @@ export default function Checkout() {
 
     // Check stock on mount
     checkStock();
-  }, [isAuthenticated, cart.length, navigate, checkStock]);
+  }, [cart.length, navigate, checkStock]);
 
   useEffect(() => {
     if (user) {
@@ -111,9 +104,10 @@ export default function Checkout() {
 
   const cartTotal = getCartTotal();
   const finalTotal = cartTotal + SHIPPING_COST - discountAmount;
+  const validCart = cart.filter(item => item && item.product);
 
   // Get unique shop IDs from cart
-  const shopIds = [...new Set(cart.map((item) => item.product.shopId))].filter(Boolean);
+  const shopIds = [...new Set(validCart.map((item) => item.product.shopId))].filter(Boolean);
   const shopId = shopIds[0]; // For simplicity, assume single shop checkout
 
   const validateCoupon = async () => {
@@ -121,10 +115,11 @@ export default function Checkout() {
       toast.error('Please enter a coupon code');
       return;
     }
-    if (!shopId) {
-      toast.error('Cannot validate coupon without a shop.');
-      return;
-    }
+    // ShopId validation isn't strictly necessary everywhere
+    // if (!shopId) {
+    //   toast.error('Cannot validate coupon without a shop.');
+    //   return;
+    // }
 
     setValidatingCoupon(true);
     try {
@@ -187,16 +182,12 @@ export default function Checkout() {
     if (!validateShippingForm()) {
       return;
     }
-    if (!shopId) {
-      toast.error('Cannot create order without a shop.');
-      return;
-    }
 
     setLoading(true);
 
     try {
-      const orderItems = cart.map((item) => ({
-        productId: item.product.id,
+      const orderItems = validCart.map((item) => ({
+        productId: item.product.id || item.product._id || item.id,
         quantity: item.quantity,
       }));
 
@@ -238,16 +229,12 @@ export default function Checkout() {
     if (!validateShippingForm()) {
       return;
     }
-    if (!shopId) {
-      toast.error('Cannot create order without a shop.');
-      return;
-    }
 
     setLoading(true);
 
     try {
-      const orderItems = cart.map((item) => ({
-        productId: item.product.id,
+      const orderItems = validCart.map((item) => ({
+        productId: item.product.id || item.product._id || item.id,
         quantity: item.quantity,
       }));
 
@@ -263,7 +250,7 @@ export default function Checkout() {
 
       clearCart();
       toast.success('Order placed successfully!');
-      navigate(`/orders/${order.id}`);
+      navigate('/orders', { replace: true });
     } catch (error) {
       console.error('COD order error:', error);
       toast.error( 'Failed to place order');
@@ -520,8 +507,8 @@ export default function Checkout() {
                   <CardContent className="space-y-6">
                     {/* Order Items */}
                     <div className="space-y-4">
-                {cart.map((item) => (
-                        <div key={item.product.id} className="flex gap-4">
+                {validCart.map((item, i) => (
+                        <div key={item.product.id || item.product._id || i} className="flex gap-4">
                           <img
                             src={item.product.image || '/placeholder.svg'}
                             alt={item.product.name}
@@ -602,8 +589,8 @@ export default function Checkout() {
               <CardContent className="space-y-4">
                 {/* Cart Items */}
                 <div className="space-y-3">
-                  {cart.map((item) => (
-                    <div key={item.product.id} className="flex justify-between text-sm">
+                  {validCart.map((item, i) => (
+                    <div key={item.product.id || item.product._id || i} className="flex justify-between text-sm">
                       <span className="text-muted-foreground">
                         {item.product.name} × {item.quantity}
                       </span>

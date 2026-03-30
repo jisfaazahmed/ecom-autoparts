@@ -61,20 +61,20 @@ const AdminDashboard: React.FC = () => {
     try {
       await api.createProduct({
         name: newProduct.name,
-        description: newProduct.description || null,
+        description: newProduct.description || undefined,
         price: parseFloat(newProduct.price),
         stock: parseInt(newProduct.stock) || 0,
-        sku: newProduct.sku || null,
+        sku: newProduct.sku || undefined,
         shopId: shop.id,
         isActive: true,
-        categoryId: newProduct.category_id || null,
+        categoryId: newProduct.category_id || undefined,
         compatibleVariants: newProduct.compatible_variants.length > 0 ? newProduct.compatible_variants : undefined,
-      });
+      } as any);
       toast({ title: 'Success', description: 'Product added successfully' });
       setAddProductOpen(false);
       setNewProduct({ name: '', description: '', price: '', stock: '', sku: '', category_id: '', compatible_variants: [] });
       fetchData();
-    } catch (error) {
+    } catch (error: any) {
       toast({ title: 'Error', description: error.message || 'Failed to add product', variant: 'destructive' });
     }
     setSaving(false);
@@ -89,13 +89,10 @@ const AdminDashboard: React.FC = () => {
       await api.updateOrderStatus(orderId, status);
       setOrders(orders.map(o => o.id === orderId ? { ...o, status } : o));
       toast({ title: 'Order Updated', description: `Order marked as ${status}` });
-    } catch (error) {
+    } catch (error: any) {
       toast({ title: 'Error', description: error.message || 'Failed to update order', variant: 'destructive' });
     }
   };
-
-  const parentCategories = categories.filter(c => !c.parentId);
-  const getSubcategories = (parentId: string) => categories.filter(c => c.parentId === parentId);
 
   const totalRevenue = orders.reduce((sum, o) => sum + o.totalAmount, 0);
   const avgOrderValue = orders.length ? totalRevenue / orders.length : 0;
@@ -106,6 +103,9 @@ const AdminDashboard: React.FC = () => {
     { label: 'Revenue', value: formatLKR(totalRevenue), icon: DollarSign, change: '+23%' },
     { label: 'Avg Order Value', value: formatLKR(avgOrderValue), icon: TrendingUp, change: '+5%' },
   ];
+
+  const parentCategories = categories.filter(c => !c.parentId);
+  const getSubcategories = (parentId: string) => categories.filter(c => c.parentId === parentId);
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = { pending: 'bg-warning/20 text-warning border-warning/30', processing: 'bg-primary/20 text-primary border-primary/30', shipped: 'bg-purple-500/20 text-purple-400 border-purple-500/30', delivered: 'bg-success/20 text-success border-success/30', cancelled: 'bg-destructive/20 text-destructive border-destructive/30' };

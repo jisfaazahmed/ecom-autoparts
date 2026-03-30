@@ -252,13 +252,14 @@ class ApiClient {
   private refreshToken: string | null = null;
 
   constructor() {
-    // Load tokens from localStorage
-    this.accessToken = localStorage.getItem('accessToken');
+    // Load tokens from localStorage (handling different keys based on auth)
+    this.accessToken = localStorage.getItem('auth_token') || localStorage.getItem('accessToken');
     this.refreshToken = localStorage.getItem('refreshToken');
   }
 
   getToken(): string | null {
-    return this.accessToken;
+    // Ensure we always return the latest token directly from storage
+    return localStorage.getItem('auth_token') || localStorage.getItem('accessToken');
   }
 
   private async request<T>(
@@ -270,8 +271,9 @@ class ApiClient {
       ...(options.headers as Record<string, string>),
     };
 
-    if (this.accessToken) {
-      headers['Authorization'] = `Bearer ${this.accessToken}`;
+    const token = this.getToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
     const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -280,19 +282,28 @@ class ApiClient {
     });
 
     // Handle 401 - try token refresh
-    if (response.status === 401 && this.refreshToken) {
-      const refreshed = await this.refreshAccessToken();
-      if (refreshed) {
-        headers['Authorization'] = `Bearer ${this.accessToken}`;
-        const retryResponse = await fetch(`${API_BASE}${endpoint}`, {
-          ...options,
-          headers,
-        });
-        if (!retryResponse.ok) {
-          throw new Error(await this.getErrorMessage(retryResponse));
+    if (response.status === 401) {
+      if (this.refreshToken) {
+        const refreshed = await this.refreshAccessToken();
+        if (refreshed) {
+          headers['Authorization'] = `Bearer ${this.accessToken}`;
+          const retryResponse = await fetch(`${API_BASE}${endpoint}`, {
+            ...options,
+            headers,
+          });
+          if (!retryResponse.ok) {
+            throw new Error(await this.getErrorMessage(retryResponse));
+          }
+          return retryResponse.json();
         }
-        return retryResponse.json();
       }
+      
+      // If no refresh token or refresh failed, clear tokens and redirect
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('user');
+      window.location.href = '/auth/customer?redirect=' + window.location.pathname;
+      throw new Error('Session expired, please login again.');
     }
 
     if (!response.ok) {
@@ -540,7 +551,6 @@ class ApiClient {
     page?: number;
     limit?: number;
     status?: string;
-    shopId?: string;
   }): Promise<PaginatedResponse<ApiOrder>> {
     const searchParams = new URLSearchParams();
     if (params) {
@@ -550,18 +560,23 @@ class ApiClient {
         }
       });
     }
+
+    // Backend route is /orders/my_orders and wraps data in { success, data: { orders, pagination } }
     const response = await this.request<{
-      orders: ApiOrder[];
-      pagination: { page: number; limit: number; total: number; totalPages: number };
-    }>(`/orders?${searchParams.toString()}`);
-    
-    // Transform backend response to match PaginatedResponse
+      success: boolean;
+      data: {
+        orders: ApiOrder[];
+        pagination: { page: number; limit: number; total: number; pages: number };
+      };
+    }>(`/orders/my_orders?${searchParams.toString()}`);
+    const payload = response.data || { orders: [], pagination: { page: 1, limit: 10, total: 0, pages: 1 } };
+
     return {
-      data: response.orders,
-      total: response.pagination.total,
-      page: response.pagination.page,
-      limit: response.pagination.limit,
-      totalPages: response.pagination.totalPages,
+      data: payload.orders,
+      total: payload.pagination.total,
+      page: payload.pagination.page,
+      limit: payload.pagination.limit,
+      totalPages: payload.pagination.pages,
     };
   }
 
@@ -592,7 +607,7 @@ class ApiClient {
     shippingAddress: string;
     shippingCity: string;
     shippingPostalCode: string;
-    shopId: string;
+    shopId?: string;
     couponCode?: string;
     notes?: string;
   }): Promise<ApiOrder> {

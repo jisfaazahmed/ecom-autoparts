@@ -5,10 +5,20 @@ interface CartItem {
   id: string;
   product: {
     id: string;
+    _id?: string;
     name: string;
     price: number;
     image: string;
     shopId?: string;
+    brand?: string;
+    sku?: string;
+    description?: string;
+    category?: string;
+    shopName?: string;
+    stock?: number;
+    compatibleVehicles?: any[];
+    rating?: number;
+    reviewCount?: number;
   };
   quantity: number;
 }

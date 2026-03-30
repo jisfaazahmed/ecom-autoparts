@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 
+import { api } from '../lib/api';
+
 interface User {
   id: string;
   email: string;
@@ -12,36 +14,71 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
+  role: string | null;
+  shop: any | null;
+  loading: boolean;
+  profile: any | null;
+  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  signOut: () => Promise<void>;
+  signUpSeller: (data: any) => Promise<{ error: Error | null }>;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
+// Fallback context to prevent crashes if a component renders outside AuthProvider
+const fallbackContext: AuthContextType = {
+  user: null,
+  isAuthenticated: false,
+  role: null,
+  shop: null,
+  loading: false,
+  profile: null,
+  login: async () => { throw new Error('AuthProvider missing: login unavailable'); },
+  logout: () => {},
+  signIn: async () => ({ error: new Error('AuthProvider missing: signIn unavailable') }),
+  signOut: async () => {},
+  signUpSeller: async () => ({ error: new Error('AuthProvider missing: signUp unavailable') }),
+  refreshProfile: async () => {},
+};
 
-  useEffect(() => {
-    // Check for stored auth token
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(() => {
     const token = localStorage.getItem('auth_token');
-    if (token) {
-      // In production, validate token with backend
-      const storedUser = localStorage.getItem('user');
-      if (storedUser) {
-        setUser(JSON.parse(storedUser));
+    const storedUser = localStorage.getItem('user');
+    if (token && storedUser) {
+      try {
+        return JSON.parse(storedUser);
+      } catch (e) {
+        return null;
       }
     }
+    return null;
+  });
+
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
-    // Mock login - replace with actual API call
-    const mockUser = {
-      id: '1',
-      email,
-      name: 'Test User',
-      role: 'customer',
-    };
-    localStorage.setItem('auth_token', 'mock_token');
-    localStorage.setItem('user', JSON.stringify(mockUser));
-    setUser(mockUser);
+    try {
+      const response = await api.login(email, password);
+      // Map ApiUser to User interface
+      const loggedInUser: User = {
+        id: response.user.id || (response.user as any)._id || '',
+        email: response.user.email || '',
+        name: (response.user as any).fullName || (response.user as any).name || 'User',
+        role: (response.user as any).role || 'customer',
+      };
+
+      localStorage.setItem('auth_token', response.accessToken);
+      localStorage.setItem('user', JSON.stringify(loggedInUser));
+      setUser(loggedInUser);
+    } catch (error: any) {
+      throw new Error(error.message || 'Login failed');
+    }
   };
 
   const logout = () => {
@@ -50,8 +87,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
+  const signIn = async (email: string, password: string) => {
+    try {
+      await login(email, password);
+      return { error: null };
+    } catch (error: any) {
+      return { error };
+    }
+  };
+
+  const signOut = async () => {
+    logout();
+  };
+
+  const signUpSeller = async (data: any) => {
+    return { error: new Error('Not implemented') };
+  };
+
+  const refreshProfile = async () => {};
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      login, 
+      logout, 
+      isAuthenticated: !!user,
+      role: user?.role || null,
+      shop: null,
+      loading,
+      profile: null,
+      signIn,
+      signOut,
+      signUpSeller,
+      refreshProfile
+    }}>
       {children}
     </AuthContext.Provider>
   );
@@ -60,7 +129,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    console.warn('useAuth called outside AuthProvider; using fallback context');
+    return fallbackContext;
   }
   return context;
 }

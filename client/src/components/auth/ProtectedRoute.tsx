@@ -41,7 +41,7 @@ const ProtectedRoute = ({
     }
   }
 
-  if (allowedRoles && role && !allowedRoles.includes(role)) {
+  if (allowedRoles && role && !allowedRoles.includes(role as any)) {
     return <Navigate to="/" replace />;
   }
 

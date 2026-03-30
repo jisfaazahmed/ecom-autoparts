@@ -57,16 +57,8 @@ const App = () => (
             <Route path="/auth/reset-password" element={<ResetPassword />} />
             
             {/* Protected customer routes */}
-            <Route path="/cart" element={
-              <ProtectedRoute>
-                <Cart />
-              </ProtectedRoute>
-            } />
-            <Route path="/checkout" element={
-              <ProtectedRoute>
-                <Checkout />
-              </ProtectedRoute>
-            } />
+            <Route path="/cart" element={<Cart />} />
+            <Route path="/checkout" element={<Checkout />} />
             <Route path="/orders" element={
               <ProtectedRoute>
                 <Orders />

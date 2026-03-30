@@ -86,7 +86,7 @@ const SuperAdminVehicles: React.FC = () => {
         toast({ title: editingItem ? 'Updated' : 'Created', description: `Model ${editingItem ? 'updated' : 'created'} successfully` });
       } else if (activeTab === 'variants') {
         if (!formData.modelId) { toast({ title: 'Error', description: 'Please select a model', variant: 'destructive' }); setSaving(false); return; }
-        const data = { name: formData.name, modelId: formData.modelId, yearStart: formData.yearStart, yearEnd: formData.yearEnd };
+        const data = { name: formData.name, modelId: formData.modelId, yearStart: formData.yearStart, yearEnd: formData.yearEnd || undefined };
         if (editingItem) {
           await api.updateVehicleVariant(editingItem.id, data);
         } else {

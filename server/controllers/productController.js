@@ -1,5 +1,55 @@
 const Product = require('../models/product');
 const Vehicle = require('../models/vehicle');
+const mongoose = require('mongoose');
+
+exports.checkStock = async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (!items || !Array.isArray(items)) {
+      return res.status(400).json({ message: 'Invalid items array' });
+    }
+
+    const results = [];
+    for (const item of items) {
+      if (!mongoose.Types.ObjectId.isValid(item.productId)) {
+        results.push({
+          productId: item.productId,
+          name: 'Unknown Product',
+          available: 0,
+          requested: item.quantity,
+          sufficient: false
+        });
+        continue;
+      }
+      
+      const product = await Product.findById(item.productId);
+      if (!product) {
+        results.push({
+          productId: item.productId,
+          name: 'Unknown Product',
+          available: 0,
+          requested: item.quantity,
+          sufficient: false
+        });
+        continue;
+      }
+      
+      const available = product.stock || 0;
+      results.push({
+        productId: product._id,
+        name: product.name,
+        available: available,
+        requested: item.quantity,
+        sufficient: available >= item.quantity
+      });
+    }
+
+    res.json(results);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Server Error');
+  }
+};
 
 // 1. CREATE MASTER PRODUCT (Super Admin Only)
 exports.createProduct = async (req, res) => {

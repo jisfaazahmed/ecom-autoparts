@@ -46,13 +46,13 @@ const SuperAdminCategories: React.FC = () => {
   const handleSave = async () => {
     if (!formData.name.trim()) { toast({ title: 'Error', description: 'Name is required', variant: 'destructive' }); return; }
     setSaving(true);
-    const data = { name: formData.name, description: formData.description || null, parentId: formData.parentId || null };
+    const data = { name: formData.name, description: formData.description || undefined, parentId: formData.parentId || null };
     try {
       if (editingItem) {
-        await api.updateCategory(editingItem.id, data);
+        await api.updateCategory(editingItem.id, data as any);
         toast({ title: 'Updated', description: 'Category updated successfully' });
       } else {
-        await api.createCategory(data);
+        await api.createCategory(data as any);
         toast({ title: 'Created', description: 'Category created successfully' });
       }
       setDialogOpen(false);

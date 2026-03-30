@@ -92,7 +92,7 @@ const AdminOrders: React.FC = () => {
     if (!selectedOrder) return;
     try {
       await api.updateOrderTracking(selectedOrder.id, trackingNumber);
-      setOrders(orders.map(o => o.id === selectedOrder.id ? { ...o, trackingNumber: trackingNumber || null } : o));
+      setOrders(orders.map(o => o.id === selectedOrder.id ? { ...o, trackingNumber: trackingNumber || undefined } : o));
       toast({ title: 'Saved', description: 'Order details updated' });
     } catch (error: any) {
       toast({ title: 'Error', description: error.message || 'Failed to update order', variant: 'destructive' });

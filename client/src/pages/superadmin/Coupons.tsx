@@ -115,22 +115,22 @@ const SuperAdminCoupons: React.FC = () => {
     setSaving(true);
     const couponData = {
       code: formData.code.toUpperCase(),
-      description: formData.description || null,
+      description: formData.description || undefined,
       discountType: formData.discountType as 'percentage' | 'fixed',
       discountValue: parseFloat(formData.discountValue),
-      minimumOrderAmount: formData.minimumOrderAmount ? parseFloat(formData.minimumOrderAmount) : 0,
-      maxUses: formData.maxUses ? parseInt(formData.maxUses) : null,
+      minimumOrderAmount: formData.minimumOrderAmount ? parseFloat(formData.minimumOrderAmount) : undefined,
+      maxUses: formData.maxUses ? parseInt(formData.maxUses) : undefined,
       validFrom: new Date(formData.validFrom).toISOString(),
-      validUntil: formData.validUntil ? new Date(formData.validUntil).toISOString() : null,
-      shopId: null,
+      validUntil: formData.validUntil ? new Date(formData.validUntil).toISOString() : undefined,
+      shopId: undefined,
     };
 
     try {
       if (editingCoupon) {
-        await api.updateCoupon(editingCoupon.id, couponData);
+        await api.updateCoupon(editingCoupon.id, couponData as any);
         toast({ title: 'Updated', description: 'Coupon updated successfully' });
       } else {
-        await api.createCoupon({ ...couponData, isActive: true });
+        await api.createCoupon({ ...couponData, isActive: true } as any);
         toast({ title: 'Created', description: 'Coupon created successfully' });
       }
       setDialogOpen(false);
@@ -262,7 +262,7 @@ const SuperAdminCoupons: React.FC = () => {
                       </div>
                     </TableCell>
                     <TableCell className="hidden lg:table-cell text-muted-foreground">
-                      {coupon.minimumOrderAmount > 0 ? formatLKR(coupon.minimumOrderAmount) : '-'}
+                      {(coupon.minimumOrderAmount ?? 0) > 0 ? formatLKR(coupon.minimumOrderAmount!) : '-'}
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       <span className={isMaxedOut(coupon) ? 'text-destructive' : ''}>

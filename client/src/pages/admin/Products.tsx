@@ -112,10 +112,10 @@ const AdminProducts: React.FC = () => {
 
     try {
       if (editingProduct) {
-        await api.updateProduct(editingProduct.id, productData);
+        await api.updateProduct(editingProduct.id, productData as any);
         toast({ title: 'Success', description: 'Product updated successfully' });
       } else {
-        await api.createProduct({ ...productData, shopId: shop.id, isActive: true });
+        await api.createProduct({ ...productData, shopId: shop.id, isActive: true } as any);
         toast({ title: 'Success', description: 'Product added successfully' });
       }
       setProductDialogOpen(false);

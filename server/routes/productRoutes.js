@@ -4,6 +4,7 @@ const productController = require('../controllers/productController');
 const { verifyToken, isSuperAdmin } = require('../middleware/authMiddleware');
 
 // Public: Search for parts (The User Flow)
+router.post('/check-stock', productController.checkStock);
 router.get('/', productController.getProducts);
 router.get('/featured', productController.getFeaturedProducts);
 router.get('/categories', productController.getCategories);
