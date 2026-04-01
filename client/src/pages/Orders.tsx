@@ -84,6 +84,47 @@ const Orders: React.FC = () => {
   const [totalOrders, setTotalOrders] = useState(0);
   const ordersPerPage = 10;
 
+  const parseShippingAddress = (shippingAddress: unknown) => {
+    if (!shippingAddress || typeof shippingAddress !== 'object') return null;
+    const address = shippingAddress as Record<string, unknown>;
+    const getString = (value: unknown) =>
+      typeof value === 'string' ? value.trim() : '';
+
+    return {
+      fullName: getString(address.fullName) || undefined,
+      phone: getString(address.phone) || undefined,
+      addressLine1: getString(address.addressLine1) || undefined,
+      city: getString(address.city) || undefined,
+      postalCode: getString(address.postalCode) || undefined,
+      country: getString(address.country) || undefined,
+      addressType: getString(address.addressType) || undefined,
+    };
+  };
+
+  const formatShippingAddress = (
+    shippingAddress: unknown,
+    shippingCity?: string,
+    shippingPostalCode?: string
+  ) => {
+    if (typeof shippingAddress === 'string') {
+      return [shippingAddress, shippingCity, shippingPostalCode]
+        .filter(Boolean)
+        .join(', ');
+    }
+
+    const parsed = parseShippingAddress(shippingAddress);
+    if (!parsed) return '';
+
+    return [
+      parsed.addressLine1,
+      parsed.city || shippingCity,
+      parsed.postalCode || shippingPostalCode,
+      parsed.country,
+    ]
+      .filter(Boolean)
+      .join(', ');
+  };
+
   useEffect(() => {
     fetchOrders();
   }, [user, statusFilter, currentPage]);
@@ -132,10 +173,10 @@ const Orders: React.FC = () => {
       
       // Refresh orders
       await fetchOrders();
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: 'Cancellation Failed',
-        description: error.message || 'Failed to cancel order. Please try again.',
+        description:  'Failed to cancel order. Please try again.',
         variant: 'destructive',
       });
       throw error;
@@ -154,10 +195,10 @@ const Orders: React.FC = () => {
       
       // Navigate to cart
       navigate('/cart');
-    } catch (error: any) {
+    } catch (error) {
       toast({
         title: 'Reorder Failed',
-        description: error.message || 'Failed to add items to cart. Please try again.',
+        description: 'Failed to add items to cart. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -172,10 +213,24 @@ const Orders: React.FC = () => {
   };
 
   const filteredOrders = orders.filter((order) => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    if (!normalizedQuery) return true;
+
+    const normalize = (value: unknown) => {
+      if (value === null || value === undefined) return '';
+      return String(value).toLowerCase();
+    };
+
     const matchesSearch =
-      order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.shippingAddress?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.trackingNumber?.toLowerCase().includes(searchQuery.toLowerCase());
+      normalize(order.id || order._id || order.orderNumber).includes(normalizedQuery) ||
+      normalize(
+        formatShippingAddress(
+          order.shippingAddress,
+          order.shippingCity,
+          order.shippingPostalCode
+        )
+      ).includes(normalizedQuery) ||
+      normalize(order.trackingNumber).includes(normalizedQuery);
 
     return matchesSearch;
   });
@@ -273,10 +328,16 @@ const Orders: React.FC = () => {
             <AnimatePresence mode="popLayout">
               {filteredOrders.map((order, index) => {
                 const status = statusConfig[order.status] || statusConfig.pending;
+                const orderId = order.id || order._id || order.orderNumber || '';
+                const shippingSummary = formatShippingAddress(
+                  order.shippingAddress,
+                  order.shippingCity,
+                  order.shippingPostalCode
+                );
 
                 return (
                   <motion.div
-                    key={order.id}
+                    key={orderId || `${order.customerId}-${order.createdAt}-${index}`}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -20 }}
@@ -288,7 +349,9 @@ const Orders: React.FC = () => {
                       <div>
                         <div className="flex items-center gap-3 mb-2">
                           <h3 className="font-semibold text-lg">
-                            Order #{order.id.slice(0, 8).toUpperCase()}
+                            {orderId
+                              ? `Order #${orderId.slice(0, 8).toUpperCase()}`
+                              : 'Order'}
                           </h3>
                           <Badge className={status.color}>
                             {status.icon}
@@ -338,8 +401,7 @@ const Orders: React.FC = () => {
                       <div className="flex items-start gap-2 mb-2">
                         <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
                         <p className="text-sm text-muted-foreground">
-                          {order.shippingAddress}
-                          {order.shippingCity && `, ${order.shippingCity}`}
+                          {shippingSummary || 'Shipping address unavailable'}
                         </p>
                       </div>
                       {order.trackingNumber && (
@@ -380,10 +442,10 @@ const Orders: React.FC = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleReorder(order.id)}
-                        disabled={reorderLoading === order.id}
+                        onClick={() => orderId && handleReorder(orderId)}
+                        disabled={!orderId || reorderLoading === orderId}
                       >
-                        {reorderLoading === order.id ? (
+                        {reorderLoading === orderId ? (
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                         ) : (
                           <RotateCcw className="h-4 w-4 mr-2" />
@@ -391,13 +453,13 @@ const Orders: React.FC = () => {
                         Reorder
                       </Button>
 
-                      {canCancelOrder(order) && (
+                      {orderId && canCancelOrder(order) && (
                         <Button
                           variant="outline"
                           size="sm"
                           className="text-red-500 hover:text-red-600"
                           onClick={() => {
-                            setOrderToCancel(order.id);
+                            setOrderToCancel(orderId);
                             setShowCancelDialog(true);
                           }}
                         >

@@ -550,6 +550,24 @@ class OrderService {
 
         return { order, timeline };
     }
+
+    // Notification methods (stubs for development)
+    sendOrderNotification(order, event) {
+        console.log(`Order notification: ${event} for order ${order.orderNumber}`);
+        // TODO: Implement actual notification sending (email, SMS, push)
+    }
+
+    sendOrderNotifications(order, event) {
+        console.log(`Order notifications: ${event} for order ${order.orderNumber}`);
+        // TODO: Implement actual notification sending to relevant parties
+    }
+
+    // Coupon methods (stubs for development)
+    async applyCoupon(couponCode, itemTotal) {
+        console.log(`Applying coupon ${couponCode} to total ${itemTotal}`);
+        // TODO: Implement actual coupon validation and discount calculation
+        return 0; // Return discount amount
+    }
 }
 
 module.exports = new OrderService();

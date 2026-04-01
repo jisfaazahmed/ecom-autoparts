@@ -258,7 +258,18 @@ export default function Checkout() {
 
       clearCart();
       toast.success('Order placed successfully!');
-      navigate('/orders', { replace: true });
+      
+      // Check if user is logged in
+      if (user) {
+        navigate('/orders', { replace: true });
+      } else {
+        // For guest users, redirect to login with success message
+        toast.info('Please log in to view your orders');
+        navigate('/auth/customer', { 
+          replace: true, 
+          state: { message: 'Order placed successfully! Please log in to view your order details.' }
+        });
+      }
     } catch (error) {
       console.error('COD order error:', error);
       toast.error( 'Failed to place order');

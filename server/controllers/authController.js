@@ -53,7 +53,7 @@ exports.login = async (req, res) => {
 
     const payload = { user: { id: user.id, role: user.role } };
 
-    jwt.sign(payload, 'secret123', { expiresIn: '1d' }, (err, token) => {
+    jwt.sign(payload, process.env.JWT_SECRET || 'secret123', { expiresIn: '1d' }, (err, token) => {
       if (err) throw err;
       // Client expects accessToken and user (role normalized to lowercase)
       const roleLower = (user.role || '').toLowerCase().replace('_', '');

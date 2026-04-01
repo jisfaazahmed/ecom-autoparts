@@ -48,13 +48,50 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({
   if (!order) return null;
 
   const status = statusConfig[order.status] || statusConfig.pending;
+  const orderId = order.id || order._id || order.orderNumber || '';
+
+  const parseShippingAddress = (shippingAddress: unknown) => {
+    if (!shippingAddress || typeof shippingAddress !== 'object') return null;
+    const address = shippingAddress as Record<string, unknown>;
+    const getString = (value: unknown) =>
+      typeof value === 'string' ? value.trim() : '';
+
+    return {
+      fullName: getString(address.fullName) || undefined,
+      phone: getString(address.phone) || undefined,
+      addressLine1: getString(address.addressLine1) || undefined,
+      city: getString(address.city) || undefined,
+      postalCode: getString(address.postalCode) || undefined,
+      country: getString(address.country) || undefined,
+      addressType: getString(address.addressType) || undefined,
+    };
+  };
+
+  const formatAddressLine = (...parts: Array<string | undefined>) =>
+    parts.filter(Boolean).join(', ');
+
+  const parsedAddress = parseShippingAddress(order.shippingAddress);
+  const contactName = parsedAddress?.fullName || order.customer?.fullName;
+  const contactPhone = parsedAddress?.phone || order.customer?.phone;
+  const addressLine =
+    parsedAddress?.addressLine1 ||
+    (typeof order.shippingAddress === 'string' ? order.shippingAddress : '');
+  const cityLine = formatAddressLine(
+    parsedAddress?.city || order.shippingCity,
+    parsedAddress?.postalCode || order.shippingPostalCode,
+    parsedAddress?.country
+  );
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between">
-            <span>Order #{order.id.slice(0, 8).toUpperCase()}</span>
+            <span>
+              {orderId
+                ? `Order #${orderId.slice(0, 8).toUpperCase()}`
+                : 'Order Details'}
+            </span>
             <Badge className={status.color}>{status.label}</Badge>
           </DialogTitle>
         </DialogHeader>
@@ -100,20 +137,17 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({
               <h3 className="font-semibold">Shipping Address</h3>
             </div>
             <div className="bg-muted/50 rounded-lg p-4 space-y-1">
-              <p className="font-medium">{order.customer?.fullName}</p>
-              {order.customer?.phone && (
+              {contactName && (
+                <p className="font-medium">{contactName}</p>
+              )}
+              {contactPhone && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Phone className="h-3 w-3" />
-                  <span>{order.customer.phone}</span>
+                  <span>{contactPhone}</span>
                 </div>
               )}
-              <p className="text-sm">{order.shippingAddress}</p>
-              {order.shippingCity && (
-                <p className="text-sm">
-                  {order.shippingCity}
-                  {order.shippingPostalCode && `, ${order.shippingPostalCode}`}
-                </p>
-              )}
+              {addressLine && <p className="text-sm">{addressLine}</p>}
+              {cityLine && <p className="text-sm">{cityLine}</p>}
             </div>
           </div>
 

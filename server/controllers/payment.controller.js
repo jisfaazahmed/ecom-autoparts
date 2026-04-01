@@ -48,8 +48,8 @@ exports.createCheckoutSession = async (req, res) => {
             payment_method_types: ['card'],
             line_items: lineItems,
             mode: 'payment',
-            success_url: `${process.env.CLIENT_URL || 'http://localhost:5173'}/payment-success?session_id={CHECKOUT_SESSION_ID}&order_id=${orderId}`,
-            cancel_url: `${process.env.CLIENT_URL || 'http://localhost:5173'}/payment-cancel?order_id=${orderId}`,
+          success_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/payment/success?session_id={CHECKOUT_SESSION_ID}&order_id=${orderId}`,
+          cancel_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/payment/cancel?order_id=${orderId}`,
             customer_email: req.user.email,
             metadata: {
                 orderId: orderId.toString(),
