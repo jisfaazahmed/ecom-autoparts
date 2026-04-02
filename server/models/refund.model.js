@@ -459,7 +459,6 @@ refundSchema.pre('save', async function (next) {
 
 
 // Indexes
-refundSchema.index({ requestNumber: 1 });
 refundSchema.index({ order: 1 });
 refundSchema.index({ customer: 1, status: 1 });
 refundSchema.index({ vendor: 1, status: 1 });

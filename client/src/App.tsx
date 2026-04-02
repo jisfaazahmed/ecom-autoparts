@@ -4,7 +4,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
-import { AuthProvider } from "@/hooks/useAuth";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import Index from "./pages/Index";
 import Shop from "./pages/Shop";
@@ -18,6 +17,7 @@ import PaymentCancel from "./pages/PaymentCancel";
 import Orders from "./pages/Orders";
 import MyVehicle from "./pages/MyVehicle";
 import Profile from "./pages/Profile";
+import TrackOrder from "./pages/TrackOrder";
 import CustomerAuth from "./pages/auth/CustomerAuth";
 import SellerAuth from "./pages/auth/SellerAuth";
 import AdminAuth from "./pages/auth/AdminAuth";
@@ -39,11 +39,10 @@ const queryClient = new QueryClient();
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
           <Routes>
             {/* Public routes */}
             <Route path="/" element={<Index />} />
@@ -84,6 +83,7 @@ const App = () => (
                 <PaymentCancel />
               </ProtectedRoute>
             } />
+            <Route path="/track-order" element={<TrackOrder />} />
             
             {/* Admin routes */}
             <Route path="/admin" element={
@@ -143,7 +143,6 @@ const App = () => (
           </Routes>
         </BrowserRouter>
       </TooltipProvider>
-    </AuthProvider>
     </ThemeProvider>
   </QueryClientProvider>
 );

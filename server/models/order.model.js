@@ -191,7 +191,6 @@ orderSchema.pre('validate', async function (next) {
     }
 });
 
-orderSchema.index({orderNumber : 1});
 orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ 'items.vendor': 1, createdAt: -1 });
 orderSchema.index({ overallStatus: 1 });

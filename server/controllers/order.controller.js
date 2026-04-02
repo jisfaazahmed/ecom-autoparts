@@ -1,6 +1,8 @@
 const order = require('../models/order.model');
 const orderService = require('../services/order.service');
 const OrderTimeLine = require('../models/timeline.model');
+const Shipping = require('../models/shipping.model');
+const OrderItem = require('../models/orderItem.model');
 
 //new order
 module.exports.createOrder = async (req, res) => {
@@ -167,23 +169,51 @@ module.exports.getVendorOrders = async (req, res) => {
 
     try {
         const { status, page = 1, limit = 10 } = req.query;
+        const vendorId = req.user?._id || req.user?.id;
+        if (!vendorId) {
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized access'
+            });
+        }
 
-        const query = { 'items.vendor': req.user._id };
-        if (status) query['items.status'] = status;
+        const itemQuery = { vendor: vendorId };
+        if (status) itemQuery.status = status;
+
+        const itemIds = await OrderItem.find(itemQuery).distinct('_id');
+        if (itemIds.length === 0) {
+            return res.json({
+                success: true,
+                data: {
+                    orders: [],
+                    pagination: {
+                        page: parseInt(page),
+                        limit: parseInt(limit),
+                        total: 0,
+                        pages: 0
+                    }
+                }
+            });
+        }
+
+        const query = { items: { $in: itemIds } };
 
         const orders = await order.find(query)
             .sort({ createdAt: -1 })
             .limit(limit * 1)
             .skip((page - 1) * limit)
-            .populate('user', 'name email phone');
+            .populate('user', 'name email phone')
+            .populate({
+                path: 'items',
+                populate: { path: 'product', select: 'name images' }
+            });
 
-        // Filter items for this vendor only
-        const vendorOrders = orders.map(order => {
-            const vendorItems = order.items.filter(
-                item => item.vendor.toString() === req.user._id.toString()
+        const vendorOrders = orders.map(orderDoc => {
+            const vendorItems = (orderDoc.items || []).filter(
+                item => item.vendor && item.vendor.toString() === vendorId.toString()
             );
             return {
-                ...order.toObject(),
+                ...orderDoc.toObject(),
                 items: vendorItems
             };
         });
@@ -207,7 +237,7 @@ module.exports.getVendorOrders = async (req, res) => {
         res.status(400).json(
             {
                 success: false,
-                message: error
+                message: error.message || error
             }
         )
     }
@@ -216,9 +246,19 @@ module.exports.getVendorOrders = async (req, res) => {
 //Track the order
 module.exports.trackOrder = async (req, res) => {
     try {
-        const trackedOrder = await order.findOne({ trackingNumber: req.params.trackingNumber })
+        const { trackingNumber } = req.params;
+
+        const shipment = await Shipping.findOne({ trackingNumber })
+            .select('order trackingNumber');
+
+        if (!shipment) {
+            return res.status(404).json({ message: 'Order not found' });
+        }
+
+        const trackedOrder = await order.findById(shipment.order)
             .populate('items.product')
             .select('orderNumber overallStatus items shippingAddress estimatedDeliveryDate');
+
         if (!trackedOrder) {
             return res.status(404).json({ message: 'Order not found' });
         }
@@ -227,8 +267,10 @@ module.exports.trackOrder = async (req, res) => {
             .sort({ createdAt: -1 })
             .select('event title description createdAt');
 
+        const orderPayload = trackedOrder.toObject();
+        orderPayload.trackingNumber = orderPayload.trackingNumber || shipment.trackingNumber;
 
-        res.status(200).json({ order: trackedOrder, timeline });
+        res.status(200).json({ order: orderPayload, timeline });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

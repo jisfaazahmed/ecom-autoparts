@@ -292,7 +292,6 @@ shippingSchema.pre('save', async function (next) {
     next();
 });
 
-shippingSchema.index({ trackingNumber: 1 });
 shippingSchema.index({ order: 1 });
 shippingSchema.index({ status: 1 });
 shippingSchema.index({ 'courierPartner.name': 1 });

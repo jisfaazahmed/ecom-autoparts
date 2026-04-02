@@ -120,6 +120,7 @@ export interface ApiOrder {
   shippingCity?: string;
   shippingPostalCode?: string;
   trackingNumber?: string;
+  estimatedDeliveryDate?: string;
   notes?: string;
   stripePaymentId?: string;
   stripeSessionId?: string;
@@ -143,6 +144,8 @@ export interface ApiOrderItem {
   unitPrice: number;
   totalPrice: number;
   product?: ApiProduct;
+  status?: string;
+  vendor?: string;
 }
 
 export interface ApiCartItem {
@@ -645,6 +648,39 @@ class ApiClient {
     };
   }
 
+  async getVendorOrders(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<PaginatedResponse<ApiOrder>> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const response = await this.request<{
+      success: boolean;
+      data: {
+        orders: ApiOrder[];
+        pagination: { page: number; limit: number; total: number; pages: number };
+      };
+    }>(`/orders/vendor/orders?${searchParams.toString()}`);
+
+    const payload = response.data || { orders: [], pagination: { page: 1, limit: 10, total: 0, pages: 1 } };
+
+    return {
+      data: payload.orders,
+      total: payload.pagination.total,
+      page: payload.pagination.page,
+      limit: payload.pagination.limit,
+      totalPages: payload.pagination.pages,
+    };
+  }
+
   async getMyOrders(params?: {
     page?: number;
     limit?: number;
@@ -690,6 +726,13 @@ class ApiClient {
     return this.request<ApiOrder>(`/orders/${id}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status, trackingNumber }),
+    });
+  }
+
+  async updateOrderItemStatus(orderId: string, itemId: string, status: string, note?: string): Promise<ApiOrder> {
+    return this.request<ApiOrder>(`/orders/${orderId}/item-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ id: itemId, status, note }),
     });
   }
 

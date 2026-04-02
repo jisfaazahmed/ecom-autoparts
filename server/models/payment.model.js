@@ -193,7 +193,6 @@ paymentSchema.index({ order: 1 });
 paymentSchema.index({ transactionId: 1 });
 paymentSchema.index({ status: 1 });
 paymentSchema.index({paymentMethod : 1});
-paymentSchema.index({ paymentNumber: 1 });
 paymentSchema.index({ user: 1, createdAt: -1 });
 
 

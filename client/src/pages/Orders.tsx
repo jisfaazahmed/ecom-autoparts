@@ -57,12 +57,35 @@ const statusConfig: Record<string, { icon: React.ReactNode; color: string; label
     color: 'bg-green-500/20 text-green-500 border-green-500/30',
     label: 'Delivered',
   },
+  confirmed: {
+    icon: <CheckCircle className="h-4 w-4" />,
+    color: 'bg-emerald-500/20 text-emerald-500 border-emerald-500/30',
+    label: 'Confirmed',
+  },
+  partially_shipped: {
+    icon: <Truck className="h-4 w-4" />,
+    color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
+    label: 'Partially Shipped',
+  },
+  partially_delivered: {
+    icon: <Truck className="h-4 w-4" />,
+    color: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
+    label: 'Partially Delivered',
+  },
+  refunded: {
+    icon: <XCircle className="h-4 w-4" />,
+    color: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+    label: 'Refunded',
+  },
   cancelled: {
     icon: <XCircle className="h-4 w-4" />,
     color: 'bg-red-500/20 text-red-500 border-red-500/30',
     label: 'Cancelled',
   },
 };
+
+const getOrderStatus = (order: ApiOrder) =>
+  order.overallStatus || order.status || 'pending';
 
 const Orders: React.FC = () => {
   const { user } = useAuth();
@@ -236,7 +259,8 @@ const Orders: React.FC = () => {
   });
 
   const canCancelOrder = (order: ApiOrder) => {
-    return order.status === 'pending' || order.status === 'processing';
+    const status = getOrderStatus(order);
+    return status === 'pending' || status === 'processing' || status === 'confirmed';
   };
 
   if (loading && currentPage === 1) {
@@ -327,7 +351,8 @@ const Orders: React.FC = () => {
           <div className="space-y-4">
             <AnimatePresence mode="popLayout">
               {filteredOrders.map((order, index) => {
-                const status = statusConfig[order.status] || statusConfig.pending;
+                const displayStatus = getOrderStatus(order);
+                const status = statusConfig[displayStatus] || statusConfig.pending;
                 const orderId = order.id || order._id || order.orderNumber || '';
                 const shippingSummary = formatShippingAddress(
                   order.shippingAddress,
@@ -380,8 +405,11 @@ const Orders: React.FC = () => {
                     {/* Order Items Preview */}
                     <div className="border-t border-border/50 pt-4 mt-4">
                       <div className="space-y-2">
-                        {(order.items || []).slice(0, 2).map((item) => (
-                          <div key={item.id} className="flex justify-between text-sm">
+                        {(order.items || []).slice(0, 2).map((item, itemIndex) => (
+                          <div
+                            key={item.id || item.productId || item.product?._id || `${orderId}-item-${itemIndex}`}
+                            className="flex justify-between text-sm"
+                          >
                             <span className="text-muted-foreground">
                               {item.productName} × {item.quantity}
                             </span>

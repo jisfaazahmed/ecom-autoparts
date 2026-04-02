@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils';
 import {
   Sheet,
   SheetContent,
+  SheetHeader,
+  SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
 
@@ -158,6 +160,9 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="p-0 w-64 bg-card">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Admin Navigation</SheetTitle>
+              </SheetHeader>
               <SidebarContent isMobile />
             </SheetContent>
           </Sheet>

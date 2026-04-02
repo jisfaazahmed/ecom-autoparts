@@ -98,7 +98,7 @@ module.exports.confirmDelivery = async (req, res) => {
     }
 }
 
-module.exports.trackShipment = async (res, req) => {
+module.exports.trackShipment = async (req, res) => {
     try {
         const tracking = await shippingService.trackShipment(
             req.params.trackingNumber
