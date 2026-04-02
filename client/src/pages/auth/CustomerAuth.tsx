@@ -27,7 +27,7 @@ const signupSchema = z.object({
 const CustomerAuth: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-    const { login: signIn, signUp, user, logout: signOut } = useAuth();
+    const { signIn, signUp, user, logout: signOut } = useAuth();
   
   const role = user?.role;
   const { toast } = useToast();
@@ -76,22 +76,22 @@ const CustomerAuth: React.FC = () => {
     }
 
     setLoading(true);
-    // Fix: signIn returns void/Promise<void>, not { error }
-    try {
-      await signIn(loginForm.email, loginForm.password);
-       // The useAuth hook will update the role, check it after sign in
-      // This is handled by the useEffect above after state updates
-      const from = (location.state)?.from?.pathname || '/shop';
-      navigate(from);
-    } catch (err) {
-      console.error(err);
+    const { error } = await signIn(loginForm.email, loginForm.password);
+    if (error) {
+      console.error(error);
       toast({
         title: "Login Failed",
-        description: "Invalid credentials",
+        description: error.message || "Invalid credentials",
         variant: "destructive"
       });
+      setLoading(false);
+      return;
     }
 
+    // The useAuth hook will update the role, check it after sign in
+    // This is handled by the useEffect above after state updates
+    const from = (location.state)?.from?.pathname || '/shop';
+    navigate(from);
     setLoading(false);
   };
 

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
 
 import { api } from '../lib/api';
 
@@ -7,6 +7,10 @@ interface User {
   email: string;
   name: string;
   role: string;
+  status?: string;
+  shopName?: string;
+  commissionRate?: number;
+  createdAt?: string;
 }
 
 interface AuthContextType {
@@ -44,6 +48,39 @@ const defaultAuthContext: AuthContextType = {
 
 const AuthContext = createContext<AuthContextType>(defaultAuthContext);
 
+const mapStatusToShopStatus = (status?: string) => {
+  const normalized = String(status || '').toUpperCase();
+  switch (normalized) {
+    case 'ACTIVE':
+      return 'approved';
+    case 'REJECTED':
+      return 'rejected';
+    case 'SUSPENDED':
+      return 'suspended';
+    case 'PENDING':
+    default:
+      return 'pending';
+  }
+};
+
+const buildShopFromUser = (authUser: User | null) => {
+  if (!authUser || authUser.role !== 'admin') return null;
+  const status = mapStatusToShopStatus(authUser.status);
+  const createdAt = authUser.createdAt;
+
+  return {
+    id: authUser.id,
+    name: authUser.shopName || authUser.name || 'Shop',
+    ownerId: authUser.id,
+    status,
+    email: authUser.email,
+    commissionRate: authUser.commissionRate ?? 10,
+    commission_rate: authUser.commissionRate ?? 10,
+    createdAt,
+    created_at: createdAt,
+  };
+};
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
     const token = localStorage.getItem('auth_token') || localStorage.getItem('accessToken');
@@ -65,6 +102,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     email: apiUser?.email || '',
     name: apiUser?.fullName || apiUser?.name || 'User',
     role: (apiUser?.role || apiUser?.userRoles?.[0]?.role || 'customer').toString().toLowerCase(),
+    status: apiUser?.status,
+    shopName: apiUser?.shopName,
+    commissionRate: apiUser?.commissionRate,
+    createdAt: apiUser?.createdAt,
   });
 
   const setSession = (authResponse: any) => {
@@ -83,18 +124,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (user) {
-        setLoading(false);
-        return;
-      }
-
       try {
         const current = await api.getCurrentUser();
         if (current) {
           const mapped = mapUser(current);
-          localStorage.setItem('user', JSON.stringify(mapped));
-          localStorage.setItem('auth_token', token);
-          setUser(mapped);
+          const shouldUpdate = !user
+            || mapped.id !== user.id
+            || mapped.role !== user.role
+            || mapped.status !== user.status
+            || mapped.shopName !== user.shopName
+            || mapped.commissionRate !== user.commissionRate;
+
+          if (shouldUpdate) {
+            localStorage.setItem('user', JSON.stringify(mapped));
+            localStorage.setItem('auth_token', token);
+            setUser(mapped);
+          }
         }
       } catch (e) {
         console.warn('Failed to hydrate user, clearing session');
@@ -107,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     bootstrap();
-  }, [user]);
+  }, []);
 
   const login = async (email: string, password: string) => {
     try {
@@ -153,10 +198,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signUpSeller = async (data: any) => {
-    return { error: new Error('Not implemented') };
+    try {
+      const response = await api.registerSeller(data);
+      setSession(response);
+      return { error: null };
+    } catch (error: any) {
+      return { error };
+    }
   };
 
-  const refreshProfile = async () => {};
+  const refreshProfile = async () => {
+    try {
+      const current = await api.getCurrentUser();
+      if (current) {
+        const mapped = mapUser(current);
+        localStorage.setItem('user', JSON.stringify(mapped));
+        setUser(mapped);
+      }
+    } catch (error) {
+      console.warn('Failed to refresh profile', error);
+    }
+  };
+
+  const shop = useMemo(() => buildShopFromUser(user), [user]);
 
   return (
     <AuthContext.Provider value={{ 
@@ -165,7 +229,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout, 
       isAuthenticated: !!user,
       role: user?.role || null,
-      shop: null,
+      shop,
       loading,
       profile: null,
       signUp,

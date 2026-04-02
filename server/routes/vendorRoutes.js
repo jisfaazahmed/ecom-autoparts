@@ -8,5 +8,6 @@ router.use(verifyToken, isSuperAdmin);
 
 router.get('/', vendorController.getAllVendors);
 router.patch('/:id/status', vendorController.updateVendorStatus);
+router.patch('/:id/commission', vendorController.updateVendorCommission);
 
 module.exports = router;

@@ -4,10 +4,16 @@ const jwt = require('jsonwebtoken');
 
 exports.register = async (req, res) => {
   try {
-    const { name, email, password, role, shopName } = req.body;
+    const { name, fullName, email, password, role, shopName } = req.body;
+    const displayName = name || fullName;
+    const normalizedRole = role || 'CUSTOMER';
 
-    if (role === 'SUPER_ADMIN') {
+    if (normalizedRole === 'SUPER_ADMIN') {
       return res.status(403).json({ message: 'Cannot register as Super Admin.' });
+    }
+
+    if (!displayName || !email || !password) {
+      return res.status(400).json({ message: 'Name, email, and password are required' });
     }
 
     let user = await User.findOne({ email });
@@ -17,19 +23,37 @@ exports.register = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     user = new User({
-      name,
+      name: displayName,
       email,
       password: hashedPassword,
-      role,
-      shopName: role === 'ADMIN' ? shopName : undefined
+      role: normalizedRole,
+      shopName: normalizedRole === 'ADMIN' ? shopName : undefined,
     });
 
     await user.save();
 
-    res.status(201).json({ 
-      message: role === 'ADMIN' 
-        ? 'Registration successful! Wait for Super Admin approval.' 
-        : 'Registration successful!' 
+    const payload = { user: { id: user.id, role: user.role } };
+    jwt.sign(payload, process.env.JWT_SECRET || 'secret123', { expiresIn: '1d' }, (err, token) => {
+      if (err) throw err;
+      const roleLower = (user.role || '').toLowerCase().replace('_', '');
+      const mappedRole = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
+      res.status(201).json({
+        message: normalizedRole === 'ADMIN'
+          ? 'Registration successful! Wait for Super Admin approval.'
+          : 'Registration successful!',
+        accessToken: token,
+        refreshToken: token,
+        user: {
+          id: user.id,
+          email: user.email,
+          fullName: user.name,
+          role: mappedRole,
+          status: user.status,
+          shopName: user.shopName,
+          commissionRate: user.commissionRate,
+          createdAt: user.createdAt,
+        },
+      });
     });
   } catch (err) {
     console.error(err);
@@ -65,6 +89,10 @@ exports.login = async (req, res) => {
           email: user.email,
           fullName: user.name,
           role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer',
+          status: user.status,
+          shopName: user.shopName,
+          commissionRate: user.commissionRate,
+          createdAt: user.createdAt,
         },
       });
     });
@@ -85,6 +113,10 @@ exports.getMe = async (req, res) => {
       email: user.email,
       fullName: user.name,
       role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer',
+      status: user.status,
+      shopName: user.shopName,
+      commissionRate: user.commissionRate,
+      createdAt: user.createdAt,
       userRoles: [{ role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer' }],
     });
   } catch (err) {

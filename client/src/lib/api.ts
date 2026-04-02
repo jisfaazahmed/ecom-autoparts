@@ -28,6 +28,9 @@ export interface ApiUser {
   email: string;
   fullName: string;
   role: 'customer' | 'admin' | 'superadmin';
+  status?: string;
+  shopName?: string;
+  commissionRate?: number;
   avatarUrl?: string;
   phone?: string;
   address?: string;
@@ -262,6 +265,57 @@ class ApiClient {
     return localStorage.getItem('auth_token') || localStorage.getItem('accessToken');
   }
 
+  private mapVendorStatusToShopStatus(status?: string): ApiShop['status'] {
+    const normalized = String(status || '').toUpperCase();
+    switch (normalized) {
+      case 'ACTIVE':
+        return 'approved';
+      case 'REJECTED':
+        return 'rejected';
+      case 'SUSPENDED':
+        return 'suspended';
+      case 'PENDING':
+      default:
+        return 'pending';
+    }
+  }
+
+  private mapShopStatusToVendorStatus(status?: string): string | undefined {
+    switch (status) {
+      case 'approved':
+      case 'active':
+        return 'ACTIVE';
+      case 'rejected':
+        return 'REJECTED';
+      case 'suspended':
+        return 'SUSPENDED';
+      case 'pending':
+        return 'PENDING';
+      default:
+        return undefined;
+    }
+  }
+
+  private mapVendorToShop(vendor: any): ApiShop {
+    const id = vendor?.id || vendor?._id || '';
+    const createdAt = vendor?.createdAt || vendor?.created_at || new Date().toISOString();
+    return {
+      id,
+      name: vendor?.shopName || vendor?.name || 'Unnamed Shop',
+      description: vendor?.description ?? null,
+      logoUrl: vendor?.logoUrl ?? undefined,
+      ownerId: vendor?.ownerId || vendor?._id || vendor?.id || '',
+      status: this.mapVendorStatusToShopStatus(vendor?.status),
+      email: vendor?.email ?? undefined,
+      phone: vendor?.phone ?? undefined,
+      address: vendor?.address ?? undefined,
+      businessRegistration: vendor?.businessRegistration || vendor?.businessRegistrationNumber || undefined,
+      commissionRate: vendor?.commissionRate ?? 10,
+      createdAt,
+      updatedAt: vendor?.updatedAt || vendor?.updated_at || createdAt,
+    };
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -385,7 +439,12 @@ class ApiClient {
   }): Promise<AuthResponse> {
     const response = await this.request<AuthResponse>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        name: data.fullName,
+        email: data.email,
+        password: data.password,
+        role: 'CUSTOMER',
+      }),
     });
     this.setTokens(response.accessToken, response.refreshToken);
     return response;
@@ -400,9 +459,15 @@ class ApiClient {
     shopDescription?: string;
     businessRegistration?: string;
   }): Promise<AuthResponse> {
-    const response = await this.request<AuthResponse>('/auth/register/seller', {
+    const response = await this.request<AuthResponse>('/auth/register', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        name: data.fullName,
+        email: data.email,
+        password: data.password,
+        role: 'ADMIN',
+        shopName: data.shopName,
+      }),
     });
     this.setTokens(response.accessToken, response.refreshToken);
     return response;
@@ -711,22 +776,24 @@ class ApiClient {
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         if (value !== undefined) {
-          searchParams.set(key, String(value));
+          if (key === 'status') {
+            const mappedStatus = this.mapShopStatusToVendorStatus(String(value));
+            if (mappedStatus) searchParams.set('status', mappedStatus);
+          } else {
+            searchParams.set(key, String(value));
+          }
         }
       });
     }
-    const response = await this.request<{
-      shops: ApiShop[];
-      pagination: { page: number; limit: number; total: number; totalPages: number };
-    }>(`/shops?${searchParams.toString()}`);
-    
-    // Transform backend response to match PaginatedResponse
+    const response = await this.request<any>(`/vendors?${searchParams.toString()}`);
+    const vendors = Array.isArray(response) ? response : response?.vendors || response?.data || [];
+    const shops = vendors.map((vendor: any) => this.mapVendorToShop(vendor));
     return {
-      data: response.shops,
-      total: response.pagination.total,
-      page: response.pagination.page,
-      limit: response.pagination.limit,
-      totalPages: response.pagination.totalPages,
+      data: shops,
+      total: shops.length,
+      page: 1,
+      limit: shops.length,
+      totalPages: 1,
     };
   }
 
@@ -739,21 +806,24 @@ class ApiClient {
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         if (value !== undefined) {
-          searchParams.set(key, String(value));
+          if (key === 'status') {
+            const mappedStatus = this.mapShopStatusToVendorStatus(String(value));
+            if (mappedStatus) searchParams.set('status', mappedStatus);
+          } else {
+            searchParams.set(key, String(value));
+          }
         }
       });
     }
-    const response = await this.request<{
-      shops: ApiShop[];
-      pagination: { page: number; limit: number; total: number; totalPages: number };
-    }>(`/shops/all?${searchParams.toString()}`);
-    
+    const response = await this.request<any>(`/vendors?${searchParams.toString()}`);
+    const vendors = Array.isArray(response) ? response : response?.vendors || response?.data || [];
+    const shops = vendors.map((vendor: any) => this.mapVendorToShop(vendor));
     return {
-      data: response.shops,
-      total: response.pagination.total,
-      page: response.pagination.page,
-      limit: response.pagination.limit,
-      totalPages: response.pagination.totalPages,
+      data: shops,
+      total: shops.length,
+      page: 1,
+      limit: shops.length,
+      totalPages: 1,
     };
   }
 
@@ -780,17 +850,50 @@ class ApiClient {
   }
 
   async updateShopStatus(id: string, status: string): Promise<ApiShop> {
-    return this.request<ApiShop>(`/shops/${id}/status`, {
-      method: 'PUT',
-      body: JSON.stringify({ status }),
+    const vendorStatus = this.mapShopStatusToVendorStatus(status) || status;
+    const response = await this.request<{ vendor?: any }>(`/vendors/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: vendorStatus }),
     });
+    if (response?.vendor) return this.mapVendorToShop(response.vendor);
+    return {
+      id,
+      name: 'Unnamed Shop',
+      description: null,
+      ownerId: id,
+      status: this.mapVendorStatusToShopStatus(vendorStatus),
+      email: undefined,
+      phone: undefined,
+      address: undefined,
+      businessRegistration: undefined,
+      logoUrl: undefined,
+      commissionRate: 10,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   async updateShopCommission(id: string, commissionRate: number): Promise<ApiShop> {
-    return this.request<ApiShop>(`/shops/${id}/commission`, {
-      method: 'PUT',
+    const response = await this.request<{ vendor?: any }>(`/vendors/${id}/commission`, {
+      method: 'PATCH',
       body: JSON.stringify({ commissionRate }),
     });
+    if (response?.vendor) return this.mapVendorToShop(response.vendor);
+    return {
+      id,
+      name: 'Unnamed Shop',
+      description: null,
+      ownerId: id,
+      status: 'approved',
+      email: undefined,
+      phone: undefined,
+      address: undefined,
+      businessRegistration: undefined,
+      logoUrl: undefined,
+      commissionRate,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   async getShopOwnerProfile(userId: string): Promise<Profile | null> {
