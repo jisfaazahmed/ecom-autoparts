@@ -8,6 +8,7 @@ router.get('/my_orders', verifyToken, orderController.getAllOrders);
 
 //vendor
 router.get('/vendor/orders', verifyToken, orderController.getVendorOrders);
+router.get('/seller/orders', verifyToken, orderController.getVendorOrders);
 router.patch('/:id/item-status', verifyToken, orderController.updateOrderStatus);
 
 //track

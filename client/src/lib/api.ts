@@ -137,6 +137,7 @@ export interface ApiOrder {
 
 export interface ApiOrderItem {
   id: string;
+  _id?: string;
   orderId: string;
   productId: string;
   productName: string;
@@ -316,6 +317,32 @@ class ApiClient {
       commissionRate: vendor?.commissionRate ?? 10,
       createdAt,
       updatedAt: vendor?.updatedAt || vendor?.updated_at || createdAt,
+    };
+  }
+
+  private normalizeOrderItem(item: any): ApiOrderItem {
+    return {
+      ...item,
+      id: item?.id || item?._id || '',
+      _id: item?._id,
+      orderId: item?.orderId || item?.order || '',
+      productId: item?.productId || item?.product?._id || item?.product || '',
+      productName: item?.productName || item?.name || item?.product?.name || '',
+      unitPrice: item?.unitPrice ?? item?.price ?? 0,
+      totalPrice: item?.totalPrice ?? item?.finalPrice ?? ((item?.price || 0) * (item?.quantity || 0)),
+    };
+  }
+
+  private normalizeOrder(order: any): ApiOrder {
+    const items = Array.isArray(order?.items)
+      ? order.items.map((item: any) => this.normalizeOrderItem(item))
+      : undefined;
+
+    return {
+      ...order,
+      id: order?.id || order?._id || '',
+      _id: order?._id,
+      items,
     };
   }
 
@@ -640,7 +667,7 @@ class ApiClient {
     const payload = response.data || { orders: [], pagination: { page: 1, limit: 10, total: 0, pages: 1 } };
 
     return {
-      data: payload.orders,
+      data: (payload.orders || []).map((order) => this.normalizeOrder(order)),
       total: payload.pagination.total,
       page: payload.pagination.page,
       limit: payload.pagination.limit,
@@ -668,12 +695,12 @@ class ApiClient {
         orders: ApiOrder[];
         pagination: { page: number; limit: number; total: number; pages: number };
       };
-    }>(`/orders/vendor/orders?${searchParams.toString()}`);
+    }>(`/orders/seller/orders?${searchParams.toString()}`);
 
     const payload = response.data || { orders: [], pagination: { page: 1, limit: 10, total: 0, pages: 1 } };
 
     return {
-      data: payload.orders,
+      data: (payload.orders || []).map((order) => this.normalizeOrder(order)),
       total: payload.pagination.total,
       page: payload.pagination.page,
       limit: payload.pagination.limit,
@@ -700,7 +727,9 @@ class ApiClient {
   }
 
   async getOrder(id: string): Promise<ApiOrder> {
-    return this.request<ApiOrder>(`/orders/${id}`);
+    const response = await this.request<any>(`/orders/${id}`);
+    const rawOrder = response?.order || response;
+    return this.normalizeOrder(rawOrder);
   }
 
   async createOrder(data: {
@@ -902,7 +931,7 @@ class ApiClient {
     return {
       id,
       name: 'Unnamed Shop',
-      description: null,
+      description: undefined,
       ownerId: id,
       status: this.mapVendorStatusToShopStatus(vendorStatus),
       email: undefined,
@@ -925,7 +954,7 @@ class ApiClient {
     return {
       id,
       name: 'Unnamed Shop',
-      description: null,
+      description: undefined,
       ownerId: id,
       status: 'approved',
       email: undefined,

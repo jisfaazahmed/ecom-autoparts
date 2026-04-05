@@ -86,7 +86,7 @@ module.exports.updateOrderStatus = async (req, res) => {
             req.params.id,
             id,
             status,
-            req.user._id,
+            req.user?._id || req.user?.id,
             note
         )
 
@@ -212,9 +212,14 @@ module.exports.getVendorOrders = async (req, res) => {
             const vendorItems = (orderDoc.items || []).filter(
                 item => item.vendor && item.vendor.toString() === vendorId.toString()
             );
+            const subOrder = (orderDoc.subOrders || []).find(sub => String(sub.vendor) === vendorId.toString());
             return {
                 ...orderDoc.toObject(),
-                items: vendorItems
+                items: vendorItems,
+                subOrder: subOrder ? {
+                    ...subOrder.toObject ? subOrder.toObject() : subOrder,
+                    items: vendorItems
+                } : null
             };
         });
 

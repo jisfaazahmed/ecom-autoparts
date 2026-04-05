@@ -16,6 +16,30 @@ const orderSchema = new mongoose.Schema({
         ref: 'OrderItem'
     }],
 
+    subOrders: [{
+        vendor: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            required: true
+        },
+        items: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'OrderItem'
+        }],
+        status: {
+            type: String,
+            enum: ['pending', 'confirmed', 'processing', 'ready_to_ship', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'return_requested', 'returned', 'refunded'],
+            default: 'pending'
+        },
+        subtotal: {
+            type: Number,
+            default: 0
+        },
+        trackingNumber: String,
+        courierPartner: String,
+        updatedAt: Date
+    }],
+
     shippingAddress: {
         fullName: { type: String, required: true },
         phone: { type: String, required: true },

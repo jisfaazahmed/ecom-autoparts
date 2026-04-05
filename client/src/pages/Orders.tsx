@@ -47,10 +47,20 @@ const statusConfig: Record<string, { icon: React.ReactNode; color: string; label
     color: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
     label: 'Processing',
   },
+  ready_to_ship: {
+    icon: <Package className="h-4 w-4" />,
+    color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+    label: 'Ready to Ship',
+  },
   shipped: {
     icon: <Truck className="h-4 w-4" />,
     color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
     label: 'Shipped',
+  },
+  out_for_delivery: {
+    icon: <Truck className="h-4 w-4" />,
+    color: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+    label: 'Out for Delivery',
   },
   delivered: {
     icon: <CheckCircle className="h-4 w-4" />,
@@ -76,6 +86,16 @@ const statusConfig: Record<string, { icon: React.ReactNode; color: string; label
     icon: <XCircle className="h-4 w-4" />,
     color: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
     label: 'Refunded',
+  },
+  return_requested: {
+    icon: <XCircle className="h-4 w-4" />,
+    color: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    label: 'Return Requested',
+  },
+  returned: {
+    icon: <XCircle className="h-4 w-4" />,
+    color: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+    label: 'Returned',
   },
   cancelled: {
     icon: <XCircle className="h-4 w-4" />,

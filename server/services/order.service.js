@@ -6,6 +6,42 @@ const Cart = require('../models/Cart');
 
 class OrderService {
 
+    normalizeStatus(status) {
+        const value = String(status || '').toLowerCase();
+        const aliases = {
+            accepted: 'confirmed',
+            packed: 'processing',
+            readytoship: 'ready_to_ship',
+            ready_to_ship: 'ready_to_ship',
+            out_for_delivery: 'out_for_delivery',
+        };
+        return aliases[value] || value;
+    }
+
+    buildSubOrders(orderItemDocs, enrichedItems) {
+        const grouped = new Map();
+
+        orderItemDocs.forEach((itemDoc, index) => {
+            const source = enrichedItems[index];
+            const vendorId = String(itemDoc.vendor || source?.product?.vendor || source?.product?.createdBy || source?.product?.shopId || source?.product?.owner || source?.product?.seller || '');
+            if (!grouped.has(vendorId)) {
+                grouped.set(vendorId, { vendor: vendorId, items: [], status: 'pending', subtotal: 0 });
+            }
+
+            const group = grouped.get(vendorId);
+            group.items.push(itemDoc._id);
+            group.subtotal += itemDoc.finalPrice || 0;
+        });
+
+        return Array.from(grouped.values()).map(group => ({
+            vendor: group.vendor,
+            items: group.items,
+            status: group.status,
+            subtotal: group.subtotal,
+            updatedAt: new Date()
+        }));
+    }
+
     // Create Order
     async createOrder(userId, orderData) {
         try {
@@ -71,9 +107,12 @@ class OrderService {
                 })
             );
 
+            const subOrders = this.buildSubOrders(orderItemDocs, enrichedItems);
+
             const order = new Order({
                 user: userId,
                 items: orderItemDocs.map(item => item._id),
+                subOrders,
                 shippingAddress: normalizedShippingAddress,
                 itemsTotal: itemTotal,
                 shippingCharges: shippingCharge,
@@ -212,6 +251,8 @@ class OrderService {
             throw new Error('Order not found');
         }
 
+        const normalizedStatus = this.normalizeStatus(status);
+
         const item = await OrderItem.findById(itemId);
         if (!item) {
             throw new Error('Order item not found');
@@ -221,13 +262,13 @@ class OrderService {
             throw new Error('Order item does not belong to this order');
         }
 
-        if (!this.isValidStatusTransition(item.status, status)) {
-            throw new Error(`Invalid status transition from ${item.status} to ${status}`);
+        if (!this.isValidStatusTransition(item.status, normalizedStatus)) {
+            throw new Error(`Invalid status transition from ${item.status} to ${normalizedStatus}`);
         }
 
-        item.status = status;
+        item.status = normalizedStatus;
         item.statusHistory.push({
-            status,
+            status: normalizedStatus,
             timestamp: new Date(),
             note,
             updatedBy: userId
@@ -244,19 +285,34 @@ class OrderService {
         await OrderTimeLine.create({
             order: orderId,
             orderItem: itemId,
-            event: this.mapStatusToEvent(status),
-            title: this.getStatusTitle(status),
-            description: note || `Item status updated to ${status}`,
+            event: this.mapStatusToEvent(normalizedStatus),
+            title: this.getStatusTitle(normalizedStatus),
+            description: note || `Item status updated to ${normalizedStatus}`,
             actor: userId,
             actorType: 'vendor'
         });
 
-        this.sendOrderNotifications(order, this.mapStatusToEvent(status));
+        const itemVendorId = String(item.vendor || '');
+        order.subOrders = (order.subOrders || []).map(subOrder => {
+            const sub = subOrder.toObject ? subOrder.toObject() : subOrder;
+            if (String(sub.vendor) !== itemVendorId) return sub;
+            const subOrderItems = order.items.filter(orderItem => sub.items.some(subItem => String(subItem) === String(orderItem._id)));
+            const nextStatus = this.calculateOverallStatus(subOrderItems);
+            return {
+                ...sub,
+                status: nextStatus,
+                updatedAt: new Date()
+            };
+        });
+
+        this.sendOrderNotifications(order, this.mapStatusToEvent(normalizedStatus));
         return order;
     }
 
     // All validate status
     isValidStatusTransition(currentStatus, newStatus) {
+        const normalizedCurrent = this.normalizeStatus(currentStatus);
+        const normalizedNew = this.normalizeStatus(newStatus);
         const validTransitions = {
             'pending': ['confirmed', 'cancelled'],
             'confirmed': ['processing', 'cancelled'],
@@ -269,11 +325,12 @@ class OrderService {
             'returned': ['refunded']
         };
 
-        return validTransitions[currentStatus]?.includes(newStatus) || false;
+        return validTransitions[normalizedCurrent]?.includes(normalizedNew) || false;
     }
 
     //Calculate overall order status
     mapStatusToEvent(status) {
+        const normalized = this.normalizeStatus(status);
         const mapping = {
             'confirmed': 'order_confirmed',
             'processing': 'processing_started',
@@ -286,10 +343,11 @@ class OrderService {
             'returned': 'return_received',
             'refunded': 'refund_completed'
         };
-        return mapping[status] || status;
+        return mapping[normalized] || normalized;
     }
 
     getStatusTitle(status) {
+        const normalized = this.normalizeStatus(status);
         const titles = {
             'confirmed': 'Order Confirmed',
             'processing': 'Processing Started',
@@ -302,14 +360,15 @@ class OrderService {
             'returned': 'Return Received',
             'refunded': 'Refund Completed'
         };
-        return titles[status] || status;
+        return titles[normalized] || normalized;
     }
 
     calculateOverallStatus(items) {
-        const statuses = items.map(item => item.status);
+        const statuses = items.map(item => this.normalizeStatus(item.status));
 
         if (statuses.every(s => s === 'delivered')) return 'delivered';
         if (statuses.every(s => s === 'cancelled')) return 'cancelled';
+        if (statuses.every(s => s === 'refunded')) return 'refunded';
         if (statuses.some(s => s === 'delivered') && statuses.some(s => s !== 'delivered')) {
             return 'partially_delivered';
         }
@@ -317,6 +376,12 @@ class OrderService {
             return 'partially_shipped';
         }
         if (statuses.every(s => s === 'confirmed')) return 'confirmed';
+        if (statuses.every(s => s === 'processing')) return 'processing';
+        if (statuses.every(s => s === 'ready_to_ship')) return 'ready_to_ship';
+        if (statuses.every(s => s === 'shipped')) return 'shipped';
+        if (statuses.every(s => s === 'out_for_delivery')) return 'out_for_delivery';
+        if (statuses.every(s => s === 'return_requested')) return 'return_requested';
+        if (statuses.every(s => s === 'returned')) return 'returned';
         if (statuses.some(s => s === 'processing' || s === 'ready_to_ship')) return 'processing';
 
         return 'pending';
@@ -359,6 +424,11 @@ class OrderService {
             }
 
             order.overallStatus = 'confirmed';
+            order.subOrders = (order.subOrders || []).map(subOrder => ({
+                ...subOrder.toObject ? subOrder.toObject() : subOrder,
+                status: 'confirmed',
+                updatedAt: new Date()
+            }));
 
             await OrderTimeLine.create({
                 order: orderId,
@@ -425,11 +495,10 @@ class OrderService {
 
     // Cancelling
     async cancelOrder(orderId, userId, reason, cancelledBy = 'customer') {
-        const session = await Order.startSession();
-        session.startTransaction();
-
-        try {
-            const order = await Order.findById(orderId).session(session);
+        const runCancellation = async (session = null) => {
+            const orderQuery = Order.findById(orderId);
+            if (session) orderQuery.session(session);
+            const order = await orderQuery;
 
             if (!order) {
                 throw new Error('order noy found');
@@ -440,7 +509,6 @@ class OrderService {
                 throw new Error(`Order cannot be cancelled in ${order.overallStatus} status`);
             }
 
-            //update order
             order.overallStatus = 'cancelled';
             order.cancellationRequest = {
                 requestedBy: userId,
@@ -451,9 +519,10 @@ class OrderService {
                 approvedAt: new Date()
             };
 
-            // Cancel all order items
-            const orderItems = await OrderItem.find({ _id: { $in: order.items } }).session(session);
-            
+            const orderItemsQuery = OrderItem.find({ _id: { $in: order.items } });
+            if (session) orderItemsQuery.session(session);
+            const orderItems = await orderItemsQuery;
+
             for (const item of orderItems) {
                 item.status = 'cancelled';
                 item.cancellationReason = reason;
@@ -463,21 +532,19 @@ class OrderService {
                     note: reason,
                     updatedBy: userId
                 });
-                await item.save({ session });
+                await item.save(session ? { session } : undefined);
             }
 
-            await order.save({ session });
+            await order.save(session ? { session } : undefined);
 
-            //restore stock
             for (const item of orderItems) {
                 await Product.findByIdAndUpdate(
                     item.product,
                     { $inc: { stock: item.quantity, soldCount: -item.quantity } },
-                    { session }
+                    session ? { session } : undefined
                 );
             }
 
-            // Create timeline event
             await OrderTimeLine.create([{
                 order: orderId,
                 event: cancelledBy === 'customer' ? 'cancelled_by_customer' : 'cancelled_by_vendor',
@@ -485,23 +552,35 @@ class OrderService {
                 description: reason,
                 actor: userId,
                 actorType: cancelledBy
-            }], { session });
-
-            await session.commitTransaction();
+            }], session ? { session } : undefined);
 
             if (order.paymentStatus === 'completed') {
-                this.processRefund(orderId, order.totalAmount, 'order_cancelled');
-
+                await this.processRefund(orderId, order.totalAmount, 'order_cancelled');
             }
 
             return order;
-        }
-        catch (error) {
-            await session.abortTransaction();
+        };
+
+        let session;
+        try {
+            session = await Order.startSession();
+            session.startTransaction();
+            const order = await runCancellation(session);
+            await session.commitTransaction();
+            return order;
+        } catch (error) {
+            if (session?.inTransaction()) {
+                await session.abortTransaction();
+            }
+
+            const transactionUnsupported = String(error?.message || '').includes('Transaction numbers are only allowed on a replica set member or mongos');
+            if (transactionUnsupported) {
+                return runCancellation(null);
+            }
+
             throw error;
-        }
-        finally {
-            session.endSession();
+        } finally {
+            session?.endSession();
         }
     }
 

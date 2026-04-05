@@ -6,6 +6,10 @@ const paymentService = require('./payment.service');
 
 class RefundService {
 
+    async createRefundRequest(orderItemId, refundData, userId) {
+        return this.creaetRefundRequest(refundData, userId, orderItemId);
+    }
+
     async creaetRefundRequest(refundData, userId, orderItemId) {
         try {
             const order = await Order.findOne({
@@ -113,7 +117,7 @@ class RefundService {
 
             return refund;
         } catch (error) {
-            throw Error;
+            throw error;
         }
     }
 

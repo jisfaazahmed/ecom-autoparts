@@ -1,9 +1,47 @@
 const Payment = require('../models/payment.model');
 const Order = require('../models/order.model');
+const OrderItem = require('../models/orderItem.model');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const OrderTimeline = require('../models/timeline.model');
 
 class PaymentService {
+
+    async syncOrderAfterPayment(orderId, { paymentStatus = 'completed', transactionId = null, itemStatus = 'confirmed' } = {}) {
+        const order = await Order.findById(orderId);
+
+        if (!order) {
+            throw new Error('Order not found');
+        }
+
+        const orderItems = await OrderItem.find({ _id: { $in: order.items } });
+
+        for (const item of orderItems) {
+            if (['pending', 'confirmed', 'accepted'].includes(String(item.status || '').toLowerCase())) {
+                item.status = itemStatus;
+                item.statusHistory.push({
+                    status: itemStatus,
+                    timestamp: new Date(),
+                    note: 'Payment completed, order released to vendor/admin flow'
+                });
+                await item.save();
+            }
+        }
+
+        order.paymentStatus = paymentStatus;
+        if (transactionId) {
+            order.transactionId = transactionId;
+        }
+        order.paidAmount = order.totalAmount;
+        order.overallStatus = 'confirmed';
+        order.subOrders = (order.subOrders || []).map(subOrder => ({
+            ...(subOrder.toObject ? subOrder.toObject() : subOrder),
+            status: itemStatus,
+            updatedAt: new Date()
+        }));
+
+        await order.save();
+        return order;
+    }
 
     //create payment
     async initiatePayment(orderId, userId, paymentData) {
@@ -289,9 +327,11 @@ class PaymentService {
                 note: `COD amount collected by ${collectionData.collectedBy}`
             });
 
-            const order = await Order.findById(payment.order);
-            order.paymentStatus = 'completed';
-            await order.save();
+            await this.syncOrderAfterPayment(payment.order, {
+                paymentStatus: 'completed',
+                transactionId: `COD-${Date.now()}`,
+                itemStatus: 'confirmed'
+            });
 
             await payment.save();
 
@@ -320,18 +360,79 @@ class PaymentService {
                 reason: 'requested_by_customer'
             });
 
-            payment.refund.refundId = refund.id;
-            payment.refund.status = 'completed';
-            payment.refund.processedAt = new Date();
+            payment.refunds = payment.refunds || [];
+            payment.refunds.push({
+                refundId: refund.id,
+                amount,
+                reason: 'requested_by_customer',
+                status: 'completed',
+                processedAt: new Date(),
+                gatewayRefundId: refund.id,
+                refundMethod: 'original_method',
+                notes: 'Stripe refund completed'
+            });
+            payment.status = 'refunded';
+
+            const order = await Order.findById(payment.order);
+            if (order) {
+                order.paymentStatus = 'refunded';
+                order.overallStatus = 'refunded';
+                await order.save();
+            }
+
+            await payment.save();
+            return refund;
 
         } catch (error) {
-            payment.refund.status = 'failed';
+            payment.refunds = payment.refunds || [];
+            payment.refunds.push({
+                refundId: `FAILED-${Date.now()}`,
+                amount,
+                reason: 'requested_by_customer',
+                status: 'failed',
+                notes: error.message
+            });
             payment.gatewayResponse = {
                 errorCode: error.code,
                 errorMessage: error.message
             };
             throw error;
         }
+    }
+
+    async processRefund(paymentId, refundData) {
+        const payment = await Payment.findById(paymentId);
+
+        if (!payment) {
+            throw new Error('Payment not found');
+        }
+
+        const amount = refundData.amount || payment.amount;
+
+        if ((payment.paymentMethod || '').toLowerCase() === 'card' && payment.provider?.paymentIntentId) {
+            await this.processStripeRefund(payment, amount);
+        } else {
+            payment.refunds.push({
+                refundId: `MANUAL-${Date.now()}`,
+                amount,
+                reason: refundData.reason,
+                status: 'pending',
+                initiatedBy: refundData.initiatedBy,
+                initiatedAt: new Date(),
+                refundMethod: refundData.refundMethod || 'manual',
+                notes: 'COD/manual refund requires offline processing'
+            });
+            payment.status = 'refunded';
+            const order = await Order.findById(payment.order);
+            if (order) {
+                order.paymentStatus = 'refunded';
+                order.overallStatus = 'refunded';
+                await order.save();
+            }
+        }
+
+        await payment.save();
+        return payment;
     }
 
     // Generate Receipt

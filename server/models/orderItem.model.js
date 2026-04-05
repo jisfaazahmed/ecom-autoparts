@@ -29,7 +29,7 @@ const orderItemSchema = new mongoose.Schema({
   finalPrice: Number,
   status: {
     type: String,
-    enum: ['pending', 'confirmed', 'processing', 'ready_to_ship', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'return_requested', 'returned', 'refunded'],
+    enum: ['pending', 'confirmed', 'accepted', 'processing', 'packed', 'ready_to_ship', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'return_requested', 'returned', 'refunded'],
     default: 'pending'
   },
   statusHistory: [{

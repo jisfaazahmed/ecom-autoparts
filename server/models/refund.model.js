@@ -31,11 +31,10 @@ const refundSchema = new mongoose.Schema({
         unique: true,
         required: true
     },
-    refundTyep: {
+    refundType: {
         type: String,
-        require: true
-    }
-    ,
+        required: true
+    },
     returnReason: {
         category: {
             type: String,

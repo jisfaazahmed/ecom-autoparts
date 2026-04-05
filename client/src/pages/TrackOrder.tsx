@@ -33,9 +33,13 @@ const statusStyles: Record<string, { icon: React.ReactNode; label: string }> = {
   pending: { icon: <Clock className="h-4 w-4" />, label: 'Pending' },
   confirmed: { icon: <CheckCircle className="h-4 w-4" />, label: 'Confirmed' },
   processing: { icon: <Package className="h-4 w-4" />, label: 'Processing' },
+  ready_to_ship: { icon: <Package className="h-4 w-4" />, label: 'Ready to Ship' },
   shipped: { icon: <Truck className="h-4 w-4" />, label: 'Shipped' },
+  out_for_delivery: { icon: <Truck className="h-4 w-4" />, label: 'Out for Delivery' },
   delivered: { icon: <CheckCircle className="h-4 w-4" />, label: 'Delivered' },
   cancelled: { icon: <AlertCircle className="h-4 w-4" />, label: 'Cancelled' },
+  return_requested: { icon: <AlertCircle className="h-4 w-4" />, label: 'Return Requested' },
+  returned: { icon: <AlertCircle className="h-4 w-4" />, label: 'Returned' },
   refunded: { icon: <AlertCircle className="h-4 w-4" />, label: 'Refunded' },
 };
 

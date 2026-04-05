@@ -20,8 +20,8 @@ interface CustomerProfile { full_name: string; email: string; phone: string | nu
 
 const orderStatuses: { value: string; label: string; icon: React.ElementType; color: string }[] = [
   { value: 'pending', label: 'Pending', icon: Package, color: 'bg-warning/20 text-warning border-warning/30' },
-  { value: 'confirmed', label: 'Confirmed', icon: CheckCircle, color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
-  { value: 'processing', label: 'Processing', icon: Package, color: 'bg-primary/20 text-primary border-primary/30' },
+  { value: 'confirmed', label: 'Accepted', icon: CheckCircle, color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' },
+  { value: 'processing', label: 'Packed', icon: Package, color: 'bg-primary/20 text-primary border-primary/30' },
   { value: 'ready_to_ship', label: 'Ready to Ship', icon: Package, color: 'bg-blue-500/20 text-blue-400 border-blue-500/30' },
   { value: 'shipped', label: 'Shipped', icon: Truck, color: 'bg-purple-500/20 text-purple-400 border-purple-500/30' },
   { value: 'out_for_delivery', label: 'Out for Delivery', icon: Truck, color: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' },
@@ -31,6 +31,23 @@ const orderStatuses: { value: string; label: string; icon: React.ElementType; co
   { value: 'returned', label: 'Returned', icon: XCircle, color: 'bg-slate-500/20 text-slate-400 border-slate-500/30' },
   { value: 'refunded', label: 'Refunded', icon: XCircle, color: 'bg-slate-500/20 text-slate-400 border-slate-500/30' },
 ];
+
+// Valid status transitions matching backend validTransitions
+const validStatusTransitions: Record<string, string[]> = {
+  'pending': ['confirmed', 'cancelled'],
+  'confirmed': ['processing', 'cancelled'],
+  'processing': ['ready_to_ship', 'cancelled'],
+  'ready_to_ship': ['shipped'],
+  'shipped': ['out_for_delivery', 'delivered', 'return_requested'],
+  'out_for_delivery': ['delivered', 'return_requested'],
+  'delivered': ['return_requested'],
+  'return_requested': ['returned', 'cancelled'],
+  'returned': ['refunded']
+};
+
+const getValidNextStatuses = (currentStatus: string): string[] => {
+  return validStatusTransitions[currentStatus] || [];
+};
 
 const AdminOrders: React.FC = () => {
   const { shop } = useAuth();
@@ -109,7 +126,7 @@ const AdminOrders: React.FC = () => {
     setDetailsDialogOpen(true);
     setLoadingDetails(true);
     try {
-      const orderData = await api.getOrder(order.id);
+      const orderData = await api.getOrder(String(order.id || order._id || ''));
       setOrderItems(orderData.items || []);
       // Customer info would come from the order response if available
     } catch (error) {
@@ -121,9 +138,9 @@ const AdminOrders: React.FC = () => {
   const updateOrderStatus = async (orderId: string, status: string) => {
     setUpdatingStatus(orderId);
     try {
-      const orderToUpdate = orders.find((order) => order.id === orderId);
+      const orderToUpdate = orders.find((order) => String(order.id || order._id) === String(orderId));
       const itemIds = (orderToUpdate?.items || [])
-        .map((item) => item.id)
+        .map((item) => item.id || item._id)
         .filter(Boolean);
 
       if (itemIds.length === 0) {
@@ -131,11 +148,11 @@ const AdminOrders: React.FC = () => {
       }
 
       await Promise.all(
-        itemIds.map((itemId) => api.updateOrderItemStatus(orderId, itemId, status))
+        itemIds.map((itemId) => api.updateOrderItemStatus(String(orderId), String(itemId), status))
       );
 
       setOrders(orders.map(o => {
-        if (o.id !== orderId) return o;
+        if (String(o.id || o._id) !== String(orderId)) return o;
         const updatedItems = (o.items || []).map(item => ({
           ...item,
           status
@@ -143,7 +160,7 @@ const AdminOrders: React.FC = () => {
         return { ...o, items: updatedItems };
       }));
 
-      if (selectedOrder?.id === orderId) {
+      if (selectedOrder && String(selectedOrder.id || selectedOrder._id) === String(orderId)) {
         const updatedItems = (selectedOrder.items || []).map(item => ({
           ...item,
           status
@@ -160,8 +177,9 @@ const AdminOrders: React.FC = () => {
   const updateOrderDetails = async () => {
     if (!selectedOrder) return;
     try {
-      await api.updateOrderTracking(selectedOrder.id, trackingNumber);
-      setOrders(orders.map(o => o.id === selectedOrder.id ? { ...o, trackingNumber: trackingNumber || undefined } : o));
+      const selectedOrderId = String(selectedOrder.id || selectedOrder._id || '');
+      await api.updateOrderTracking(selectedOrderId, trackingNumber);
+      setOrders(orders.map(o => String(o.id || o._id) === selectedOrderId ? { ...o, trackingNumber: trackingNumber || undefined } : o));
       toast({ title: 'Saved', description: 'Order details updated' });
     } catch (error: any) {
       toast({ title: 'Error', description: error.message || 'Failed to update order', variant: 'destructive' });
@@ -253,6 +271,7 @@ const AdminOrders: React.FC = () => {
               ) : (
                 filteredOrders.map((order, index) => {
                   const orderKey = String(order.id || order._id || order.orderNumber || `order-${index}`);
+                    const orderId = String(order.id || order._id || '');
                   const shippingSummary = formatShippingAddress(
                     order.shippingAddress,
                     order.shippingCity,
@@ -269,13 +288,13 @@ const AdminOrders: React.FC = () => {
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" disabled={updatingStatus === order.id}>{updatingStatus === order.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreVertical className="h-4 w-4" />}</Button>
+                          <Button variant="ghost" size="icon" disabled={updatingStatus === orderId}>{updatingStatus === orderId ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreVertical className="h-4 w-4" />}</Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="glass-card">
                           <DropdownMenuItem onClick={() => openOrderDetails(order)}><Eye className="h-4 w-4 mr-2" />View Details</DropdownMenuItem>
                           <DropdownMenuSeparator />
-                          {orderStatuses.filter(s => s.value !== getDisplayStatus(order)).map(status => (
-                            <DropdownMenuItem key={status.value} onClick={() => updateOrderStatus(order.id, status.value)}><status.icon className="h-4 w-4 mr-2" />Mark as {status.label}</DropdownMenuItem>
+                          {orderStatuses.filter(s => getValidNextStatuses(getDisplayStatus(order)).includes(s.value)).map(status => (
+                            <DropdownMenuItem key={status.value} onClick={() => updateOrderStatus(orderId, status.value)}><status.icon className="h-4 w-4 mr-2" />Mark as {status.label}</DropdownMenuItem>
                           ))}
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -306,7 +325,7 @@ const AdminOrders: React.FC = () => {
                 <h4 className="font-semibold mb-3">Order Items</h4>
                 <div className="space-y-2">
                   {orderItems.map(item => (
-                    <div key={item.id} className="flex items-center justify-between glass-card p-3 bg-secondary/30">
+                    <div key={String(item.id || item._id || `${item.productId}-${item.quantity}`)} className="flex items-center justify-between glass-card p-3 bg-secondary/30">
                       <div><p className="font-medium">{item.productName}</p><p className="text-sm text-muted-foreground">Qty: {item.quantity} × {formatLKR(item.unitPrice)}</p></div>
                       <p className="font-medium">{formatLKR(item.totalPrice)}</p>
                     </div>
@@ -324,8 +343,8 @@ const AdminOrders: React.FC = () => {
               <div>
                 <Label className="mb-2 block">Update Status</Label>
                 <div className="flex flex-wrap gap-2">
-                  {orderStatuses.map(status => (
-                    <Button key={status.value} variant={getDisplayStatus(selectedOrder!) === status.value ? 'default' : 'outline'} size="sm" onClick={() => updateOrderStatus(selectedOrder!.id, status.value)} disabled={getDisplayStatus(selectedOrder!) === status.value}>
+                  {orderStatuses.filter(s => getValidNextStatuses(getDisplayStatus(selectedOrder!)).includes(s.value)).map(status => (
+                    <Button key={status.value} variant={getDisplayStatus(selectedOrder!) === status.value ? 'default' : 'outline'} size="sm" onClick={() => updateOrderStatus(String(selectedOrder!.id || selectedOrder!._id || ''), status.value)} disabled={getDisplayStatus(selectedOrder!) === status.value}>
                       <status.icon className="h-4 w-4 mr-1" />{status.label}
                     </Button>
                   ))}

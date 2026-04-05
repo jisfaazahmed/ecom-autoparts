@@ -171,13 +171,14 @@ async function handleCheckoutSessionCompleted(session) {
 
     await payment.save();
 
-    // Update order status to paid
-    order.paymentStatus = 'completed';
-    order.transactionId = session.payment_intent;
-    order.paidAmount = order.totalAmount;
+    // Update order status to paid and release vendor workflow
+    await paymentService.syncOrderAfterPayment(orderId, {
+      paymentStatus: 'completed',
+      transactionId: session.payment_intent,
+      itemStatus: 'confirmed'
+    });
+
     order.paymentId = payment._id;
-    order.overallStatus = 'confirmed';
-    
     await order.save();
 
     // Create timeline event
@@ -216,10 +217,11 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
         // Update order
         const order = await Order.findById(payment.order);
         if (order) {
-            order.paymentStatus = 'completed';
-            order.transactionId = paymentIntent.id;
-            order.paidAmount = payment.amount;
-            await order.save();
+            await paymentService.syncOrderAfterPayment(order._id, {
+              paymentStatus: 'completed',
+              transactionId: paymentIntent.id,
+              itemStatus: 'confirmed'
+            });
         }
     }
 }
