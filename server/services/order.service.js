@@ -1,6 +1,8 @@
 const Order = require('../models/order.model');
 const OrderItem = require('../models/orderItem.model');
 const Product = require('../models/product');
+const VendorProduct = require('../models/vendorProduct');
+const User = require('../models/user');
 const OrderTimeLine = require('../models/timeline.model')
 const Cart = require('../models/Cart');
 
@@ -23,7 +25,20 @@ class OrderService {
 
         orderItemDocs.forEach((itemDoc, index) => {
             const source = enrichedItems[index];
-            const vendorId = String(itemDoc.vendor || source?.product?.vendor || source?.product?.createdBy || source?.product?.shopId || source?.product?.owner || source?.product?.seller || '');
+            const vendorId = String(
+                itemDoc.vendor ||
+                source?.product?.vendor ||
+                source?.product?.createdBy ||
+                source?.product?.shopId ||
+                source?.product?.owner ||
+                source?.product?.seller ||
+                ''
+            ).trim();
+
+            if (!vendorId) {
+                return;
+            }
+
             if (!grouped.has(vendorId)) {
                 grouped.set(vendorId, { vendor: vendorId, items: [], status: 'pending', subtotal: 0 });
             }
@@ -40,6 +55,35 @@ class OrderService {
             subtotal: group.subtotal,
             updatedAt: new Date()
         }));
+    }
+
+    async resolveVendorForOrderItem(product, item = {}, orderData = {}) {
+        const candidateVendor =
+            item.vendorId ||
+            item.vendor ||
+            orderData.shopId ||
+            product.vendor ||
+            product.createdBy ||
+            product.createdby ||
+            product.shopId ||
+            product.owner ||
+            product.seller ||
+            null;
+
+        if (candidateVendor) {
+            return String(candidateVendor);
+        }
+
+        const offer = await VendorProduct.findOne({
+            product: product._id,
+            isActive: true,
+        }).sort({ price: 1 }).select('vendor');
+
+        if (offer?.vendor) {
+            return String(offer.vendor);
+        }
+
+        return null;
     }
 
     // Create Order
@@ -66,7 +110,7 @@ class OrderService {
                 throw new Error('No items provided for order');
             }
 
-            // Load products and check stock
+            // Load products, resolve vendor ownership, and check stock
             const enrichedItems = [];
             for (const item of items) {
                 const product = await Product.findById(item.productId || item.product);
@@ -76,7 +120,13 @@ class OrderService {
                 if (product.stock < item.quantity) {
                     throw new Error(`${product.name} stock not available`);
                 }
-                enrichedItems.push({ product, quantity: item.quantity });
+
+                const resolvedVendorId = await this.resolveVendorForOrderItem(product, item, orderData);
+                if (!resolvedVendorId) {
+                    throw new Error(`Product ${product.name} is not assigned to a vendor. Please choose a seller before checkout.`);
+                }
+
+                enrichedItems.push({ product, quantity: item.quantity, resolvedVendorId });
             }
 
             const itemTotal = enrichedItems.reduce((sum, { product, quantity }) => sum + (product.price * quantity), 0);
@@ -86,25 +136,22 @@ class OrderService {
             const totalAmount = itemTotal + shippingCharge + texAmount - discountAmount;
 
             const orderItemDocs = await OrderItem.create(
-                enrichedItems.map(({ product, quantity }) => {
-                    const vendor = product.vendor || product.createdBy || product.shopId || product.owner || product.seller;
-                    return {
-                        product: product._id,
-                        vendor: vendor || undefined,
-                        name: product.name,
-                        image: product.images?.[0] || '',
-                        quantity,
-                        price: product.price,
-                        discount: product.discount || 0,
-                        finalPrice: product.price * quantity,
+                enrichedItems.map(({ product, quantity, resolvedVendorId }) => ({
+                    product: product._id,
+                    vendor: resolvedVendorId,
+                    name: product.name,
+                    image: product.images?.[0] || '',
+                    quantity,
+                    price: product.price,
+                    discount: product.discount || 0,
+                    finalPrice: product.price * quantity,
+                    status: 'pending',
+                    statusHistory: [{
                         status: 'pending',
-                        statusHistory: [{
-                            status: 'pending',
-                            timestamp: new Date(),
-                            note: 'Order placed'
-                        }]
-                    };
-                })
+                        timestamp: new Date(),
+                        note: 'Order placed'
+                    }]
+                }))
             );
 
             const subOrders = this.buildSubOrders(orderItemDocs, enrichedItems);
@@ -262,6 +309,10 @@ class OrderService {
             throw new Error('Order item does not belong to this order');
         }
 
+        if (String(item.vendor || '') !== String(userId || '')) {
+            throw new Error('Unauthorized: you can only update your own order items');
+        }
+
         if (!this.isValidStatusTransition(item.status, normalizedStatus)) {
             throw new Error(`Invalid status transition from ${item.status} to ${normalizedStatus}`);
         }
@@ -304,6 +355,8 @@ class OrderService {
                 updatedAt: new Date()
             };
         });
+
+        await order.save();
 
         this.sendOrderNotifications(order, this.mapStatusToEvent(normalizedStatus));
         return order;
@@ -405,30 +458,10 @@ class OrderService {
             order.transactionId = transactionId;
         }
 
-        // Auto-update order status when payment is completed
+        // Payment completion should only mark the order as paid.
+        // Vendor approval still controls item/sub-order confirmation.
         if (paymentStatus === 'completed') {
             order.paidAmount = order.totalAmount;
-            
-            // Update all order items to confirmed
-            const orderItems = await OrderItem.find({ _id: { $in: order.items } });
-            for (const item of orderItems) {
-                if (item.status === 'pending') {
-                    item.status = 'confirmed';
-                    item.statusHistory.push({
-                        status: 'confirmed',
-                        timestamp: new Date(),
-                        note: 'Payment received, order confirmed'
-                    });
-                    await item.save();
-                }
-            }
-
-            order.overallStatus = 'confirmed';
-            order.subOrders = (order.subOrders || []).map(subOrder => ({
-                ...subOrder.toObject ? subOrder.toObject() : subOrder,
-                status: 'confirmed',
-                updatedAt: new Date()
-            }));
 
             await OrderTimeLine.create({
                 order: orderId,
@@ -607,17 +640,26 @@ class OrderService {
     async getOrderDetails(orderId, userId) {
         const order = await Order.findById(orderId)
             .populate('user', 'name email')
-            .populate('items.product')
-            .populate('items.vendor', 'name email storeName');
+            .populate({
+                path: 'items',
+                populate: [
+                    { path: 'product' },
+                    { path: 'vendor', select: 'name email storeName role' }
+                ]
+            });
 
         if (!order) {
             throw new Error('ordernot found');
         }
 
-        const user = await Order.findById(userId);
-        const isVendor = order.items.some(item => item.vendor._id.toString() === userId);
-        const isCustomer = order.user._id.toString() === userId;
-        const isAdmin = user.role === 'admin';
+        const user = await User.findById(userId).select('role');
+        if (!user) {
+            throw new Error('Unauthorized access');
+        }
+
+        const isVendor = (order.items || []).some(item => String(item?.vendor?._id || item?.vendor) === String(userId));
+        const isCustomer = String(order?.user?._id || order?.user) === String(userId);
+        const isAdmin = ['admin', 'superadmin'].includes(String(user.role || '').toLowerCase());
 
         if (!isCustomer && !isVendor && !isAdmin) {
             throw new Error('Unauthorized access');

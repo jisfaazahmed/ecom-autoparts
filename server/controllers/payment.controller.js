@@ -2,11 +2,102 @@ const Payment = require('../models/payment.model');
 const Order = require('../models/order.model');
 const paymentService = require('../services/payment.service');
 const stripe = require('../config/stripe');
+const OrderTimeline = require('../models/timeline.model');
+
+function isStripeMockMode() {
+  return process.env.NODE_ENV === 'test' || process.env.USE_STRIPE_MOCK === 'true';
+}
+
+function getRequestUserId(req) {
+  return req?.user?._id || req?.user?.id || null;
+}
+
+function getRequestUserEmail(req) {
+  return req?.user?.email || null;
+}
+
+async function getAuthorizedOrder(orderId, userId) {
+  const order = await Order.findById(orderId).populate('items');
+
+  if (!order) {
+    return { error: { status: 404, message: 'Order not found' } };
+  }
+
+  if (!userId) {
+    return { error: { status: 401, message: 'Authentication is required' } };
+  }
+
+  if (!order.user || order.user.toString() !== userId.toString()) {
+    return { error: { status: 403, message: 'Unauthorized access to order' } };
+  }
+
+  return { order };
+}
+
+async function finalizeSuccessfulCardPayment({ order, paymentIntentId, sessionId = null, customerEmail = null }) {
+  let payment = await Payment.findOne({ order: order._id });
+
+  if (!payment) {
+    payment = new Payment({
+      order: order._id,
+      user: order.user,
+      paymentMethod: 'card',
+        gateway: 'stripe',
+      amount: order.totalAmount,
+      totalAmount: order.totalAmount,
+      currency: order.currency || 'LKR',
+      status: 'completed',
+      transactionId: paymentIntentId,
+      gatewayTransactionId: paymentIntentId,
+      cardDetails: {},
+    });
+  } else {
+    payment.status = 'completed';
+    payment.gateway = 'stripe';
+    payment.transactionId = paymentIntentId;
+    payment.gatewayTransactionId = paymentIntentId;
+  }
+
+  payment.timeline.push({
+    event: 'payment_completed',
+    timestamp: new Date(),
+    description: 'Payment completed successfully via Stripe',
+  });
+
+  await payment.save();
+
+  await paymentService.syncOrderAfterPayment(order._id, {
+    paymentStatus: 'completed',
+    transactionId: paymentIntentId,
+    itemStatus: 'confirmed',
+  });
+
+  order.paymentId = payment._id;
+  order.stripeSessionId = sessionId || order.stripeSessionId;
+  await order.save();
+
+  await OrderTimeline.create({
+    order: order._id,
+    event: 'payment_completed',
+    title: 'Payment Completed',
+    description: `Payment of ${order.currency} ${order.totalAmount} completed successfully via Stripe`,
+    actorType: 'system',
+    metadata: {
+      paymentIntentId,
+      sessionId,
+      customerEmail,
+    },
+  });
+
+  return payment;
+}
 
 // Create Stripe checkout session
 exports.createCheckoutSession = async (req, res) => {
     try {
         const { orderId } = req.body;
+    const userId = getRequestUserId(req);
+    const userEmail = getRequestUserEmail(req);
 
         if (!orderId) {
             return res.status(400).json({
@@ -15,21 +106,11 @@ exports.createCheckoutSession = async (req, res) => {
             });
         }
 
-        const order = await Order.findById(orderId).populate('items');
-
-        if (!order) {
-            return res.status(404).json({
-                success: false,
-                message: 'Order not found'
-            });
+        const orderResult = await getAuthorizedOrder(orderId, userId);
+        if (orderResult.error) {
+          return res.status(orderResult.error.status).json({ success: false, message: orderResult.error.message });
         }
-
-        if (order.user.toString() !== req.user._id.toString()) {
-            return res.status(403).json({
-                success: false,
-                message: 'Unauthorized access to order'
-            });
-        }
+        const { order } = orderResult;
 
         // Create line items for Stripe
         const lineItems = [{
@@ -50,11 +131,11 @@ exports.createCheckoutSession = async (req, res) => {
             mode: 'payment',
           success_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/payment/success?session_id={CHECKOUT_SESSION_ID}&order_id=${orderId}`,
           cancel_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/payment/cancel?order_id=${orderId}`,
-            customer_email: req.user.email,
+            customer_email: userEmail,
             metadata: {
                 orderId: orderId.toString(),
                 orderNumber: order.orderNumber,
-                userId: req.user._id.toString()
+              userId: String(userId)
             },
             client_reference_id: orderId.toString(),
         });
@@ -78,6 +159,122 @@ exports.createCheckoutSession = async (req, res) => {
             message: error.message || 'Failed to create checkout session'
         });
     }
+};
+
+// Create Stripe PaymentIntent for inline card form
+exports.createPaymentIntent = async (req, res) => {
+  try {
+    const { orderId } = req.body;
+    const userId = getRequestUserId(req);
+    const userEmail = getRequestUserEmail(req);
+
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Order ID is required',
+      });
+    }
+
+    const orderResult = await getAuthorizedOrder(orderId, userId);
+    if (orderResult.error) {
+      return res.status(orderResult.error.status).json({ success: false, message: orderResult.error.message });
+    }
+    const { order } = orderResult;
+
+    if (String(order.paymentStatus || '').toLowerCase() === 'completed') {
+      return res.status(400).json({
+        success: false,
+        message: 'Order is already paid',
+      });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(order.totalAmount * 100),
+      currency: String(order.currency || 'lkr').toLowerCase(),
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        orderId: order._id.toString(),
+        orderNumber: order.orderNumber,
+        userId: String(userId),
+      },
+      receipt_email: userEmail,
+      description: `Payment for order ${order.orderNumber}`,
+    });
+
+    order.paymentStatus = 'processing';
+    await order.save();
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        paymentIntentId: paymentIntent.id,
+        clientSecret: paymentIntent.client_secret,
+        amount: order.totalAmount,
+        currency: order.currency || 'LKR',
+        mockMode: isStripeMockMode(),
+      },
+    });
+  } catch (error) {
+    console.error('Create payment intent error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to create payment intent',
+    });
+  }
+};
+
+// Confirm Stripe PaymentIntent and finalize order/payment records
+exports.confirmPaymentIntent = async (req, res) => {
+  try {
+    const { orderId, paymentIntentId } = req.body;
+    const userId = getRequestUserId(req);
+    const userEmail = getRequestUserEmail(req);
+
+    if (!orderId || !paymentIntentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'orderId and paymentIntentId are required',
+      });
+    }
+
+    const orderResult = await getAuthorizedOrder(orderId, userId);
+    if (orderResult.error) {
+      return res.status(orderResult.error.status).json({ success: false, message: orderResult.error.message });
+    }
+    const { order } = orderResult;
+
+    const paymentIntent = isStripeMockMode()
+      ? await stripe.paymentIntents.confirm(paymentIntentId)
+      : await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (paymentIntent.status !== 'succeeded') {
+      return res.status(400).json({
+        success: false,
+        message: `Payment is not completed. Current status: ${paymentIntent.status}`,
+      });
+    }
+
+    await finalizeSuccessfulCardPayment({
+      order,
+      paymentIntentId: paymentIntent.id,
+      customerEmail: userEmail,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        orderId: order._id,
+        paymentIntentId: paymentIntent.id,
+        paymentStatus: 'completed',
+      },
+    });
+  } catch (error) {
+    console.error('Confirm payment intent error:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to confirm payment intent',
+    });
+  }
 };
 
 // Stripe webhook handler
@@ -136,59 +333,11 @@ async function handleCheckoutSessionCompleted(session) {
         return;
     }
 
-    // Create or update payment record
-    let payment = await Payment.findOne({ order: orderId });
-    
-    if (!payment) {
-        payment = new Payment({
-            order: orderId,
-            user: order.user,
-            paymentMethod: 'card',
-            amount: order.totalAmount,
-            totalAmount: order.totalAmount,
-            currency: order.currency || 'LKR',
-            status: 'completed',
-            transactionId: session.payment_intent,
-            gatewayTransactionId: session.payment_intent,
-            gateway: 'stripe',
-            metadata: {
-                sessionId: session.id,
-                customerEmail: session.customer_email,
-            }
-        });
-    } else {
-        payment.status = 'completed';
-        payment.transactionId = session.payment_intent;
-        payment.gatewayTransactionId = session.payment_intent;
-        payment.gateway = 'stripe';
-    }
-
-    payment.timeline.push({
-        event: 'payment_completed',
-        timestamp: new Date(),
-        description: 'Payment completed successfully via Stripe'
-    });
-
-    await payment.save();
-
-    // Update order status to paid and release vendor workflow
-    await paymentService.syncOrderAfterPayment(orderId, {
-      paymentStatus: 'completed',
-      transactionId: session.payment_intent,
-      itemStatus: 'confirmed'
-    });
-
-    order.paymentId = payment._id;
-    await order.save();
-
-    // Create timeline event
-    const OrderTimeline = require('../models/timeline.model');
-    await OrderTimeline.create({
-        order: orderId,
-        event: 'payment_completed',
-        title: 'Payment Completed',
-        description: `Payment of ${order.currency} ${order.totalAmount} completed successfully via Stripe`,
-        actorType: 'system',
+    await finalizeSuccessfulCardPayment({
+      order,
+      paymentIntentId: session.payment_intent,
+      sessionId: session.id,
+      customerEmail: session.customer_email,
     });
 
     console.log(`Payment completed for order ${order.orderNumber}`);
@@ -254,9 +403,10 @@ async function handlePaymentIntentFailed(paymentIntent) {
 //create payment
 exports.createPayment = async (req, res) => {
     try {
+    const userId = getRequestUserId(req);
         const payment = await paymentService.initiatePayment(
             req.params.orderId,
-            req.user._id,
+      userId,
             {
                 ...req.body,
                 ipAddress: req.ip,
@@ -306,10 +456,11 @@ exports.confirmCardPayment = async (req, res) => {
 exports.verifyCOD = async (req, res) => {
   try {
     const { status, notes } = req.body;
+    const userId = getRequestUserId(req);
     
     const payment = await paymentService.verifyCOD(
       req.params.paymentId,
-      req.user._id,
+      userId,
       status,
       notes
     );
@@ -350,11 +501,12 @@ exports.confirmCODCollection = async (req, res) => {
 
 exports.processRefund = async (req, res) => {
   try {
+    const userId = getRequestUserId(req);
     const payment = await paymentService.processRefund(
       req.params.paymentId,
       {
         ...req.body,
-        initiatedBy: req.user._id
+        initiatedBy: userId
       }
     );
     
@@ -373,9 +525,10 @@ exports.processRefund = async (req, res) => {
 
 exports.getPaymentDetails = async (req, res) => {
   try {
+    const userId = getRequestUserId(req);
     const payment = await paymentService.getPaymentDetails(
       req.params.paymentId,
-      req.user._id
+      userId
     );
     
     res.json({
@@ -394,8 +547,9 @@ exports.getPaymentDetails = async (req, res) => {
 exports.getUserPayments = async (req, res) => {
   try {
     const { page = 1, limit = 10, status } = req.query;
+    const userId = getRequestUserId(req);
     
-    const query = { user: req.user._id };
+    const query = { user: userId };
     if (status) query.status = status;
     
     const payments = await Payment.find(query)

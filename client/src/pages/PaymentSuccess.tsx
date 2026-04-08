@@ -17,11 +17,12 @@ const PaymentSuccess: React.FC = () => {
   const [orderNumber, setOrderNumber] = useState<string>('');
   
   const sessionId = searchParams.get('session_id');
+  const paymentIntentId = searchParams.get('payment_intent');
   const orderId = searchParams.get('order_id');
 
   useEffect(() => {
     const verifyPayment = async () => {
-      if (!sessionId || !orderId) {
+      if (!orderId || (!sessionId && !paymentIntentId)) {
         toast.error('Invalid payment session');
         navigate('/orders');
         return;
@@ -51,7 +52,7 @@ const PaymentSuccess: React.FC = () => {
     };
 
     verifyPayment();
-  }, [sessionId, orderId, clearCart, cleared, navigate]);
+  }, [sessionId, paymentIntentId, orderId, clearCart, cleared, navigate]);
 
   if (loading) {
     return (
@@ -108,9 +109,9 @@ const PaymentSuccess: React.FC = () => {
             <p className="text-sm text-muted-foreground mt-2">
               You will receive an email confirmation shortly with your order details.
             </p>
-            {sessionId && (
+            {(sessionId || paymentIntentId) && (
               <p className="text-xs text-muted-foreground mt-2">
-                Transaction ID: {sessionId.slice(0, 20)}...
+                Transaction ID: {(paymentIntentId || sessionId || '').slice(0, 20)}...
               </p>
             )}
           </div>

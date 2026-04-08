@@ -128,7 +128,10 @@ class ShippingService {
 
     async createShipping(orderId, vendorId) {
         const order = await Order.findById(orderId)
-            .populate('items.product')
+            .populate({
+                path: 'items',
+                populate: { path: 'product' }
+            })
             .populate('user');
 
         if (!order) {
@@ -136,9 +139,10 @@ class ShippingService {
         }
 
         // Get vendor items
-        const vendorItems = order.items.filter(
-            item => item.vendor.toString() === vendorId.toString()
-        );
+        const vendorItems = (order.items || []).filter((item) => {
+            const itemVendorId = item?.vendor ? String(item.vendor) : '';
+            return itemVendorId && itemVendorId === String(vendorId);
+        });
 
         if (vendorItems.length === 0) {
             throw new Error('No items for this vendor');
@@ -200,7 +204,7 @@ class ShippingService {
 
         await OrderTimeline.create({
             order: orderId,
-            event: 'shipping_created',
+            event: 'processing_started',
             title: 'Shipping Label Created',
             description: `Shipping created via ${courierPartner}`,
             actorType: 'system',
@@ -489,8 +493,7 @@ class ShippingService {
     async trackShipment(trackingNumber) {
 
         const shipping = await Shipping.findOne({ trackingNumber })
-            .populate('order', 'orderNumber')
-            .populate('customer', 'name phone');
+            .populate('order', 'orderNumber');
 
         if (!shipping) {
             throw new Error('Tracking number not found');

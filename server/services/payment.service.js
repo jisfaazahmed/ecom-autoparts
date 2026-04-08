@@ -6,25 +6,11 @@ const OrderTimeline = require('../models/timeline.model');
 
 class PaymentService {
 
-    async syncOrderAfterPayment(orderId, { paymentStatus = 'completed', transactionId = null, itemStatus = 'confirmed' } = {}) {
+    async syncOrderAfterPayment(orderId, { paymentStatus = 'completed', transactionId = null } = {}) {
         const order = await Order.findById(orderId);
 
         if (!order) {
             throw new Error('Order not found');
-        }
-
-        const orderItems = await OrderItem.find({ _id: { $in: order.items } });
-
-        for (const item of orderItems) {
-            if (['pending', 'confirmed', 'accepted'].includes(String(item.status || '').toLowerCase())) {
-                item.status = itemStatus;
-                item.statusHistory.push({
-                    status: itemStatus,
-                    timestamp: new Date(),
-                    note: 'Payment completed, order released to vendor/admin flow'
-                });
-                await item.save();
-            }
         }
 
         order.paymentStatus = paymentStatus;
@@ -32,15 +18,33 @@ class PaymentService {
             order.transactionId = transactionId;
         }
         order.paidAmount = order.totalAmount;
-        order.overallStatus = 'confirmed';
-        order.subOrders = (order.subOrders || []).map(subOrder => ({
-            ...(subOrder.toObject ? subOrder.toObject() : subOrder),
-            status: itemStatus,
-            updatedAt: new Date()
-        }));
+        // Keep the order awaiting vendor approval. Vendor-only status transitions
+        // should move items/sub-orders from pending -> confirmed -> processing.
+        order.overallStatus = await this.calculateOrderStatusFromItems(order.items);
 
         await order.save();
         return order;
+    }
+
+    async calculateOrderStatusFromItems(orderItemsOrIds) {
+        const itemIds = Array.isArray(orderItemsOrIds)
+            ? orderItemsOrIds.map((item) => String(item._id || item))
+            : [];
+
+        if (itemIds.length === 0) {
+            return 'pending';
+        }
+
+        const orderItems = await OrderItem.find({ _id: { $in: itemIds } });
+        const statuses = orderItems.map((item) => String(item.status || '').toLowerCase());
+
+        if (statuses.every((s) => s === 'delivered')) return 'delivered';
+        if (statuses.every((s) => s === 'cancelled')) return 'cancelled';
+        if (statuses.every((s) => s === 'refunded')) return 'refunded';
+        if (statuses.some((s) => s === 'processing' || s === 'ready_to_ship' || s === 'shipped')) return 'processing';
+        if (statuses.some((s) => s === 'confirmed')) return 'confirmed';
+
+        return 'pending';
     }
 
     //create payment
@@ -61,6 +65,7 @@ class PaymentService {
                 order: orderId,
                 user: userId,
                 paymentMethod,
+                gateway: paymentMethod === 'card' ? 'stripe' : 'cod',
                 amount: order.totalAmount,
                 currency: 'LKR',
                 status: 'pending',
@@ -131,6 +136,7 @@ class PaymentService {
                 paymentIntentId: paymentIntent.id,
                 transactionId: paymentIntent.id
             };
+            payment.gateway = 'stripe';
 
             payment.status = 'processing';
             payment.statusHistory.push({
@@ -164,6 +170,7 @@ class PaymentService {
 
             if (paymentIntent.status === 'succeeded') {
                 payment.status = 'completed';
+                payment.gateway = 'stripe';
                 payment.provider.chargeId = paymentIntent.charges.data[0]?.id;
                 payment.provider.receiptUrl = paymentIntent.charges.data[0]?.receipt_url;
 
@@ -330,7 +337,7 @@ class PaymentService {
             await this.syncOrderAfterPayment(payment.order, {
                 paymentStatus: 'completed',
                 transactionId: `COD-${Date.now()}`,
-                itemStatus: 'confirmed'
+                itemStatus: 'pending'
             });
 
             await payment.save();

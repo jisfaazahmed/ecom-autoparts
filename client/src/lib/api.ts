@@ -254,6 +254,13 @@ export interface StockCheckResult {
   sufficient: boolean;
 }
 
+export interface ApiOrderTimelineEvent {
+  event: string;
+  title: string;
+  description?: string;
+  createdAt: string;
+}
+
 class ApiClient {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
@@ -732,6 +739,17 @@ class ApiClient {
     return this.normalizeOrder(rawOrder);
   }
 
+  async getOrderWithTimeline(id: string): Promise<{
+    order: ApiOrder;
+    timeline: ApiOrderTimelineEvent[];
+  }> {
+    const response = await this.request<any>(`/orders/${id}`);
+    return {
+      order: this.normalizeOrder(response?.order || response),
+      timeline: response?.timeline || [],
+    };
+  }
+
   async createOrder(data: {
     items: { productId: string; quantity: number }[];
     shippingAddress: string;
@@ -745,10 +763,13 @@ class ApiClient {
     couponCode?: string;
     notes?: string;
   }): Promise<ApiOrder> {
-    return this.request<ApiOrder>('/orders', {
+    const response = await this.request<ApiOrder | { order?: ApiOrder; data?: ApiOrder }>('/orders', {
       method: 'POST',
       body: JSON.stringify(data),
     });
+
+    const rawOrder = (response as any)?.order || (response as any)?.data || response;
+    return this.normalizeOrder(rawOrder);
   }
 
   async updateOrderStatus(id: string, status: string, trackingNumber?: string): Promise<ApiOrder> {
@@ -1182,13 +1203,65 @@ class ApiClient {
   async createCheckoutSession(data: {
     orderId: string;
   }): Promise<{ sessionId: string; url: string }> {
-    return this.request<{ sessionId: string; url: string }>(
+    const response = await this.request<{ sessionId: string; url: string; data?: { sessionId: string; url: string } }>(
       '/payments/create-checkout-session',
       {
         method: 'POST',
         body: JSON.stringify(data),
       }
     );
+
+    return response.data || response;
+  }
+
+  async createPaymentIntent(data: { orderId: string }): Promise<{
+    paymentIntentId: string;
+    clientSecret: string;
+    amount: number;
+    currency: string;
+    mockMode?: boolean;
+  }> {
+    const response = await this.request<{
+      paymentIntentId: string;
+      clientSecret: string;
+      amount: number;
+      currency: string;
+      mockMode?: boolean;
+      data?: {
+        paymentIntentId: string;
+        clientSecret: string;
+        amount: number;
+        currency: string;
+        mockMode?: boolean;
+      };
+    }>('/payments/create-payment-intent', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    return response.data || response;
+  }
+
+  async confirmPaymentIntent(data: { orderId: string; paymentIntentId: string }): Promise<{
+    orderId: string;
+    paymentIntentId: string;
+    paymentStatus: string;
+  }> {
+    const response = await this.request<{
+      orderId: string;
+      paymentIntentId: string;
+      paymentStatus: string;
+      data?: {
+        orderId: string;
+        paymentIntentId: string;
+        paymentStatus: string;
+      };
+    }>('/payments/confirm-payment-intent', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    return response.data || response;
   }
 
   // ============ PAYMENTS ============

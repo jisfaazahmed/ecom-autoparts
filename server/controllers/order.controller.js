@@ -7,6 +7,13 @@ const OrderItem = require('../models/orderItem.model');
 //new order
 module.exports.createOrder = async (req, res) => {
     try {
+        const paymentMethod = String(req.body?.paymentMethod || '').toLowerCase();
+        if (paymentMethod === 'card' && !req.user) {
+            return res.status(401).json({
+                message: 'Authentication is required for card payment',
+            });
+        }
+
         const userId = req.user?.id || req.user?._id || null;
         const newOrder = await orderService.createOrder(userId, {
             ...req.body,
@@ -20,7 +27,15 @@ module.exports.createOrder = async (req, res) => {
         });
     }
     catch (error) {
-        res.status(500).json({ message: error.message });
+        const message = String(error?.message || 'Failed to place order');
+        const isValidationError =
+            message.includes('not assigned to a vendor') ||
+            message.includes('Shipping address is incomplete') ||
+            message.includes('No items provided for order') ||
+            message.includes('Product not found') ||
+            message.includes('stock not available');
+
+        res.status(isValidationError ? 400 : 500).json({ message });
     }
 };
 
@@ -50,7 +65,10 @@ module.exports.getAllOrders = async (req, res) => {
         if (status) query.overallStatus = status;
 
         const orders = await order.find(query)
-            .populate('items.product', 'name images')
+            .populate({
+                path: 'items',
+                populate: { path: 'product', select: 'name images price' }
+            })
             .sort({ createdAt: -1 })
             .skip((page - 1) * limit)
             .limit(limit * 1);
@@ -181,22 +199,13 @@ module.exports.getVendorOrders = async (req, res) => {
         if (status) itemQuery.status = status;
 
         const itemIds = await OrderItem.find(itemQuery).distinct('_id');
-        if (itemIds.length === 0) {
-            return res.json({
-                success: true,
-                data: {
-                    orders: [],
-                    pagination: {
-                        page: parseInt(page),
-                        limit: parseInt(limit),
-                        total: 0,
-                        pages: 0
-                    }
-                }
-            });
-        }
 
-        const query = { items: { $in: itemIds } };
+        const query = {
+            $or: [
+                { items: { $in: itemIds } },
+                { 'subOrders.vendor': vendorId }
+            ]
+        };
 
         const orders = await order.find(query)
             .sort({ createdAt: -1 })
@@ -261,7 +270,10 @@ module.exports.trackOrder = async (req, res) => {
         }
 
         const trackedOrder = await order.findById(shipment.order)
-            .populate('items.product')
+            .populate({
+                path: 'items',
+                populate: { path: 'product', select: 'name images price' }
+            })
             .select('orderNumber overallStatus items shippingAddress estimatedDeliveryDate');
 
         if (!trackedOrder) {

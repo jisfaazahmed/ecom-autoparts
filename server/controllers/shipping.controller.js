@@ -3,9 +3,10 @@ const shippingService = require('../services/shipping.service');
 
 module.exports.createShipping = async (req, res) => {
     try {
+        const userId = req.user?._id || req.user?.id;
         const shipping = await shippingService.createShipping(
             req.params.orderId,
-            req.user._id
+            userId
         );
 
         res.status(200).json({
@@ -116,7 +117,8 @@ module.exports.getVendorShipments = async (req, res) => {
     try {
         const { status, page = 1, limit = 10 } = req.query;
 
-        const query = { vendor: req.user._id };
+        const userId = req.user?._id || req.user?.id;
+        const query = { vendor: userId };
         if (status) query.status = status;
 
         const shipments = await shipping.find(query)
@@ -151,15 +153,16 @@ module.exports.getVendorShipments = async (req, res) => {
 exports.getCustomerShipments = async (req, res) => {
     try {
         const { page = 1, limit = 10 } = req.query;
+        const userId = req.user?._id || req.user?.id;
 
-        const shipments = await shipping.find({ customer: req.user._id })
+        const shipments = await shipping.find({ customer: userId })
             .populate('order', 'orderNumber totalAmount')
             .populate('vendor', 'name storeName')
             .sort({ createdAt: -1 })
             .limit(limit * 1)
             .skip((page - 1) * limit);
 
-        const total = await shipping.countDocuments({ customer: req.user._id });
+        const total = await shipping.countDocuments({ customer: userId });
 
         res.json({
             success: true,

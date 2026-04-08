@@ -1,21 +1,68 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/user');
 
-// 1. Verify Token (Is user logged in?)
-exports.verifyToken = (req, res, next) => {
+function buildMockUser() {
+  return {
+    _id: process.env.MOCK_AUTH_USER_ID || '000000000000000000000001',
+    id: process.env.MOCK_AUTH_USER_ID || '000000000000000000000001',
+    role: process.env.MOCK_AUTH_ROLE || 'customer',
+    email: process.env.MOCK_AUTH_EMAIL || 'mock-customer@example.com',
+  };
+}
+
+function decodeAuthToken(req) {
   const authHeader = req.header('Authorization');
   const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   const token = bearerToken || req.header('x-auth-token');
-  if (!token) return res.status(401).json({ message: 'No token, authorization denied' });
+  if (!token) return null;
+
+  const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret123');
+  return decoded.user;
+}
+
+// 1. Verify Token (Is user logged in?)
+exports.verifyToken = (req, res, next) => {
+  const allowMock = process.env.USE_AUTH_MOCK === 'true';
 
   try {
-    // In production, use process.env.JWT_SECRET
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret123'); 
-    req.user = decoded.user;
+    const user = decodeAuthToken(req);
+    if (!user) {
+      if (!allowMock) {
+        return res.status(401).json({ message: 'No token, authorization denied' });
+      }
+      req.user = buildMockUser();
+      return next();
+    }
+
+    req.user = user;
     next();
   } catch (err) {
+    if (allowMock) {
+      req.user = buildMockUser();
+      return next();
+    }
     res.status(401).json({ message: 'Token is not valid' });
   }
+};
+
+// Optional authentication for mixed guest/auth endpoints (e.g., COD guest checkout)
+exports.attachUserIfPresent = (req, _res, next) => {
+  const allowMock = process.env.USE_AUTH_MOCK === 'true';
+
+  try {
+    const user = decodeAuthToken(req);
+    if (user) {
+      req.user = user;
+    } else if (allowMock) {
+      req.user = buildMockUser();
+    }
+  } catch (_err) {
+    if (allowMock) {
+      req.user = buildMockUser();
+    }
+  }
+
+  next();
 };
 
 // 2. Verify Super Admin (Is user the Boss?)

@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/select';
 import Navbar from '@/components/layout/Navbar';
 import { useAuth } from '@/hooks/useAuth';
-import { api, ApiOrder } from '@/lib/api';
+import { api, ApiOrder, ApiOrderTimelineEvent } from '@/lib/api';
 import { formatLKR } from '@/lib/currency';
 import OrderDetailsDialog from '@/components/orders/OrderDetailsDialog';
 import CancelOrderDialog from '@/components/orders/CancelOrderDialog';
@@ -116,6 +116,7 @@ const Orders: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedOrder, setSelectedOrder] = useState<ApiOrder | null>(null);
+  const [selectedOrderTimeline, setSelectedOrderTimeline] = useState<ApiOrderTimelineEvent[]>([]);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<string | null>(null);
@@ -198,9 +199,30 @@ const Orders: React.FC = () => {
     }
   };
 
-  const handleViewDetails = (order: ApiOrder) => {
-    setSelectedOrder(order);
-    setShowDetailsDialog(true);
+  const handleViewDetails = async (order: ApiOrder) => {
+    setLoading(true);
+    try {
+      const orderId = order.id || order._id;
+      if (!orderId) {
+        setSelectedOrder(order);
+        setSelectedOrderTimeline([]);
+      } else {
+        const details = await api.getOrderWithTimeline(orderId);
+        setSelectedOrder(details.order);
+        setSelectedOrderTimeline(details.timeline || []);
+      }
+      setShowDetailsDialog(true);
+    } catch (error) {
+      setSelectedOrder(order);
+      setSelectedOrderTimeline([]);
+      setShowDetailsDialog(true);
+      toast({
+        title: 'Partial Data',
+        description: 'Loaded cached order info. Full order timeline is unavailable right now.',
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCancelOrder = async (reason: string) => {
@@ -580,10 +602,12 @@ const Orders: React.FC = () => {
       {/* Dialogs */}
       <OrderDetailsDialog
         order={selectedOrder}
+        timeline={selectedOrderTimeline}
         open={showDetailsDialog}
         onClose={() => {
           setShowDetailsDialog(false);
           setSelectedOrder(null);
+          setSelectedOrderTimeline([]);
         }}
       />
 

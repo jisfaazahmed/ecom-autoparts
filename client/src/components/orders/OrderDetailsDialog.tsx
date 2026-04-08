@@ -1,6 +1,6 @@
 import React from 'react';
-import { X, Package, Truck, MapPin, Calendar, CreditCard, Phone } from 'lucide-react';
-import { ApiOrder } from '@/lib/api';
+import { Package, Truck, MapPin, Calendar, CreditCard, Phone, Timer, Receipt } from 'lucide-react';
+import { ApiOrder, ApiOrderTimelineEvent } from '@/lib/api';
 import { formatLKR } from '@/lib/currency';
 import {
   Dialog,
@@ -13,6 +13,7 @@ import { Separator } from '@/components/ui/separator';
 
 interface OrderDetailsDialogProps {
   order: ApiOrder | null;
+  timeline?: ApiOrderTimelineEvent[];
   open: boolean;
   onClose: () => void;
 }
@@ -38,16 +39,60 @@ const statusConfig: Record<string, { color: string; label: string }> = {
     color: 'bg-red-500/20 text-red-500 border-red-500/30',
     label: 'Cancelled',
   },
+  confirmed: {
+    color: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+    label: 'Confirmed',
+  },
+  out_for_delivery: {
+    color: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+    label: 'Out for Delivery',
+  },
+  refunded: {
+    color: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+    label: 'Refunded',
+  },
+};
+
+const paymentStatusConfig: Record<string, { color: string; label: string }> = {
+  pending: {
+    color: 'bg-yellow-500/20 text-yellow-500 border-yellow-500/30',
+    label: 'Pending',
+  },
+  processing: {
+    color: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
+    label: 'Processing',
+  },
+  completed: {
+    color: 'bg-green-500/20 text-green-500 border-green-500/30',
+    label: 'Completed',
+  },
+  failed: {
+    color: 'bg-red-500/20 text-red-500 border-red-500/30',
+    label: 'Failed',
+  },
+  refunded: {
+    color: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+    label: 'Refunded',
+  },
+  partially_refunded: {
+    color: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    label: 'Partially Refunded',
+  },
 };
 
 const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({
   order,
+  timeline = [],
   open,
   onClose,
 }) => {
   if (!order) return null;
 
-  const status = statusConfig[order.status] || statusConfig.pending;
+  const displayOrderStatus = order.overallStatus || order.status || 'pending';
+  const status = statusConfig[displayOrderStatus] || statusConfig.pending;
+  const displayPaymentStatus = order.paymentStatus || 'pending';
+  const paymentStatus = paymentStatusConfig[displayPaymentStatus] || paymentStatusConfig.pending;
+  const paymentMethod = String(order.paymentMethod || 'unknown').replace('_', ' ');
   const orderId = order.id || order._id || order.orderNumber || '';
 
   const parseShippingAddress = (shippingAddress: unknown) => {
@@ -82,6 +127,11 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({
     parsedAddress?.country
   );
 
+  const itemsSubtotal = (order.items || []).reduce((sum, item) => {
+    const lineTotal = item.totalPrice || ((item.unitPrice || 0) * (item.quantity || 0));
+    return sum + lineTotal;
+  }, 0);
+
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
@@ -98,7 +148,7 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({
 
         <div className="space-y-6">
           {/* Order Info */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Calendar className="h-4 w-4" />
@@ -126,6 +176,22 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({
                 </p>
               </div>
             )}
+
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <CreditCard className="h-4 w-4" />
+                <span>Payment Method</span>
+              </div>
+              <p className="text-sm font-medium capitalize">{paymentMethod}</p>
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Receipt className="h-4 w-4" />
+                <span>Payment Status</span>
+              </div>
+              <Badge className={paymentStatus.color}>{paymentStatus.label}</Badge>
+            </div>
           </div>
 
           <Separator />
@@ -168,11 +234,11 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({
                   <div className="flex-1">
                     <h4 className="font-medium">{item.productName}</h4>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Quantity: {item.quantity} × {formatLKR(item.unitPrice)}
+                      Quantity: {item.quantity} × {formatLKR(item.unitPrice || 0)}
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold">{formatLKR(item.totalPrice)}</p>
+                    <p className="font-semibold">{formatLKR(item.totalPrice || ((item.unitPrice || 0) * (item.quantity || 0)))}</p>
                   </div>
                 </div>
               ))}
@@ -190,14 +256,7 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({
             <div className="bg-muted/50 rounded-lg p-4 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span>
-                  {formatLKR(
-                    (order.items || []).reduce(
-                      (sum, item) => sum + item.totalPrice,
-                      0
-                    )
-                  )}
-                </span>
+                <span>{formatLKR(itemsSubtotal)}</span>
               </div>
               
               {order.discountAmount && order.discountAmount > 0 && (
@@ -223,6 +282,52 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({
                   </p>
                 </div>
               )}
+
+              {order.transactionId && (
+                <div className="pt-1">
+                  <p className="text-xs text-muted-foreground">
+                    Transaction ID: {order.transactionId}
+                  </p>
+                </div>
+              )}
+
+              {order.stripeSessionId && (
+                <div className="pt-1">
+                  <p className="text-xs text-muted-foreground">
+                    Stripe Session: {order.stripeSessionId}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Timeline */}
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Timer className="h-5 w-5 text-primary" />
+              <h3 className="font-semibold">Order Timeline</h3>
+            </div>
+            <div className="space-y-2">
+              {timeline.length === 0 && (
+                <div className="bg-muted/50 rounded-lg p-3 text-sm text-muted-foreground">
+                  Timeline data is not available for this order.
+                </div>
+              )}
+              {timeline.map((event, index) => (
+                <div key={`${event.event}-${event.createdAt}-${index}`} className="bg-muted/50 rounded-lg p-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="font-medium text-sm">{event.title || event.event}</p>
+                    <p className="text-xs text-muted-foreground whitespace-nowrap">
+                      {new Date(event.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                  {event.description && (
+                    <p className="text-xs text-muted-foreground mt-1">{event.description}</p>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
 

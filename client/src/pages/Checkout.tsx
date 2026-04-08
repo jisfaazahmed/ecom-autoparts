@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ShoppingCart, CreditCard, Truck, Check, AlertCircle, Loader2, Tag } from 'lucide-react';
+import { ShoppingCart, CreditCard, Truck, Check, AlertCircle, Loader2, Tag, ShieldCheck } from 'lucide-react';
+import { CardElement, Elements, useElements, useStripe } from '@stripe/react-stripe-js';
+import { loadStripe } from '@stripe/stripe-js';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,6 +34,129 @@ interface ShippingForm {
 }
 
 const SHIPPING_COST = 500; // $5.00 in cents
+const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined;
+const useStripeMock = (import.meta.env.VITE_USE_STRIPE_MOCK as string | undefined) === 'true';
+const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
+
+type ConfirmInlineCardFn = (
+  clientSecret: string,
+  billing: { name: string; email: string; phone: string }
+) => Promise<string>;
+
+interface MockCardInput {
+  cardNumber: string;
+  cardHolder: string;
+  expiry: string;
+  cvc: string;
+}
+
+function formatCardNumber(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 16);
+  return digits.replace(/(.{4})/g, '$1 ').trim();
+}
+
+function formatExpiry(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 4);
+  if (digits.length < 3) return digits;
+  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+}
+
+function validateMockCard(card: MockCardInput): string | null {
+  const number = card.cardNumber.replace(/\s/g, '');
+  if (number.length !== 16) return 'Enter a valid 16-digit card number';
+  if (!card.cardHolder.trim()) return 'Card holder name is required';
+  if (!/^\d{2}\/\d{2}$/.test(card.expiry)) return 'Enter expiry in MM/YY format';
+  if (!/^\d{3,4}$/.test(card.cvc)) return 'Enter a valid CVC';
+  return null;
+}
+
+function InlineCardForm({
+  onReady,
+  disabled,
+}: {
+  onReady: (fn: ConfirmInlineCardFn | null) => void;
+  disabled: boolean;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [cardError, setCardError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onReady(async (clientSecret, billing) => {
+      if (!stripe || !elements) {
+        throw new Error('Stripe is not ready yet. Please wait a moment and try again.');
+      }
+
+      const card = elements.getElement(CardElement);
+      if (!card) {
+        throw new Error('Card form is not ready. Please re-enter card details.');
+      }
+
+      const { error, paymentIntent } = await stripe.confirmCardPayment(clientSecret, {
+        payment_method: {
+          card,
+          billing_details: {
+            name: billing.name,
+            email: billing.email,
+            phone: billing.phone,
+          },
+        },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Card payment failed. Please check your card details.');
+      }
+
+      if (!paymentIntent?.id) {
+        throw new Error('Stripe did not return a payment intent.');
+      }
+
+      return paymentIntent.id;
+    });
+
+    return () => onReady(null);
+  }, [elements, onReady, stripe]);
+
+  return (
+    <div className="space-y-3">
+      <Label htmlFor="card-element">Card Details</Label>
+      <div
+        id="card-element"
+        className="rounded-md border border-input bg-background px-3 py-3"
+      >
+        <CardElement
+          options={{
+            hidePostalCode: true,
+            disabled,
+            style: {
+              base: {
+                fontSize: '16px',
+                color: '#1f2937',
+                '::placeholder': {
+                  color: '#9ca3af',
+                },
+              },
+              invalid: {
+                color: '#dc2626',
+              },
+            },
+          }}
+          onChange={(event) => {
+            if (event.error?.message) {
+              setCardError(event.error.message);
+            } else {
+              setCardError(null);
+            }
+          }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Use Stripe test card: 4242 4242 4242 4242, any future date, any CVC.
+      </p>
+      {cardError && <p className="text-sm text-destructive">{cardError}</p>}
+    </div>
+  );
+}
 
 export default function Checkout() {
   const navigate = useNavigate();
@@ -40,6 +165,14 @@ export default function Checkout() {
 
   const [step, setStep] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'cod'>('stripe');
+  const [cardFlow, setCardFlow] = useState<'inline' | 'redirect'>((stripePromise || useStripeMock) ? 'inline' : 'redirect');
+  const [confirmInlineCard, setConfirmInlineCard] = useState<ConfirmInlineCardFn | null>(null);
+  const [mockCard, setMockCard] = useState<MockCardInput>({
+    cardNumber: '4242 4242 4242 4242',
+    cardHolder: '',
+    expiry: '12/34',
+    cvc: '123',
+  });
   const [loading, setLoading] = useState(false);
   const [stockIssues, setStockIssues] = useState<StockIssue[]>([]);
   const [couponCode, setCouponCode] = useState('');
@@ -150,6 +283,10 @@ export default function Checkout() {
     toast.info('Coupon removed');
   };
 
+  const handleInlineCardReady = useCallback((fn: ConfirmInlineCardFn | null) => {
+    setConfirmInlineCard(() => fn);
+  }, []);
+
   const handleInputChange = (field: keyof ShippingForm, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
@@ -224,6 +361,96 @@ export default function Checkout() {
     }
   };
 
+  const handleInlineCardCheckout = async () => {
+    if (stockIssues.length > 0) {
+      toast.error('Please resolve stock issues before checkout');
+      return;
+    }
+
+    if (!validateShippingForm()) {
+      return;
+    }
+
+    if (!user?.id) {
+      toast.error('Please sign in before paying by card');
+      navigate('/auth/customer', {
+        replace: true,
+        state: { message: 'Sign in to continue with card payment.' },
+      });
+      return;
+    }
+
+    const isMockInline = useStripeMock && !stripePromise;
+    if (!isMockInline && !stripePromise) {
+      toast.error('Stripe card form is not configured. Set VITE_STRIPE_PUBLISHABLE_KEY first.');
+      return;
+    }
+
+    if (!isMockInline && !confirmInlineCard) {
+      toast.error('Card form is not ready. Please wait and try again.');
+      return;
+    }
+
+    if (isMockInline) {
+      const validation = validateMockCard(mockCard);
+      if (validation) {
+        toast.error(validation);
+        return;
+      }
+    }
+
+    setLoading(true);
+
+    try {
+      const orderItems = validCart.map((item) => ({
+        productId: item.product.id || item.product._id || item.id,
+        quantity: item.quantity,
+      }));
+
+      const order = await api.createOrder({
+        items: orderItems,
+        shippingAddress: form.address,
+        shippingCity: form.city,
+        shippingPostalCode: form.postalCode,
+        fullName: form.fullName,
+        phone: form.phone,
+        shippingCountry: 'Sri Lanka',
+        paymentMethod: 'card',
+        shopId,
+        couponCode: appliedCoupon?.code,
+      });
+
+      const orderId = order.id || order._id;
+      if (!orderId) {
+        throw new Error('Order created but order ID was not returned');
+      }
+
+      const paymentIntent = await api.createPaymentIntent({ orderId });
+
+      const paymentIntentId = isMockInline
+        ? paymentIntent.paymentIntentId
+        : await confirmInlineCard!(paymentIntent.clientSecret, {
+            name: form.fullName,
+            email: form.email,
+            phone: form.phone,
+          });
+
+      await api.confirmPaymentIntent({
+        orderId,
+        paymentIntentId,
+      });
+
+      clearCart();
+      toast.success('Card payment completed successfully!');
+      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId)}`);
+    } catch (error) {
+      console.error('Inline card checkout error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to process card payment');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCODCheckout = async () => {
     if (stockIssues.length > 0) {
       toast.error('Please resolve stock issues before checkout');
@@ -280,7 +507,11 @@ export default function Checkout() {
 
   const handleCheckout = () => {
     if (paymentMethod === 'stripe') {
-      handleStripeCheckout();
+      if (cardFlow === 'inline') {
+        handleInlineCardCheckout();
+      } else {
+        handleStripeCheckout();
+      }
     } else {
       handleCODCheckout();
     }
@@ -434,6 +665,15 @@ export default function Checkout() {
                         if (validateShippingForm()) {
                           setStep(2);
                         }
+
+                        if (!user?.id) {
+                          toast.error('Please sign in to continue with card payment');
+                          navigate('/auth/customer', {
+                            replace: true,
+                            state: { message: 'Please sign in to continue with card payment.' },
+                          });
+                          return;
+                        }
                       }}
                     >
                       Continue to Payment
@@ -496,6 +736,63 @@ export default function Checkout() {
                         </Label>
                       </div>
                     </RadioGroup>
+
+                    {paymentMethod === 'stripe' && (
+                      <div className="mt-4 space-y-4 rounded-xl border border-primary/20 bg-gradient-to-br from-primary/10 via-background to-background p-5">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold">Card Processing Method</p>
+                          <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            PCI-ready flow
+                          </div>
+                        </div>
+                        <RadioGroup
+                          value={cardFlow}
+                          onValueChange={(v) => setCardFlow(v as 'inline' | 'redirect')}
+                          className="space-y-3"
+                        >
+                          <div className="flex items-start space-x-3 rounded-lg border border-border/70 bg-background/70 p-4">
+                            <RadioGroupItem value="inline" id="inline-card" disabled={!stripePromise && !useStripeMock} />
+                            <Label htmlFor="inline-card" className="cursor-pointer">
+                              <div className="font-medium">Add card here (inline form)</div>
+                              <div className="text-xs text-muted-foreground">
+                                {useStripeMock
+                                  ? 'Mock card flow enabled for development with Stripe-like behavior.'
+                                  : 'Enter card in checkout and pay without redirect.'}
+                              </div>
+                            </Label>
+                          </div>
+
+                          <div className="flex items-start space-x-3 rounded-lg border border-border/70 bg-background/70 p-4">
+                            <RadioGroupItem value="redirect" id="redirect-card" />
+                            <Label htmlFor="redirect-card" className="cursor-pointer">
+                              <div className="font-medium">Stripe hosted checkout</div>
+                              <div className="text-xs text-muted-foreground">
+                                Redirect to Stripe page to add card and pay.
+                              </div>
+                            </Label>
+                          </div>
+                        </RadioGroup>
+
+                        {!stripePromise && !useStripeMock && (
+                          <Alert>
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertDescription>
+                              Set <strong>VITE_STRIPE_PUBLISHABLE_KEY</strong> in client environment to enable inline card form.
+                            </AlertDescription>
+                          </Alert>
+                        )}
+
+                        {!stripePromise && useStripeMock && (
+                          <Alert>
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertDescription>
+                              Mock mode is active. This simulates card processing via your Stripe mock backend.
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                      </div>
+                    )}
 
                     <div className="flex gap-3 mt-6">
                       <Button variant="outline" onClick={() => setStep(1)}>
@@ -568,9 +865,73 @@ export default function Checkout() {
                     <div>
                       <h4 className="font-medium mb-2">Payment Method</h4>
                       <p className="text-muted-foreground text-sm">
-                        {paymentMethod === 'stripe' ? 'Credit / Debit Card (Stripe)' : 'Cash on Delivery'}
+                        {paymentMethod === 'stripe'
+                          ? cardFlow === 'inline'
+                            ? 'Credit / Debit Card (Stripe inline)'
+                            : 'Credit / Debit Card (Stripe hosted checkout)'
+                          : 'Cash on Delivery'}
                       </p>
                     </div>
+
+                    {paymentMethod === 'stripe' && cardFlow === 'inline' && stripePromise && (
+                      <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-background p-5">
+                        <Elements stripe={stripePromise}>
+                          <InlineCardForm
+                            onReady={handleInlineCardReady}
+                            disabled={loading}
+                          />
+                        </Elements>
+                      </div>
+                    )}
+
+                    {paymentMethod === 'stripe' && cardFlow === 'inline' && !stripePromise && useStripeMock && (
+                      <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-background p-5 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-semibold">Mock Card Details</p>
+                          <span className="text-xs text-primary font-medium">Sandbox</span>
+                        </div>
+
+                        <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                          <p className="text-xs text-muted-foreground mb-1">Card Number</p>
+                          <Input
+                            value={mockCard.cardNumber}
+                            onChange={(e) => setMockCard((prev) => ({ ...prev, cardNumber: formatCardNumber(e.target.value) }))}
+                            placeholder="4242 4242 4242 4242"
+                            inputMode="numeric"
+                          />
+                        </div>
+
+                        <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                          <p className="text-xs text-muted-foreground mb-1">Card Holder</p>
+                          <Input
+                            value={mockCard.cardHolder}
+                            onChange={(e) => setMockCard((prev) => ({ ...prev, cardHolder: e.target.value }))}
+                            placeholder="John Driver"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                            <p className="text-xs text-muted-foreground mb-1">Expiry</p>
+                            <Input
+                              value={mockCard.expiry}
+                              onChange={(e) => setMockCard((prev) => ({ ...prev, expiry: formatExpiry(e.target.value) }))}
+                              placeholder="MM/YY"
+                              inputMode="numeric"
+                            />
+                          </div>
+                          <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
+                            <p className="text-xs text-muted-foreground mb-1">CVC</p>
+                            <Input
+                              value={mockCard.cvc}
+                              onChange={(e) => setMockCard((prev) => ({ ...prev, cvc: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
+                              placeholder="123"
+                              inputMode="numeric"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="flex gap-3 mt-6">
                       <Button variant="outline" onClick={() => setStep(2)}>
@@ -587,7 +948,7 @@ export default function Checkout() {
                             Processing...
                           </>
                         ) : paymentMethod === 'stripe' ? (
-                          'Pay Now'
+                          cardFlow === 'inline' ? 'Pay Card Now' : 'Pay with Stripe'
                         ) : (
                           'Place Order'
                         )}

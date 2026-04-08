@@ -1,9 +1,9 @@
 const router = require('express').Router();
 const orderController = require('../controllers/order.controller');
-const { verifyToken } = require('../middleware/authMiddleware');
+const { verifyToken, attachUserIfPresent } = require('../middleware/authMiddleware');
 
 //customer (guest checkout allowed)
-router.post('/', orderController.createOrder);
+router.post('/', attachUserIfPresent, orderController.createOrder);
 router.get('/my_orders', verifyToken, orderController.getAllOrders);
 
 //vendor
