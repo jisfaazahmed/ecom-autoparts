@@ -76,6 +76,8 @@ export interface ApiProduct {
   description?: string;
   price: number;
   stock: number;
+  rating?: number;
+  reviewCount?: number;
   imageUrl?: string;
   image_url?: string;
   image?: string;
@@ -969,6 +971,13 @@ class ApiClient {
 
   async createProductReview(productId: string, data: { rating: number; comment?: string }): Promise<ApiReview> {
     return this.createReview(productId, data);
+  }
+
+  async updateReview(productId: string, reviewId: string, data: { rating: number; comment?: string }): Promise<ApiReview> {
+    return this.request<ApiReview>(`/products/${productId}/reviews/${reviewId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
   }
 
   async deleteReview(productId: string, reviewId: string): Promise<void> {

@@ -26,7 +26,10 @@ const ProductDetail: React.FC = () => {
   const [reviews, setReviews] = useState<ApiReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [submittingReview, setSubmittingReview] = useState(false);
-  const [newRating, setNewRating] = useState(5);
+  const [deletingReviewId, setDeletingReviewId] = useState<string | null>(null);
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
+  const [deleteReviewTarget, setDeleteReviewTarget] = useState<ApiReview | null>(null);
+  const [newRating, setNewRating] = useState(0);
   const [newComment, setNewComment] = useState('');
 
   useEffect(() => {
@@ -43,6 +46,14 @@ const ProductDetail: React.FC = () => {
         setReviews(reviewsData || []);
       } catch (error) {
         console.error('Failed to fetch product:', error);
+      }
+
+      // Fetch reviews separately so a failure here doesn't hide the product
+      try {
+        const reviewsData = await api.getProductReviews(id);
+        setReviews(reviewsData || []);
+      } catch (error) {
+        console.error('Failed to fetch reviews:', error);
       }
       
       setLoading(false);
@@ -87,25 +98,51 @@ const ProductDetail: React.FC = () => {
       return;
     }
 
+    if (newRating < 1 || newRating > 5) {
+      toast({
+        title: 'Invalid Rating',
+        description: 'Please choose a rating between 1 and 5 stars.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     setSubmittingReview(true);
     
     try {
-      await api.createProductReview(product.id, {
+      let submittedReview: ApiReview;
+
+      if (editingReviewId) {
+        submittedReview = await api.updateReview(product.id, editingReviewId, {
+          rating: newRating,
+          comment: newComment || undefined,
+        });
+      } else {
+        submittedReview = await api.createProductReview(product.id, {
         rating: newRating,
         comment: newComment || undefined,
       });
 
       toast({
-        title: 'Review Submitted',
-        description: 'Thank you for your feedback!',
+        title: editingReviewId ? 'Review Updated' : 'Review Submitted',
+        description: editingReviewId ? 'Your review has been updated.' : 'Thank you for your feedback!',
       });
       
-      // Refresh reviews
+      // Keep UI responsive immediately, then sync from server
+      if (editingReviewId) {
+        setReviews((current) => current.map((review) => (
+          review.id === submittedReview.id ? submittedReview : review
+        )));
+      } else {
+        setReviews((current) => [submittedReview, ...current]);
+      }
+
       const reviewsData = await api.getProductReviews(product.id);
-      setReviews(reviewsData || []);
+      setReviews(reviewsData || [submittedReview]);
       
       setNewComment('');
-      setNewRating(5);
+      setNewRating(0);
+      setEditingReviewId(null);
     } catch (error: unknown) {
       toast({
         title: 'Error',
@@ -115,6 +152,36 @@ const ProductDetail: React.FC = () => {
     }
     
     setSubmittingReview(false);
+    }
+  };
+
+  const handleDeleteReview = async (reviewId: string) => {
+    if (!product || !user) return;
+
+    setDeletingReviewId(reviewId);
+    try {
+      await api.deleteReview(product.id, reviewId);
+      setReviews((current) => current.filter((review) => review.id !== reviewId));
+
+      if (editingReviewId === reviewId) {
+        setEditingReviewId(null);
+        setNewComment('');
+        setNewRating(0);
+      }
+
+      toast({
+        title: 'Review Deleted',
+        description: 'Your review has been removed.',
+      });
+    } catch (error: unknown) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error && error.message ? error.message : 'Failed to delete review',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingReviewId(null);
+    }
   };
 
   const averageRating = reviews.length > 0 
@@ -277,19 +344,36 @@ const ProductDetail: React.FC = () => {
           </h2>
 
           {/* Write Review */}
-          {user && (
+          {user ? (
             <div className="glass-card rounded-xl p-6 mb-8">
-              <h3 className="font-semibold mb-4">Write a Review</h3>
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  <h3 className="font-semibold">{editingReviewId ? 'Edit Your Review' : 'Write a Review'}</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {editingReviewId ? 'Update your selected review.' : 'Share your experience with this product.'}
+                  </p>
+                </div>
+                {/* <Badge variant="outline" className="shrink-0">
+                  Signed in as {profile?.full_name || user.email || 'Customer'}
+                </Badge> */}
+              </div>
               
               <div className="space-y-4">
                 <div>
+                  <div className="flex items-center justify-between gap-3">
                   <Label>Rating</Label>
+                    <span className="text-sm text-muted-foreground">
+                      {newRating} / 5
+                    </span>
+                  </div>
                   <div className="flex items-center gap-1 mt-2">
                     {[1, 2, 3, 4, 5].map((star) => (
                       <button
                         key={star}
                         type="button"
                         onClick={() => setNewRating(star)}
+                        aria-label={`Rate ${star} star${star === 1 ? '' : 's'}`}
+                        aria-pressed={newRating === star}
                         className="focus:outline-none"
                       >
                         <Star
@@ -315,13 +399,45 @@ const ProductDetail: React.FC = () => {
                   />
                 </div>
 
-                <Button onClick={handleSubmitReview} disabled={submittingReview}>
+                <div className="flex flex-wrap gap-3">
+                  <Button
+                    onClick={handleSubmitReview}
+                    disabled={submittingReview || newRating < 1 || newRating > 5}
+                  >
                   {submittingReview ? (
                     <Loader2 className="h-4 w-4 animate-spin mr-2" />
                   ) : null}
-                  Submit Review
+                    {editingReviewId ? 'Update Review' : 'Submit Review'}
+                  </Button>
+
+                  {editingReviewId && (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setEditingReviewId(null);
+                        setNewComment('');
+                          setNewRating(0);
+                      }}
+                    >
+                      Cancel Edit
                 </Button>
+                  )}
+                </div>
               </div>
+            </div>
+          ) : (
+            <div className="glass-card rounded-xl p-6 mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h3 className="font-semibold mb-1">Sign in to leave a review</h3>
+                <p className="text-sm text-muted-foreground">
+                  Only signed-in customers can post product reviews.
+                </p>
+              </div>
+              <Link to="/auth/customer">
+                <Button className="neon-button w-full sm:w-auto">
+                  Sign In
+                </Button>
+              </Link>
             </div>
           )}
 
@@ -357,6 +473,36 @@ const ProductDetail: React.FC = () => {
                           }`}
                         />
                       ))}
+                      </div>
+
+                      {user?.id === review.userId && (
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditingReviewId(review.id);
+                              setNewRating(review.rating);
+                              setNewComment(review.comment || '');
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5 mr-1" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => setDeleteReviewTarget(review)}
+                            disabled={deletingReviewId === review.id}
+                          >
+                            {deletingReviewId === review.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   </div>
                   {review.comment && (
@@ -366,6 +512,37 @@ const ProductDetail: React.FC = () => {
               ))}
             </div>
           )}
+
+          <AlertDialog
+            open={!!deleteReviewTarget}
+            onOpenChange={(open) => {
+              if (!open) {
+                setDeleteReviewTarget(null);
+              }
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete review?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. The review will be permanently removed.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={() => {
+                    if (deleteReviewTarget) {
+                      handleDeleteReview(deleteReviewTarget.id);
+                      setDeleteReviewTarget(null);
+                    }
+                  }}
+                >
+                  Delete
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </div>
     </div>

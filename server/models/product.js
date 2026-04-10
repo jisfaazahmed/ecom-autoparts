@@ -31,6 +31,10 @@ const productSchema = new mongoose.Schema({
   
   // 5. Is it active?
   isActive: { type: Boolean, default: true }
+
+  ,// 6. Review summary (kept in sync by review controller)
+  rating: { type: Number, default: 0 },
+  reviewCount: { type: Number, default: 0 }
 }, { timestamps: true });
 
 // Index for fast searching by Category and Vehicle
