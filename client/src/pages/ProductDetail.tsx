@@ -149,8 +149,7 @@ const ProductDetail: React.FC = () => {
         description: error instanceof Error && error.message ? error.message : 'Failed to submit review',
         variant: 'destructive',
       });
-    }
-    
+    } finally {
     setSubmittingReview(false);
     }
   };
