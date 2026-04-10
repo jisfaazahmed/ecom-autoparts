@@ -38,10 +38,8 @@ const userSchema = new mongoose.Schema({
   },
 
   // Vendor/shop extra fields (for role ADMIN)
-  phone: { type: String },
   businessRegistration: { type: String },
   shopDescription: { type: String },
-  address: { type: String },
   logoUrl: { type: String },
   commissionRate: { type: Number, default: 10 },
   rejectionReason: { type: String },
