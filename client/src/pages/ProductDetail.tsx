@@ -3,12 +3,22 @@ import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   ShoppingCart, Star, ChevronLeft, Check, Package, 
-  Truck, Shield, MessageSquare, Loader2 
+  Truck, Shield, MessageSquare, Loader2, Car, AlertCircle, Pencil, Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import Navbar from '@/components/layout/Navbar';
 import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -18,8 +28,8 @@ import { useToast } from '@/hooks/use-toast';
 
 const ProductDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { addToCart } = useStore();
-  const { user } = useAuth();
+  const { addToCart, userVehicle } = useStore();
+  const { user, profile } = useAuth();
   const { toast } = useToast();
   
   const [product, setProduct] = useState<ApiProduct | null>(null);
@@ -37,13 +47,8 @@ const ProductDetail: React.FC = () => {
       if (!id) return;
       
       try {
-        const [productData, reviewsData] = await Promise.all([
-          api.getProduct(id),
-          api.getProductReviews(id)
-        ]);
-        
+        const productData = await api.getProduct(id);
         setProduct(productData);
-        setReviews(reviewsData || []);
       } catch (error) {
         console.error('Failed to fetch product:', error);
       }
@@ -76,9 +81,11 @@ const ProductDetail: React.FC = () => {
       shopId: product.shopId,
       shopName: product.shop?.name || 'Unknown Shop',
       stock: product.stock,
-      compatibleVehicles: product.compatibleVariants || [],
-      rating: 0,
-      reviewCount: 0,
+      compatibleVehicles: (product.compatibleVehicles || []).map((v) =>
+        typeof v === 'string' ? v : `${v.year} ${v.make} ${v.model}`
+      ),
+      rating: product.rating ?? 0,
+      reviewCount: product.reviewCount ?? 0,
       sku: product.sku || '',
     });
     
@@ -119,9 +126,10 @@ const ProductDetail: React.FC = () => {
         });
       } else {
         submittedReview = await api.createProductReview(product.id, {
-        rating: newRating,
-        comment: newComment || undefined,
-      });
+          rating: newRating,
+          comment: newComment || undefined,
+        });
+      }
 
       toast({
         title: editingReviewId ? 'Review Updated' : 'Review Submitted',
@@ -150,7 +158,7 @@ const ProductDetail: React.FC = () => {
         variant: 'destructive',
       });
     } finally {
-    setSubmittingReview(false);
+      setSubmittingReview(false);
     }
   };
 
@@ -228,13 +236,15 @@ const ProductDetail: React.FC = () => {
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            className="relative"
+            className="relative overflow-hidden rounded-2xl"
           >
-            <div className="aspect-square rounded-2xl overflow-hidden glass-card">
+            <div className="aspect-square overflow-hidden glass-card">
               <img
-                src={product.imageUrl || '/placeholder.svg'}
+                src={product.imageUrl
+                  ? product.imageUrl.replace(/\\/g, '/').replace(/^\.\//, '/')
+                  : '/placeholder.svg'}
                 alt={product.name}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain"
               />
             </div>
           </motion.div>
@@ -290,6 +300,54 @@ const ProductDetail: React.FC = () => {
                 <Badge variant="destructive">Out of Stock</Badge>
               )}
             </div>
+
+            {/* Vehicle Compatibility */}
+            {product.compatibleVehicleVariants && product.compatibleVehicleVariants.length > 0 && (
+              <div className="glass-card rounded-xl p-4 space-y-3">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Car className="h-4 w-4 text-primary" />
+                  Vehicle Compatibility
+                </h3>
+                {userVehicle && (() => {
+                  const isCompatible = product.compatibleVehicleVariants!.some((v) =>
+                    v.brandName?.toLowerCase() === userVehicle.brand.toLowerCase() &&
+                    v.modelName?.toLowerCase() === userVehicle.model.toLowerCase() &&
+                    userVehicle.year >= v.yearStart &&
+                    (v.yearEnd === null || userVehicle.year <= v.yearEnd)
+                  );
+                  return isCompatible ? (
+                    <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
+                      <Check className="h-3 w-3 mr-1" />
+                      Fits your {userVehicle.year} {userVehicle.brand} {userVehicle.model}
+                    </Badge>
+                  ) : (
+                    <Badge variant="destructive" className="flex items-center gap-1 w-fit">
+                      <AlertCircle className="h-3 w-3" />
+                      May not fit your {userVehicle.year} {userVehicle.brand} {userVehicle.model}
+                    </Badge>
+                  );
+                })()}
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {(() => {
+                    // Group variants by brand+model and show year ranges
+                    const grouped = new Map<string, { brand: string; model: string; variants: string[] }>();
+                    for (const v of product.compatibleVehicleVariants!) {
+                      const key = `${v.brandName}-${v.modelName}`;
+                      if (!grouped.has(key)) {
+                        grouped.set(key, { brand: v.brandName || '', model: v.modelName || '', variants: [] });
+                      }
+                      const yearRange = v.yearEnd ? `${v.yearStart}-${v.yearEnd}` : `${v.yearStart}+`;
+                      grouped.get(key)!.variants.push(`${v.name} (${yearRange})`);
+                    }
+                    return Array.from(grouped.entries()).map(([key, { brand, model, variants }]) => (
+                      <Badge key={key} variant="outline" className="text-xs">
+                        {brand} {model}: {variants.join(', ')}
+                      </Badge>
+                    ));
+                  })()}
+                </div>
+              </div>
+            )}
 
             {/* Features */}
             <div className="grid grid-cols-3 gap-4 py-4 border-y border-border/50">
@@ -360,7 +418,7 @@ const ProductDetail: React.FC = () => {
               <div className="space-y-4">
                 <div>
                   <div className="flex items-center justify-between gap-3">
-                  <Label>Rating</Label>
+                    <Label>Rating</Label>
                     <span className="text-sm text-muted-foreground">
                       {newRating} / 5
                     </span>
@@ -403,9 +461,9 @@ const ProductDetail: React.FC = () => {
                     onClick={handleSubmitReview}
                     disabled={submittingReview || newRating < 1 || newRating > 5}
                   >
-                  {submittingReview ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : null}
+                    {submittingReview ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : null}
                     {editingReviewId ? 'Update Review' : 'Submit Review'}
                   </Button>
 
@@ -419,7 +477,7 @@ const ProductDetail: React.FC = () => {
                       }}
                     >
                       Cancel Edit
-                </Button>
+                    </Button>
                   )}
                 </div>
               </div>
@@ -461,17 +519,18 @@ const ProductDetail: React.FC = () => {
                         {new Date(review.createdAt).toLocaleDateString()}
                       </p>
                     </div>
-                    <div className="flex items-center">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <Star
-                          key={star}
-                          className={`h-4 w-4 ${
-                            star <= review.rating
-                              ? 'fill-yellow-500 text-yellow-500'
-                              : 'text-muted-foreground'
-                          }`}
-                        />
-                      ))}
+                    <div className="flex items-start gap-4">
+                      <div className="flex items-center">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <Star
+                            key={star}
+                            className={`h-4 w-4 ${
+                              star <= review.rating
+                                ? 'fill-yellow-500 text-yellow-500'
+                                : 'text-muted-foreground'
+                            }`}
+                          />
+                        ))}
                       </div>
 
                       {user?.id === review.userId && (
