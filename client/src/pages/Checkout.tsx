@@ -33,7 +33,7 @@ interface ShippingForm {
   postalCode: string;
 }
 
-const SHIPPING_COST = 500; // $5.00 in cents
+const DEFAULT_SHIPPING_COST = 500;
 const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined;
 const useStripeMock = (import.meta.env.VITE_USE_STRIPE_MOCK as string | undefined) === 'true';
 const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
@@ -174,6 +174,9 @@ export default function Checkout() {
     cvc: '123',
   });
   const [loading, setLoading] = useState(false);
+  const [shippingLoading, setShippingLoading] = useState(false);
+  const [shippingError, setShippingError] = useState<string | null>(null);
+  const [shippingCost, setShippingCost] = useState(DEFAULT_SHIPPING_COST);
   const [stockIssues, setStockIssues] = useState<StockIssue[]>([]);
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<ApiCoupon | null>(null);
@@ -236,12 +239,65 @@ export default function Checkout() {
   }, [user]);
 
   const cartTotal = getCartTotal();
-  const finalTotal = cartTotal + SHIPPING_COST - discountAmount;
+  const finalTotal = cartTotal + shippingCost - discountAmount;
   const validCart = cart.filter(item => item && item.product);
 
   // Get unique shop IDs from cart
   const shopIds = [...new Set(validCart.map((item) => item.product.shopId))].filter(Boolean);
   const shopId = shopIds[0]; // For simplicity, assume single shop checkout
+
+  const recalculateShipping = useCallback(async () => {
+    if (!validCart.length) {
+      setShippingCost(0);
+      setShippingError(null);
+      return;
+    }
+
+    const district = form.city.trim();
+    if (!district) {
+      setShippingCost(DEFAULT_SHIPPING_COST);
+      setShippingError(null);
+      return;
+    }
+
+    // Shipping calculation endpoint is authenticated in backend. For guests we use a fallback estimate.
+    if (!api.getToken()) {
+      setShippingCost(DEFAULT_SHIPPING_COST);
+      setShippingError('Sign in to get exact shipping cost for your address.');
+      return;
+    }
+
+    setShippingLoading(true);
+    try {
+      const quote = await api.calculateShipping({
+        items: validCart.map((item) => ({
+          product: {
+            price: item.product.price,
+            weight: item.product.weight,
+          },
+          quantity: item.quantity,
+        })),
+        deliveryAddress: {
+          district,
+          city: form.city.trim(),
+        },
+        shippingMethod: 'standard',
+      });
+
+      setShippingCost(typeof quote.totalCharge === 'number' ? quote.totalCharge : DEFAULT_SHIPPING_COST);
+      setShippingError(null);
+    } catch (error) {
+      console.error('Shipping calculation failed:', error);
+      setShippingCost(DEFAULT_SHIPPING_COST);
+      setShippingError('Using estimated shipping cost. Exact charge will apply at fulfillment.');
+    } finally {
+      setShippingLoading(false);
+    }
+  }, [form.city, validCart]);
+
+  useEffect(() => {
+    void recalculateShipping();
+  }, [recalculateShipping]);
 
   const validateCoupon = async () => {
     if (!couponCode.trim()) {
@@ -665,15 +721,6 @@ export default function Checkout() {
                         if (validateShippingForm()) {
                           setStep(2);
                         }
-
-                        if (!user?.id) {
-                          toast.error('Please sign in to continue with card payment');
-                          navigate('/auth/customer', {
-                            replace: true,
-                            state: { message: 'Please sign in to continue with card payment.' },
-                          });
-                          return;
-                        }
                       }}
                     >
                       Continue to Payment
@@ -1029,8 +1076,11 @@ export default function Checkout() {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Shipping</span>
-                    <span>{formatLKR(SHIPPING_COST)}</span>
+                    <span>{shippingLoading ? 'Calculating...' : formatLKR(shippingCost)}</span>
                   </div>
+                  {shippingError && (
+                    <p className="text-xs text-amber-500">{shippingError}</p>
+                  )}
                   {discountAmount > 0 && (
                     <div className="flex justify-between text-sm text-green-500">
                       <span>Discount</span>

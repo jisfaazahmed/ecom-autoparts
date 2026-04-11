@@ -305,6 +305,15 @@ const Orders: React.FC = () => {
     return status === 'pending' || status === 'processing' || status === 'confirmed';
   };
 
+    const canRequestReturn = (order: ApiOrder) => {
+      const orderStatus = String(getOrderStatus(order) || '').toLowerCase();
+      if (orderStatus === 'delivered' || orderStatus === 'partially_delivered') {
+        return true;
+      }
+
+      return (order.items || []).some((item) => String(item.status || '').toLowerCase() === 'delivered');
+    };
+
   if (loading && currentPage === 1) {
     return (
       <div className="min-h-screen bg-background">
@@ -522,6 +531,15 @@ const Orders: React.FC = () => {
                         )}
                         Reorder
                       </Button>
+
+                      {orderId && canRequestReturn(order) && (
+                        <Link to={`/returns?orderId=${orderId}`}>
+                          <Button variant="outline" size="sm">
+                            <RotateCcw className="h-4 w-4 mr-2" />
+                            Return / Refund
+                          </Button>
+                        </Link>
+                      )}
 
                       {orderId && canCancelOrder(order) && (
                         <Button

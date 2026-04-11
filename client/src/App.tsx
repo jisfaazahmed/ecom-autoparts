@@ -15,6 +15,7 @@ import Checkout from "./pages/Checkout";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentCancel from "./pages/PaymentCancel";
 import Orders from "./pages/Orders";
+import ReturnsRefunds from "./pages/ReturnsRefunds";
 import MyVehicle from "./pages/MyVehicle";
 import Profile from "./pages/Profile";
 import TrackOrder from "./pages/TrackOrder";
@@ -25,6 +26,7 @@ import ResetPassword from "./pages/auth/ResetPassword";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminProducts from "./pages/admin/Products";
 import AdminOrders from "./pages/admin/Orders";
+import AdminRefunds from "./pages/admin/Refunds";
 import AdminSettings from "./pages/admin/Settings";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import SuperAdminVendors from "./pages/superadmin/Vendors";
@@ -61,6 +63,11 @@ const App = () => (
             <Route path="/orders" element={
               <ProtectedRoute>
                 <Orders />
+              </ProtectedRoute>
+            } />
+            <Route path="/returns" element={
+              <ProtectedRoute>
+                <ReturnsRefunds />
               </ProtectedRoute>
             } />
             <Route path="/my-vehicle" element={
@@ -101,6 +108,11 @@ const App = () => (
                 <AdminOrders />
               </ProtectedRoute>
             } />
+            <Route path="/admin/refunds" element={
+              <ProtectedRoute requiredRole="admin" requireApprovedShop>
+                <AdminRefunds />
+              </ProtectedRoute>
+            } />
             <Route path="/admin/settings" element={
               <ProtectedRoute requiredRole="admin" requireApprovedShop>
                 <AdminSettings />
@@ -136,6 +148,11 @@ const App = () => (
             <Route path="/superadmin/coupons" element={
               <ProtectedRoute requiredRole="superadmin">
                 <SuperAdminCoupons />
+              </ProtectedRoute>
+            } />
+            <Route path="/superadmin/refunds" element={
+              <ProtectedRoute requiredRole="superadmin">
+                <AdminRefunds />
               </ProtectedRoute>
             } />
             

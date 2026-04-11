@@ -662,6 +662,338 @@ class RefundService {
             }
         };
     }
+
+    async getAdminRefunds(filters = {}) {
+        const query = {};
+
+        if (filters.status) {
+            query.status = filters.status;
+        }
+
+        if (filters.returnStatus) {
+            query.returnStatus = filters.returnStatus;
+        }
+
+        const page = parseInt(filters.page, 10) || 1;
+        const limit = parseInt(filters.limit, 10) || 20;
+
+        const refunds = await Refund.find(query)
+            .populate('order', 'orderNumber totalAmount paymentStatus overallStatus')
+            .populate('customer', 'name email')
+            .populate('payment', 'paymentMethod status transactionId gatewayTransactionId')
+            .populate('product.productId', 'name images')
+            .sort({ createdAt: -1 })
+            .limit(limit)
+            .skip((page - 1) * limit);
+
+        const total = await Refund.countDocuments(query);
+
+        return {
+            refunds,
+            pagination: {
+                page,
+                limit,
+                total,
+                pages: Math.ceil(total / limit)
+            }
+        };
+    }
+
+    async resolvePaymentForOrder(order, paymentId) {
+        const paymentLookupId = paymentId || order.paymentId || order.payment;
+        if (!paymentLookupId) {
+            return null;
+        }
+
+        return Payment.findById(paymentLookupId);
+    }
+
+    async createRefundRequestByOrder(refundData, userId) {
+        const { orderId, paymentId, amount, reason, refundType = 'return', returnStatus = 'pending' } = refundData;
+
+        if (!orderId) {
+            throw new Error('orderId is required');
+        }
+
+        if (!reason || !String(reason).trim()) {
+            throw new Error('reason is required');
+        }
+
+        const order = await Order.findById(orderId).populate('items.product');
+        if (!order) {
+            throw new Error('Order not found');
+        }
+
+        const orderStatus = String(order.overallStatus || order.status || '').toLowerCase();
+        if (orderStatus !== 'delivered') {
+            throw new Error('Refund only after delivery');
+        }
+
+        const deliveryDate = order.actualDeliveryDate || order.updatedAt || order.createdAt;
+        const daysSinceDelivery = Math.floor((Date.now() - new Date(deliveryDate).getTime()) / (1000 * 60 * 60 * 24));
+        if (daysSinceDelivery > 7) {
+            throw new Error('Return period has expired');
+        }
+
+        const payment = await this.resolvePaymentForOrder(order, paymentId);
+        if (payment && String(payment.status || '').toLowerCase() === 'refunded') {
+            throw new Error('Order is already refunded');
+        }
+
+        const refundAmountValue = Number(amount ?? order.totalAmount ?? 0);
+        if (!Number.isFinite(refundAmountValue) || refundAmountValue <= 0) {
+            throw new Error('Refund amount must be greater than zero');
+        }
+
+        const firstItem = order.items?.[0];
+        const returnReason = {
+            category: 'other',
+            description: String(reason).trim(),
+            detailedExplanation: refundData.details || refundData.detailedExplanation || String(reason).trim(),
+        };
+
+        const refund = new Refund({
+            order: order._id,
+            orderItem: firstItem?._id,
+            customer: userId,
+            vendor: firstItem?.vendor || order.vendor || userId,
+            payment: payment?._id,
+            refundType,
+            amount: refundAmountValue,
+            refundTransactionId: '',
+            returnStatus,
+            returnReason,
+            product: firstItem ? {
+                productId: firstItem.product?._id,
+                name: firstItem.product?.name || firstItem.name,
+                sku: firstItem.product?.sku,
+                variant: firstItem.variant,
+                quantity: firstItem.quantity,
+                price: firstItem.price,
+                totalAmount: firstItem.finalPrice,
+            } : {
+                name: `Order ${order.orderNumber || order._id}`,
+                quantity: 1,
+                totalAmount: refundAmountValue,
+            },
+            refundAmount: {
+                itemAmount: refundAmountValue,
+                shippingRefund: 0,
+                deductions: {
+                    returnShippingCharge: 0,
+                    packagingDamage: 0,
+                    usageCharge: 0,
+                },
+                totalRefund: refundAmountValue,
+                currency: order.currency || 'LKR',
+            },
+            returnShipping: {
+                required: true,
+                method: 'courier_pickup',
+                pickupAddress: order.shippingAddress,
+                paidBy: 'vendor',
+            },
+            refundMethod: {
+                type: payment?.paymentMethod === 'cod' ? 'manual' : 'original_payment',
+            },
+            status: 'requested',
+            statusHistory: [{
+                status: 'requested',
+                timestamp: new Date(),
+                note: 'Refund request created',
+                userType: 'customer',
+            }],
+        });
+
+        await refund.save();
+
+        await OrderTimeline.create({
+            order: order._id,
+            orderItem: firstItem?._id,
+            event: 'refund_requested',
+            title: 'Refund Requested',
+            description: `Refund requested for order ${order.orderNumber || order._id}`,
+            actor: userId,
+            actorType: 'customer',
+            metadata: {
+                requestNumber: refund.requestNumber,
+                amount: refundAmountValue,
+            }
+        });
+
+        return refund;
+    }
+
+    async approveOrRejectRefund(refundId, adminId, reviewData = {}) {
+        const refund = await Refund.findById(refundId).populate('payment').populate('order');
+
+        if (!refund) {
+            throw new Error('Refund request not found');
+        }
+
+        const normalized = String(reviewData.status || '').toLowerCase();
+        if (!['approved', 'rejected'].includes(normalized)) {
+            throw new Error('status must be Approved or Rejected');
+        }
+
+        refund.adminReview = {
+            required: true,
+            status: normalized,
+            reviewedBy: adminId,
+            reviewedAt: new Date(),
+            comments: reviewData.comments || reviewData.reason || '',
+        };
+
+        if (normalized === 'rejected') {
+            refund.status = 'rejected';
+            refund.statusHistory.push({
+                status: 'rejected',
+                timestamp: new Date(),
+                note: reviewData.comments || reviewData.reason || 'Refund rejected',
+                updatedBy: adminId,
+                userType: 'admin'
+            });
+
+            await refund.save();
+            return refund;
+        }
+
+        refund.status = 'approved';
+        refund.statusHistory.push({
+            status: 'approved',
+            timestamp: new Date(),
+            note: reviewData.comments || reviewData.reason || 'Refund approved',
+            updatedBy: adminId,
+            userType: 'admin'
+        });
+
+        await refund.save();
+        return refund;
+    }
+
+    async updateReturnStatus(refundId, statusData = {}, updatedBy = null, userType = 'courier') {
+        const refund = await Refund.findById(refundId).populate('payment').populate('order');
+
+        if (!refund) {
+            throw new Error('Refund request not found');
+        }
+
+        const normalizedStatus = String(statusData.returnStatus || statusData.status || '').toLowerCase();
+        if (!['pending', 'picked', 'received', 'not_required'].includes(normalizedStatus)) {
+            throw new Error('Invalid return status');
+        }
+
+        refund.returnStatus = normalizedStatus;
+        refund.returnShipping = refund.returnShipping || {};
+
+        if (normalizedStatus === 'picked') {
+            refund.returnShipping.pickedUpDate = new Date();
+        }
+
+        if (normalizedStatus === 'received') {
+            refund.returnShipping.receivedAtWarehouse = new Date();
+        }
+
+        refund.statusHistory.push({
+            status: refund.status,
+            timestamp: new Date(),
+            note: `Return status updated to ${normalizedStatus}`,
+            updatedBy,
+            userType,
+        });
+
+        await refund.save();
+
+        if (normalizedStatus === 'received') {
+            await this.processApprovedRefund(refund._id, updatedBy || refund.customer);
+        }
+
+        return refund;
+    }
+
+    async processApprovedRefund(refundId, processedBy = null) {
+        const refund = await Refund.findById(refundId).populate('payment').populate('order');
+
+        if (!refund) {
+            throw new Error('Refund request not found');
+        }
+
+        if (refund.status !== 'approved' && refund.status !== 'refund_processing' && refund.status !== 'received_at_warehouse') {
+            throw new Error('Refund must be approved before processing');
+        }
+
+        refund.status = 'refund_processing';
+        refund.refundProcessing = {
+            initiatedAt: new Date(),
+            initiatedBy: processedBy,
+            status: 'processing',
+        };
+
+        await refund.save();
+
+        const refundAmount = Number(refund.amount || refund.refundAmount?.totalRefund || 0);
+        let refundTransactionId = `REFUND_${Date.now()}`;
+
+        const payment = refund.payment || await this.resolvePaymentForOrder(refund.order, null);
+        const paymentMethod = String(payment?.paymentMethod || '').toLowerCase();
+
+        if (payment && paymentMethod === 'card') {
+            await paymentService.processRefund(payment._id, {
+                amount: refundAmount,
+                reason: refund.returnReason?.description || 'requested_by_customer',
+                refundMethod: 'original_method',
+                initiatedBy: processedBy,
+            });
+
+            const refreshedPayment = await Payment.findById(payment._id);
+            const latestRefund = refreshedPayment?.refunds?.[refreshedPayment.refunds.length - 1];
+            refundTransactionId = latestRefund?.gatewayRefundId || latestRefund?.refundId || refundTransactionId;
+        } else {
+            if (payment) {
+                payment.refunds = payment.refunds || [];
+                payment.refunds.push({
+                    refundId: refundTransactionId,
+                    amount: refundAmount,
+                    reason: refund.returnReason?.description || 'requested_by_customer',
+                    status: 'completed',
+                    initiatedBy: processedBy,
+                    initiatedAt: new Date(),
+                    processedAt: new Date(),
+                    refundMethod: 'manual',
+                    notes: 'Manual refund required for COD/offline payments',
+                });
+                payment.status = 'refunded';
+                await payment.save();
+            }
+
+            if (refund.order) {
+                refund.order.paymentStatus = 'refunded';
+                refund.order.overallStatus = 'refunded';
+                await refund.order.save();
+            }
+        }
+
+        refund.refundTransactionId = refundTransactionId;
+        refund.refundProcessing.status = 'completed';
+        refund.refundProcessing.processedAt = new Date();
+        refund.status = 'refund_completed';
+        refund.statusHistory.push({
+            status: 'refund_completed',
+            timestamp: new Date(),
+            note: `Refund processed (${refundTransactionId})`,
+            updatedBy: processedBy,
+            userType: 'system',
+        });
+
+        if (refund.order) {
+            refund.order.paymentStatus = 'refunded';
+            refund.order.overallStatus = 'refunded';
+            await refund.order.save();
+        }
+
+        await refund.save();
+        return refund;
+    }
 }
 
 module.exports = new RefundService();

@@ -2,6 +2,9 @@ const Shipping = require('../models/shipping.model');
 const Order = require('../models/order.model');
 const OrderTimeline = require('../models/timeline.model');
 const ShippingZone = require('../models/deliveryZone.model');
+const fs = require('fs');
+const path = require('path');
+const PDFDocument = require('pdfkit');
 
 const ZONES = {
     'zone1': {
@@ -38,6 +41,73 @@ const ZONES = {
 };
 
 class ShippingService {
+
+    ensureLabelDirectory() {
+        const labelsDir = path.join(__dirname, '..', 'uploads', 'labels');
+        if (!fs.existsSync(labelsDir)) {
+            fs.mkdirSync(labelsDir, { recursive: true });
+        }
+        return labelsDir;
+    }
+
+    sanitizeFileName(value) {
+        return String(value || '')
+            .replace(/[^a-zA-Z0-9-_]/g, '_')
+            .slice(0, 80);
+    }
+
+    async createLabelPdf(shipping, filePath) {
+        return new Promise((resolve, reject) => {
+            const doc = new PDFDocument({ size: 'A4', margin: 40 });
+            const stream = fs.createWriteStream(filePath);
+
+            stream.on('finish', resolve);
+            stream.on('error', reject);
+            doc.on('error', reject);
+
+            doc.pipe(stream);
+
+            const orderNumber = shipping?.order?.orderNumber || 'N/A';
+            const trackingNumber = shipping?.trackingNumber || 'N/A';
+            const courier = shipping?.courierPartner || shipping?.courierPartner?.name || 'N/A';
+            const customerName = shipping?.deliveryAddress?.customerName || shipping?.shippingAddress?.fullName || 'N/A';
+            const phone = shipping?.deliveryAddress?.phone || shipping?.shippingAddress?.phone || 'N/A';
+            const address = [
+                shipping?.deliveryAddress?.addressLine1 || shipping?.shippingAddress?.addressLine1,
+                shipping?.deliveryAddress?.addressLine2 || shipping?.shippingAddress?.addressLine2,
+                shipping?.deliveryAddress?.city || shipping?.shippingAddress?.city,
+                shipping?.deliveryAddress?.district || shipping?.shippingAddress?.district,
+                shipping?.deliveryAddress?.postalCode || shipping?.shippingAddress?.postalCode,
+            ].filter(Boolean).join(', ');
+
+            doc.fontSize(20).text('Shipping Label', { align: 'center' });
+            doc.moveDown();
+            doc.fontSize(12).text(`Generated: ${new Date().toLocaleString()}`);
+            doc.moveDown();
+
+            doc.fontSize(12).text(`Order Number: ${orderNumber}`);
+            doc.text(`Tracking Number: ${trackingNumber}`);
+            doc.text(`Courier Partner: ${courier}`);
+            doc.text(`Shipping Method: ${shipping?.shippingMethod || shipping?.shipmentType || 'standard'}`);
+            doc.moveDown();
+
+            doc.fontSize(13).text('Deliver To', { underline: true });
+            doc.fontSize(12).text(`Name: ${customerName}`);
+            doc.text(`Phone: ${phone}`);
+            doc.text(`Address: ${address || 'N/A'}`);
+            doc.moveDown();
+
+            doc.fontSize(13).text('Package Details', { underline: true });
+            doc.fontSize(12).text(`Weight: ${shipping?.packageDetails?.weight || shipping?.package?.weight || 'N/A'}`);
+            doc.text(`Package Type: ${shipping?.packageDetails?.packageType || shipping?.package?.packageType || 'N/A'}`);
+            doc.text(`Estimated Delivery: ${shipping?.estimatedDeliveryDate ? new Date(shipping.estimatedDeliveryDate).toDateString() : 'N/A'}`);
+
+            doc.moveDown(2);
+            doc.fontSize(10).fillColor('gray').text('This shipping label is system generated.', { align: 'center' });
+
+            doc.end();
+        });
+    }
 
     async calculateShippingCost(orderData) {
         const {
@@ -564,6 +634,63 @@ class ShippingService {
         await shipping.save();
 
         return shipping;
+    }
+
+    async generateShippingLabel(shippingId) {
+        const shipping = await Shipping.findById(shippingId).populate('order', 'orderNumber');
+
+        if (!shipping) {
+            throw new Error('Shipping not found');
+        }
+
+        const labelsDir = this.ensureLabelDirectory();
+        const safeTracking = this.sanitizeFileName(shipping.trackingNumber || `SHIP-${shipping._id}`);
+        const fileName = `${safeTracking}.pdf`;
+        const absoluteFilePath = path.join(labelsDir, fileName);
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            await this.createLabelPdf(shipping, absoluteFilePath);
+        }
+
+        if (!shipping.documents) {
+            shipping.documents = {};
+        }
+
+        if (!shipping.documents.shippingLabel) {
+            const baseUrl = process.env.SERVER_PUBLIC_URL || `http://localhost:${process.env.PORT || 5000}`;
+            const tracking = shipping.trackingNumber || `SHIP-${shipping._id}`;
+            shipping.documents.shippingLabel = `${baseUrl}/labels/${fileName}`;
+
+            shipping.statusHistory = shipping.statusHistory || [];
+            shipping.statusHistory.push({
+                status: shipping.status,
+                timestamp: new Date(),
+                note: 'Shipping label generated',
+                scanType: 'label_created'
+            });
+
+            await shipping.save();
+
+            await OrderTimeline.create({
+                order: shipping.order?._id || shipping.order,
+                event: 'label_created',
+                title: 'Shipping Label Created',
+                description: `Label generated for tracking ${tracking}`,
+                actorType: 'system',
+                metadata: {
+                    trackingNumber: tracking,
+                    labelUrl: shipping.documents.shippingLabel,
+                }
+            });
+        }
+
+        return {
+            shippingId: shipping._id,
+            orderNumber: shipping.order?.orderNumber,
+            trackingNumber: shipping.trackingNumber,
+            labelUrl: shipping.documents.shippingLabel,
+            fileName,
+        };
     }
 }
 module.exports = new ShippingService();

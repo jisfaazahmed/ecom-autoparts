@@ -8,6 +8,7 @@ import {
   Building2,
   BarChart3,
   Database,
+  CheckCircle,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -34,6 +35,7 @@ const adminLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/products', label: 'Products', icon: Package },
   { href: '/admin/orders', label: 'Orders', icon: ShoppingBag },
+  { href: '/admin/refunds', label: 'Refunds', icon: CheckCircle },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -41,6 +43,7 @@ const superAdminLinks = [
   { href: '/superadmin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/superadmin/vendors', label: 'Vendors', icon: Building2 },
   { href: '/superadmin/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/superadmin/refunds', label: 'Refunds', icon: CheckCircle },
   { href: '/superadmin/vehicles', label: 'Vehicles', icon: Car },
   { href: '/superadmin/categories', label: 'Categories', icon: Database },
   { href: '/superadmin/coupons', label: 'Coupons', icon: Package },

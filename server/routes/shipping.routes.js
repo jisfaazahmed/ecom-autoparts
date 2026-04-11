@@ -20,6 +20,7 @@ router.post('/:shippingId/schedule-pickup', verifyToken, shippingController.sche
 router.patch('/:shippingId/status', verifyToken, shippingController.updateStatus);
 router.post('/:shippingId/delivery-attempt', verifyToken, shippingController.recordDeliveryAttempt);
 router.post('/:shippingId/confirm-delivery', verifyToken, shippingController.confirmDelivery);
+router.post('/:shippingId/generate-label', verifyToken, shippingController.generateShippingLabel);
 router.get('/:shippingId', verifyToken, shippingController.getShippingDetails);
 
 module.exports = router;

@@ -361,8 +361,13 @@ class PaymentService {
     //process refund
     async processStripeRefund(payment, amount) {
         try {
+            const paymentIntentId = payment.provider?.paymentIntentId || payment.gatewayTransactionId || payment.transactionId;
+            if (!paymentIntentId) {
+                throw new Error('Stripe payment intent not found for refund');
+            }
+
             const refund = await stripe.refunds.create({
-                payment_intent: payment.provider.paymentIntentId,
+                payment_intent: paymentIntentId,
                 amount: Math.round(amount * 100),
                 reason: 'requested_by_customer'
             });
@@ -416,9 +421,10 @@ class PaymentService {
 
         const amount = refundData.amount || payment.amount;
 
-        if ((payment.paymentMethod || '').toLowerCase() === 'card' && payment.provider?.paymentIntentId) {
+        if ((payment.paymentMethod || '').toLowerCase() === 'card' && (payment.provider?.paymentIntentId || payment.gatewayTransactionId || payment.transactionId)) {
             await this.processStripeRefund(payment, amount);
         } else {
+            payment.refunds = payment.refunds || [];
             payment.refunds.push({
                 refundId: `MANUAL-${Date.now()}`,
                 amount,

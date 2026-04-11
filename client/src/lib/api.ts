@@ -79,6 +79,7 @@ export interface ApiProduct {
   name: string;
   description?: string;
   price: number;
+  weight?: number;
   stock: number;
   imageUrl?: string;
   image_url?: string;
@@ -259,6 +260,73 @@ export interface ApiOrderTimelineEvent {
   title: string;
   description?: string;
   createdAt: string;
+}
+
+export interface ShippingCalculationRequest {
+  items: Array<{
+    product: {
+      price: number;
+      weight?: number;
+    };
+    quantity: number;
+  }>;
+  deliveryAddress: {
+    district: string;
+    city?: string;
+  };
+  shippingMethod?: 'standard' | 'express' | 'same_day';
+}
+
+export interface ShippingCalculationResponse {
+  baseCharge: number;
+  weightCharge: number;
+  zoneCharge: number;
+  totalCharge: number;
+  freeShipping: boolean;
+  weight: number;
+  zone: string;
+  estimatedDays: {
+    min: number;
+    max: number;
+  };
+}
+
+export interface ApiRefund {
+  _id?: string;
+  id?: string;
+  order?: string;
+  payment?: string;
+  amount?: number;
+  requestNumber?: string;
+  status: string;
+  refundType?: string;
+  refundTransactionId?: string;
+  returnStatus?: 'pending' | 'picked' | 'received' | 'not_required';
+  returnReason?: {
+    category?: string;
+    description?: string;
+  };
+  product?: {
+    name?: string;
+    quantity?: number;
+    totalAmount?: number;
+  };
+  refundAmount?: {
+    totalRefund?: number;
+    currency?: string;
+  };
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ApiRefundListResponse {
+  refunds: ApiRefund[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
 }
 
 class ApiClient {
@@ -728,9 +796,30 @@ class ApiClient {
         }
       });
     }
-    return this.request<PaginatedResponse<ApiOrder>>(
-      `/orders/my?${searchParams.toString()}`
-    );
+    const response = await this.request<any>(`/orders/my_orders?${searchParams.toString()}`);
+
+    // Legacy format support: { data, total, page, limit, totalPages }
+    if (Array.isArray(response?.data)) {
+      return {
+        data: response.data.map((order: any) => this.normalizeOrder(order)),
+        total: response.total || 0,
+        page: response.page || 1,
+        limit: response.limit || params?.limit || 10,
+        totalPages: response.totalPages || 1,
+      };
+    }
+
+    // Current backend format: { success, data: { orders, pagination } }
+    const orders = (response?.data?.orders || []).map((order: any) => this.normalizeOrder(order));
+    const pagination = response?.data?.pagination || {};
+
+    return {
+      data: orders,
+      total: pagination.total || orders.length,
+      page: pagination.page || 1,
+      limit: pagination.limit || params?.limit || 10,
+      totalPages: pagination.pages || 1,
+    };
   }
 
   async getOrder(id: string): Promise<ApiOrder> {
@@ -810,6 +899,15 @@ class ApiClient {
     }>;
   }> {
     return this.request(`/orders/track/${trackingNumber}`);
+  }
+
+  // ============ SHIPPING ============
+
+  async calculateShipping(data: ShippingCalculationRequest): Promise<ShippingCalculationResponse> {
+    return this.request<ShippingCalculationResponse>('/shipping/calculate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   // ============ CART ============
@@ -1291,6 +1389,124 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ sessionId, orderId }),
     });
+  }
+
+  // ============ REFUNDS ============
+
+  async getCustomerRefunds(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<ApiRefundListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const response = await this.request<{ success: boolean; data: ApiRefundListResponse }>(
+      `/refunds/my-refunds?${searchParams.toString()}`
+    );
+
+    return response?.data || { refunds: [], pagination: { page: 1, limit: 10, total: 0, pages: 1 } };
+  }
+
+  async getAdminRefunds(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    returnStatus?: 'pending' | 'picked' | 'received' | 'not_required';
+  }): Promise<ApiRefundListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const response = await this.request<{ success: boolean; data: ApiRefundListResponse }>(
+      `/refunds/admin/list?${searchParams.toString()}`
+    );
+
+    return response?.data || { refunds: [], pagination: { page: 1, limit: 20, total: 0, pages: 1 } };
+  }
+
+  async createRefundRequestByOrder(data: {
+    orderId: string;
+    paymentId?: string;
+    amount: number;
+    reason: string;
+    refundType?: 'return' | 'refund' | 'exchange';
+    details?: string;
+    returnStatus?: 'pending' | 'picked' | 'received' | 'not_required';
+  }): Promise<ApiRefund> {
+    const response = await this.request<{ success: boolean; data: ApiRefund }>('/refunds', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    return response?.data;
+  }
+
+  async createRefundRequest(orderItemId: string, data: {
+    refundType?: 'return' | 'refund' | 'exchange';
+    returnReason: {
+      category: string;
+      description: string;
+      detailedExplanation?: string;
+    };
+    productCondition?: {
+      packaging?: 'unopened' | 'opened' | 'damaged' | 'missing';
+      productState?: 'new_unused' | 'used' | 'damaged' | 'defective';
+      accessories?: 'all_included' | 'missing_some' | 'missing_all' | 'not_applicable';
+    };
+    quantity?: number;
+    refundMethod?: 'original_payment' | 'bank_transfer';
+    pickupAddress?: {
+      fullName?: string;
+      phone?: string;
+      addressLine1?: string;
+      addressLine2?: string;
+      district?: string;
+      postalCode?: string;
+    };
+  }): Promise<ApiRefund> {
+    const response = await this.request<{ success: boolean; data: ApiRefund }>(
+      `/refunds/create/${orderItemId}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+
+    return response?.data;
+  }
+
+  async approveOrRejectRefund(refundId: string, data: {
+    status: 'Approved' | 'Rejected' | 'approved' | 'rejected';
+    comments?: string;
+    reason?: string;
+  }): Promise<ApiRefund> {
+    const response = await this.request<{ success: boolean; data: ApiRefund }>(`/refunds/${refundId}/approve`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+
+    return response?.data;
+  }
+
+  async updateRefundReturnStatus(refundId: string, returnStatus: 'pending' | 'picked' | 'received' | 'not_required'): Promise<ApiRefund> {
+    const response = await this.request<{ success: boolean; data: ApiRefund }>(`/refunds/${refundId}/return-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ returnStatus }),
+    });
+
+    return response?.data;
   }
 
   // ============ FILE UPLOAD ============

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Package, ShoppingBag, DollarSign, TrendingUp, Plus, Search, MoreVertical, Eye, Loader2 } from 'lucide-react';
+import { Package, ShoppingBag, DollarSign, TrendingUp, Plus, Search, MoreVertical, Eye, Loader2, RotateCcw, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +24,7 @@ const AdminDashboard: React.FC = () => {
   
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [orders, setOrders] = useState<ApiOrder[]>([]);
+  const [refunds, setRefunds] = useState<any[]>([]);
   const [categories, setCategories] = useState<ApiCategory[]>([]);
   const [variants, setVariants] = useState<ApiVehicleVariant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,14 +39,16 @@ const AdminDashboard: React.FC = () => {
     if (!shop?.id) return;
     setLoading(true);
     try {
-      const [productsRes, ordersRes, categoriesRes] = await Promise.all([
+      const [productsRes, ordersRes, categoriesRes, refundsRes] = await Promise.all([
         api.getProducts({ shop: shop.id }),
         api.getOrders({ limit: 10 }),
         api.getCategories(),
+        api.getAdminRefunds({ limit: 200 }),
       ]);
       setProducts(productsRes.data || []);
       setOrders(ordersRes.data || []);
       setCategories(categoriesRes || []);
+      setRefunds(refundsRes.refunds || []);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     }
@@ -96,12 +99,19 @@ const AdminDashboard: React.FC = () => {
 
   const totalRevenue = orders.reduce((sum, o) => sum + o.totalAmount, 0);
   const avgOrderValue = orders.length ? totalRevenue / orders.length : 0;
+  const pendingRefunds = refunds.filter((refund) => String(refund.status || '').toLowerCase() === 'requested').length;
+  const processingReturns = refunds.filter((refund) => {
+    const returnStatus = String(refund.returnStatus || '').toLowerCase();
+    return ['pending', 'picked'].includes(returnStatus) && String(refund.status || '').toLowerCase() === 'approved';
+  }).length;
 
   const stats = [
     { label: 'Total Products', value: products.length, icon: Package, change: '+12%' },
     { label: 'Total Orders', value: orders.length, icon: ShoppingBag, change: '+8%' },
     { label: 'Revenue', value: formatLKR(totalRevenue), icon: DollarSign, change: '+23%' },
     { label: 'Avg Order Value', value: formatLKR(avgOrderValue), icon: TrendingUp, change: '+5%' },
+    { label: 'Pending Refund Reviews', value: pendingRefunds, icon: AlertCircle, change: pendingRefunds > 0 ? 'Needs action' : 'Clear' },
+    { label: 'Returns In Progress', value: processingReturns, icon: RotateCcw, change: processingReturns > 0 ? 'Active' : 'Idle' },
   ];
 
   const parentCategories = categories.filter(c => !c.parentId);
@@ -178,7 +188,7 @@ const AdminDashboard: React.FC = () => {
           </Dialog>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 mb-8">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 mb-8">
           {stats.map((stat, i) => (
             <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="glass-card p-4 lg:p-6">
               <div className="flex items-center justify-between mb-4">

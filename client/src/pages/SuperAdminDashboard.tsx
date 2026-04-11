@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Building2, DollarSign, TrendingUp, CheckCircle, XCircle, Clock, BarChart3, ArrowUpRight, Loader2 } from 'lucide-react';
+import { Building2, DollarSign, TrendingUp, CheckCircle, XCircle, Clock, BarChart3, ArrowUpRight, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -28,6 +28,7 @@ const SuperAdminDashboard: React.FC = () => {
   
   const [shops, setShops] = useState<Shop[]>([]);
   const [totalSales, setTotalSales] = useState(0);
+  const [pendingRefunds, setPendingRefunds] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,13 +38,15 @@ const SuperAdminDashboard: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [shopsData, ordersData] = await Promise.all([
+      const [shopsData, ordersData, refundsData] = await Promise.all([
         api.getShops(),
-        api.getOrders()
+        api.getOrders(),
+        api.getAdminRefunds({ limit: 200 })
       ]);
 
       setShops(shopsData.data);
       setTotalSales(ordersData.data.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0));
+      setPendingRefunds((refundsData.refunds || []).filter((refund) => String(refund.status || '').toLowerCase() === 'requested').length);
     } catch (error: any) {
       toast({ title: 'Error', description: error.message, variant: 'destructive' });
     }
@@ -69,6 +72,7 @@ const SuperAdminDashboard: React.FC = () => {
     { label: 'Commission Earned', value: formatLKR(commission), icon: TrendingUp, change: '+12%', positive: true },
     { label: 'Active Vendors', value: approvedVendors, icon: Building2, change: '+3', positive: true },
     { label: 'Pending Approvals', value: pendingVendors, icon: Clock, change: pendingVendors > 0 ? 'Needs attention' : 'All clear', positive: pendingVendors === 0 },
+    { label: 'Pending Refund Reviews', value: pendingRefunds, icon: AlertCircle, change: pendingRefunds > 0 ? 'Needs attention' : 'All clear', positive: pendingRefunds === 0 },
   ];
 
   const salesData = [
@@ -115,7 +119,7 @@ const SuperAdminDashboard: React.FC = () => {
           <p className="text-muted-foreground">Welcome back, {profile?.full_name}</p>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 mb-8">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-6 mb-8">
           {stats.map((stat, i) => (
             <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="glass-card p-4 lg:p-6">
               <div className="flex items-center justify-between mb-4">

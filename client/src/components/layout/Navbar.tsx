@@ -152,6 +152,9 @@ const Navbar: React.FC = () => {
                   <DropdownMenuItem asChild>
                     <Link to="/orders">My Orders</Link>
                   </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/returns">Returns & Refunds</Link>
+                  </DropdownMenuItem>
                   {role === 'admin' && (
                     <DropdownMenuItem asChild>
                       <Link to="/admin">Admin Dashboard</Link>
@@ -217,6 +220,9 @@ const Navbar: React.FC = () => {
                   <>
                     <Link to="/orders" className="text-lg font-medium transition-colors hover:text-primary">
                       My Orders
+                    </Link>
+                    <Link to="/returns" className="text-lg font-medium transition-colors hover:text-primary">
+                      Returns & Refunds
                     </Link>
                     {role === 'admin' && (
                       <Link to="/admin" className="text-lg font-medium transition-colors hover:text-primary">

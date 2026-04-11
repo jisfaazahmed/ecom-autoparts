@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const path = require('path');
 const {
   MONGO_DB,
   MONGO_USER,
@@ -34,6 +35,7 @@ app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 // Apply JSON parsing for all other routes
 app.use(cors());
 app.use(express.json());
+app.use('/labels', express.static(path.join(__dirname, 'uploads', 'labels')));
 
 //MongoDB connection
 mongoose.connect(`mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_IP}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`).then(() => {

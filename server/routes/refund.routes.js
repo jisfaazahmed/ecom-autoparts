@@ -4,6 +4,7 @@ const refundController = require('../controllers/refund.controller');
 const { verifyToken } = require('../middleware/authMiddleware');
 
 // Customer routes
+router.post('/', verifyToken, refundController.createRefundRequestByOrder);
 router.post('/create/:orderItemId', verifyToken, refundController.createRefundRequest);
 router.get('/my-refunds', verifyToken, refundController.getCustomerRefunds);
 
@@ -11,10 +12,13 @@ router.get('/my-refunds', verifyToken, refundController.getCustomerRefunds);
 router.get('/vendor/refunds', verifyToken, refundController.getVendorRefunds);
 router.post('/:refundId/review', verifyToken, refundController.vendorReviewRefund);
 
-// Courier/Admin routes
+// Admin/Courier routes
+router.put('/:refundId/approve', verifyToken, refundController.approveOrRejectRefund);
+router.patch('/:refundId/return-status', verifyToken, refundController.updateReturnStatus);
 router.patch('/:refundId/return-shipping', verifyToken, refundController.updateReturnShipping);
 
 // Admin routes
+router.get('/admin/list', verifyToken, refundController.getAdminRefunds);
 router.post('/:refundId/quality-check', verifyToken, refundController.conductQualityCheck);
 router.post('/:refundId/dispute', verifyToken, refundController.handleDispute);
 router.get('/admin/statistics', verifyToken, refundController.getRefundStatistics);

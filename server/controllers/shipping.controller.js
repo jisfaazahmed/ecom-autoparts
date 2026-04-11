@@ -252,3 +252,20 @@ exports.getShippingDetails = async (req, res) => {
         });
     }
 };
+
+exports.generateShippingLabel = async (req, res) => {
+    try {
+        const label = await shippingService.generateShippingLabel(req.params.shippingId);
+
+        res.json({
+            success: true,
+            message: 'Shipping label generated successfully',
+            data: label
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message
+        });
+    }
+};

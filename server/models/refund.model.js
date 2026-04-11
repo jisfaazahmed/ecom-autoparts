@@ -8,7 +8,7 @@ const refundSchema = new mongoose.Schema({
     },
     orderItem: {
         type: mongoose.Schema.Types.ObjectId,
-        required: true
+        required: false
     },
     customer: {
         type: mongoose.Schema.Types.ObjectId,
@@ -34,6 +34,20 @@ const refundSchema = new mongoose.Schema({
     refundType: {
         type: String,
         required: true
+    },
+    amount: {
+        type: Number,
+        required: true,
+        min: 0
+    },
+    refundTransactionId: {
+        type: String,
+        default: ''
+    },
+    returnStatus: {
+        type: String,
+        enum: ['pending', 'picked', 'received', 'not_required'],
+        default: 'pending'
     },
     returnReason: {
         category: {
@@ -99,14 +113,14 @@ const refundSchema = new mongoose.Schema({
         productId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Product',
-            required: true
+            required: false
         },
         name: String,
         sku: String,
         variant: String,
         quantity: {
             type: Number,
-            required: true,
+            required: false,
             min: 1
         },
         price: Number,
