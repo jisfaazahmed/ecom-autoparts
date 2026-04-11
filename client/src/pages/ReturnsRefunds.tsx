@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { AlertCircle, Loader2, RotateCcw, Search } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import Navbar from '@/components/layout/Navbar';
+import { useAuth } from '@/hooks/useAuth';
 import { api, ApiOrderItem, ApiRefund } from '@/lib/api';
 import { formatLKR } from '@/lib/currency';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -70,6 +71,7 @@ const normalizeStatusLabel = (status?: string) =>
     .join(' ');
 
 const ReturnsRefunds: React.FC = () => {
+  const { user } = useAuth();
   const location = useLocation();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -90,10 +92,26 @@ const ReturnsRefunds: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [ordersResult, refundsResult] = await Promise.all([
-        api.getOrders({ page: 1, limit: 100 }),
+      const orderFetcher = user?.role === 'admin' || user?.role === 'seller'
+        ? api.getVendorOrders({ page: 1, limit: 100 })
+        : api.getOrders({ page: 1, limit: 100 });
+
+      const [ordersResult, refundsResult] = await Promise.allSettled([
+        orderFetcher,
         api.getCustomerRefunds({ page: 1, limit: 50 }),
       ]);
+
+      const orders = ordersResult.status === 'fulfilled' ? ordersResult.value.data || [] : [];
+      const refunds = refundsResult.status === 'fulfilled' ? refundsResult.value.refunds || [] : [];
+
+      if (ordersResult.status === 'rejected') {
+        console.warn('Failed to load orders for returns page:', ordersResult.reason);
+        toast.error('Order list could not be loaded right now. You can still submit a manual return request.');
+      }
+
+      if (refundsResult.status === 'rejected') {
+        console.warn('Failed to load refund requests:', refundsResult.reason);
+      }
 
       const refundableStatuses = new Set(['delivered']);
       const blockedItemStatuses = new Set([
@@ -105,7 +123,7 @@ const ReturnsRefunds: React.FC = () => {
 
       const mappedItems: RefundableItem[] = [];
       const mappedOrderRefs: OrderReference[] = [];
-      for (const order of ordersResult.data || []) {
+      for (const order of orders) {
         const currentOrderId = String(order.id || order._id || '');
         const currentOrderNumber = String(order.orderNumber || currentOrderId.slice(0, 8));
 
@@ -138,7 +156,6 @@ const ReturnsRefunds: React.FC = () => {
 
       setOrderRefs(mappedOrderRefs);
       setItems(mappedItems);
-      setRefunds(refundsResult.refunds || []);
     } catch (error) {
       console.error('Failed to load returns data:', error);
       toast.error('Failed to load returns and refunds');

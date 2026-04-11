@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { randomInt } = require('crypto');
 
 const refundSchema = new mongoose.Schema({
     order: {
@@ -450,22 +451,14 @@ const refundSchema = new mongoose.Schema({
 
 });
 
-// Generate unique request number
-refundSchema.pre('save', async function (next) {
+// Generate unique request number before required validation runs
+refundSchema.pre('validate', async function (next) {
     if (this.isNew && !this.requestNumber) {
-        const date = new Date();
-        const year = date.getFullYear().toString().slice(-2);
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-
-        const count = await mongoose.model('Refund').countDocuments({
-            createdAt: {
-                $gte: new Date(date.setHours(0, 0, 0, 0)),
-                $lt: new Date(date.setHours(23, 59, 59, 999))
-            }
-        });
-
-        this.requestNumber = `RFN${year}${month}${day}${String(count + 1).padStart(5, '0')}`;
+        const now = new Date();
+        const year = now.getFullYear().toString().slice(-2);
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        this.requestNumber = `RFN${year}${month}${day}${Date.now().toString().slice(-6)}${String(randomInt(100, 1000))}`;
     }
     next();
 });

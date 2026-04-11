@@ -3,8 +3,50 @@ const Order = require('../models/order.model');
 const Payment = require('../models/payment.model');
 const OrderTimeline = require('../models/timeline.model');
 const paymentService = require('./payment.service');
+const { randomInt } = require('crypto');
 
 class RefundService {
+
+    async generateRequestNumber() {
+        const date = new Date();
+        const year = date.getFullYear().toString().slice(-2);
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const suffix = `${Date.now().toString().slice(-6)}${String(randomInt(100, 1000))}`;
+        return `RFN${year}${month}${day}${suffix}`;
+    }
+
+    isRequestNumberDuplicate(error) {
+        return Boolean(
+            error &&
+            error.code === 11000 &&
+            error.keyPattern &&
+            error.keyPattern.requestNumber
+        );
+    }
+
+    async saveRefundWithUniqueRequestNumber(refundDoc, maxRetries = 5) {
+        let retries = 0;
+        while (retries <= maxRetries) {
+            try {
+                if (!refundDoc.requestNumber) {
+                    refundDoc.requestNumber = await this.generateRequestNumber();
+                }
+
+                await refundDoc.save();
+                return refundDoc;
+            } catch (error) {
+                if (this.isRequestNumberDuplicate(error) && retries < maxRetries) {
+                    retries += 1;
+                    refundDoc.requestNumber = await this.generateRequestNumber();
+                    continue;
+                }
+                throw error;
+            }
+        }
+
+        throw new Error('Could not generate a unique refund request number');
+    }
 
     async createRefundRequest(orderItemId, refundData, userId) {
         return this.creaetRefundRequest(refundData, userId, orderItemId);
@@ -12,6 +54,10 @@ class RefundService {
 
     async creaetRefundRequest(refundData, userId, orderItemId) {
         try {
+            if (!userId) {
+                throw new Error('Customer authentication is required');
+            }
+
             const order = await Order.findOne({
                 'items._id': orderItemId,
                 user: userId
@@ -30,6 +76,17 @@ class RefundService {
                 throw new Error('Can only request refund for delivered items');
             }
 
+            const existingItemRefund = await Refund.findOne({
+                customer: userId,
+                order: order._id,
+                orderItem: orderItemId,
+                status: { $nin: ['rejected', 'cancelled'] }
+            }).sort({ createdAt: -1 });
+
+            if (existingItemRefund) {
+                throw new Error(`A refund request already exists for this order item (${existingItemRefund.requestNumber})`);
+            }
+
             const deliveryDate = orderItem.actualDelivery || order.actualDeliveryDate;
             const returnWindow = await this.getReturnWindow(orderItem.product);
             const daysSinceDelivery = Math.floor((Date.now() - deliveryDate) / (1000 * 60 * 60 * 24));
@@ -46,6 +103,12 @@ class RefundService {
                 refundData,
             );
 
+            const requestNumber = await this.generateRequestNumber();
+            const vendorId = orderItem.vendor || order.vendor || order.subOrders?.[0]?.vendor || null;
+            if (!vendorId) {
+                throw new Error('Vendor could not be determined for this order item');
+            }
+
             const autoApproval = this.checkAutoApprovalEligibility(
                 refundData.returnReason.category,
                 orderItem.finalPrice,
@@ -54,10 +117,11 @@ class RefundService {
 
             // Create refund request
             const refund = new Refund({
+                requestNumber,
                 order: order._id,
                 orderItem: orderItemId,
                 customer: userId,
-                vendor: orderItem.vendor,
+                vendor: vendorId,
                 payment: order.paymentId,
                 refundType: refundData.refundType || 'return',
                 returnReason: refundData.returnReason,
@@ -95,7 +159,7 @@ class RefundService {
                 refund.refundMethod.bankDetails = refundData.bankDetails;
             }
 
-            await refund.save();
+            await this.saveRefundWithUniqueRequestNumber(refund);
 
             orderItem.status = 'return_requested';
             orderItem.returnReason = refundData.returnReason.description;
@@ -711,6 +775,10 @@ class RefundService {
     async createRefundRequestByOrder(refundData, userId) {
         const { orderId, paymentId, amount, reason, refundType = 'return', returnStatus = 'pending' } = refundData;
 
+        if (!userId) {
+            throw new Error('Customer authentication is required');
+        }
+
         if (!orderId) {
             throw new Error('orderId is required');
         }
@@ -722,6 +790,16 @@ class RefundService {
         const order = await Order.findById(orderId).populate('items.product');
         if (!order) {
             throw new Error('Order not found');
+        }
+
+        const existingOrderRefund = await Refund.findOne({
+            customer: userId,
+            order: order._id,
+            status: { $nin: ['rejected', 'cancelled'] }
+        }).sort({ createdAt: -1 });
+
+        if (existingOrderRefund) {
+            throw new Error(`A refund request already exists for this order (${existingOrderRefund.requestNumber})`);
         }
 
         const orderStatus = String(order.overallStatus || order.status || '').toLowerCase();
@@ -740,12 +818,18 @@ class RefundService {
             throw new Error('Order is already refunded');
         }
 
+        const firstItem = order.items?.[0];
+        const vendorId = firstItem?.vendor || order.vendor || order.subOrders?.[0]?.vendor || null;
+        if (!vendorId) {
+            throw new Error('Vendor could not be determined for this order');
+        }
+
+        const requestNumber = await this.generateRequestNumber();
+
         const refundAmountValue = Number(amount ?? order.totalAmount ?? 0);
         if (!Number.isFinite(refundAmountValue) || refundAmountValue <= 0) {
             throw new Error('Refund amount must be greater than zero');
         }
-
-        const firstItem = order.items?.[0];
         const returnReason = {
             category: 'other',
             description: String(reason).trim(),
@@ -753,10 +837,11 @@ class RefundService {
         };
 
         const refund = new Refund({
+            requestNumber,
             order: order._id,
             orderItem: firstItem?._id,
             customer: userId,
-            vendor: firstItem?.vendor || order.vendor || userId,
+            vendor: vendorId,
             payment: payment?._id,
             refundType,
             amount: refundAmountValue,
@@ -805,13 +890,13 @@ class RefundService {
             }],
         });
 
-        await refund.save();
+        await this.saveRefundWithUniqueRequestNumber(refund);
 
         await OrderTimeline.create({
             order: order._id,
             orderItem: firstItem?._id,
-            event: 'refund_requested',
-            title: 'Refund Requested',
+            event: 'return_requested',
+            title: 'Return Requested',
             description: `Refund requested for order ${order.orderNumber || order._id}`,
             actor: userId,
             actorType: 'customer',

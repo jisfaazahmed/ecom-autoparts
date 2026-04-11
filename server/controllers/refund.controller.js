@@ -7,7 +7,7 @@ exports.createRefundRequest = async (req, res) => {
         const refund = await refundService.createRefundRequest(
             req.params.orderItemId,
             req.body,
-            req.user._id
+            req.user?.id || req.user?._id
         );
 
         res.status(200).json(
@@ -29,7 +29,15 @@ exports.createRefundRequest = async (req, res) => {
 
 exports.createRefundRequestByOrder = async (req, res) => {
     try {
-        const refund = await refundService.createRefundRequestByOrder(req.body, req.user._id);
+        const customerId = req.user?.id || req.user?._id;
+        if (!customerId) {
+            return res.status(401).json({
+                success: false,
+                message: 'Authentication required to create refund request'
+            });
+        }
+
+        const refund = await refundService.createRefundRequestByOrder(req.body, customerId);
 
         res.status(200).json({
             success: true,
@@ -46,7 +54,7 @@ exports.createRefundRequestByOrder = async (req, res) => {
 
 exports.getCustomerRefunds = async (req, res)=>{
     try {
-        const result = await refundService.getCustomerRefunds(req.user._id, req.query);
+        const result = await refundService.getCustomerRefunds(req.user?.id || req.user?._id, req.query);
 
         res.json({
             success: true,
@@ -62,7 +70,7 @@ exports.getCustomerRefunds = async (req, res)=>{
 
 exports.getVendorRefunds = async (req, res) => {
     try {
-        const result = await refundService.getVendorRefunds(req.user._id, req.query);
+        const result = await refundService.getVendorRefunds(req.user?.id || req.user?._id, req.query);
 
         res.json({
             success: true,
@@ -104,7 +112,7 @@ exports.getRefundDetails = async (req, res) => {
     try {
         const refund = await refundService.getRefundDetails(
             req.params.refundId,
-            req.user._id,
+            req.user?.id || req.user?._id,
             req.user.role
         );
 
@@ -124,7 +132,7 @@ exports.vendorReviewRefund = async (req, res) => {
     try {
         const refund = await refundService.vendorReviewRefund(
             req.params.refundId,
-            req.user._id,
+            req.user?.id || req.user?._id,
             req.body
         );
 
@@ -153,7 +161,7 @@ exports.approveOrRejectRefund = async (req, res) => {
 
         const refund = await refundService.approveOrRejectRefund(
             req.params.refundId,
-            req.user._id,
+            req.user?.id || req.user?._id,
             req.body
         );
 
@@ -175,7 +183,7 @@ exports.updateReturnStatus = async (req, res) => {
         const refund = await refundService.updateReturnStatus(
             req.params.refundId,
             req.body,
-            req.user?._id,
+            req.user?.id || req.user?._id,
             req.user?.role
         );
 
@@ -216,7 +224,7 @@ exports.conductQualityCheck = async (req, res) => {
     try {
         const refund = await refundService.conductQualityCheck(
             req.params.refundId,
-            req.user._id,
+            req.user?.id || req.user?._id,
             req.body
         );
 
@@ -239,7 +247,7 @@ exports.qualityCheckResponse = async (req, res) => {
 
         const refund = await refundService.customerQualityCheckResponse(
             req.params.refundId,
-            req.user._id,
+            req.user?.id || req.user?._id,
             accepted,
             comments
         );
@@ -283,7 +291,7 @@ exports.submitFeedback = async (req, res) => {
     try {
         const refund = await refundService.submitFeedback(
             req.params.refundId,
-            req.user._id,
+            req.user?.id || req.user?._id,
             req.body
         );
 
