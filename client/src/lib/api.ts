@@ -70,6 +70,24 @@ export interface ApiShop {
   updatedAt: string;
 }
 
+export interface ApiCompatibleVehicle {
+  id: string;
+  year: number;
+  make: string;
+  model: string;
+}
+
+export interface ApiCompatibleVariant {
+  id: string;
+  name: string;
+  yearStart: number;
+  yearEnd: number | null;
+  modelId?: string;
+  modelName?: string;
+  brandId?: string;
+  brandName?: string;
+}
+
 export interface ApiProduct {
   id: string;
   name: string;
@@ -84,8 +102,10 @@ export interface ApiProduct {
   images?: string[];
   sku?: string;
   categoryId?: string;
-  shopId: string;
+  shopId?: string;
   isActive: boolean;
+  compatibleVehicles?: ApiCompatibleVehicle[];
+  compatibleVehicleVariants?: ApiCompatibleVariant[];
   compatibleVariants?: string[];
   specifications?: Record<string, string>;
   createdAt: string;
@@ -191,6 +211,12 @@ export interface ApiVehicleVariant {
   yearStart: number;
   yearEnd?: number;
   created_at?: string;
+  model?: {
+    id: string;
+    name: string;
+    brandId?: string;
+    brandName?: string;
+  };
 }
 
 export interface ApiUserVehicle {
@@ -200,13 +226,39 @@ export interface ApiUserVehicle {
   modelId: string;
   variantId?: string;
   year: number;
-  nickname?: string;
   vin?: string;
   isActive: boolean;
   brand?: ApiVehicleBrand;
   model?: ApiVehicleModel;
   variant?: ApiVehicleVariant;
   createdAt?: string;
+}
+
+export interface ApiVinDecoded {
+  vin: string;
+  make: string;
+  model: string;
+  modelYear: number | null;
+  trim: string;
+  bodyClass: string;
+  driveType: string;
+  fuelType: string;
+  engineCylinders: string;
+  engineDisplacement: string;
+  transmissionStyle: string;
+  plantCountry: string;
+  vehicleType: string;
+  errorCode: string;
+  errorText: string;
+}
+
+export interface ApiVinDecodeResult {
+  decoded: ApiVinDecoded;
+  matched: {
+    brand: ApiVehicleBrand | null;
+    model: { id: string; name: string } | null;
+    variant: { id: string; name: string; yearStart: number; yearEnd: number | null } | null;
+  };
 }
 
 export interface ApiReview {
@@ -445,6 +497,9 @@ class ApiClient {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
     isActive?: boolean;
+    make?: string;
+    model?: string;
+    year?: number;
   }): Promise<PaginatedResponse<ApiProduct>> {
     const searchParams = new URLSearchParams();
     if (params) {
@@ -922,6 +977,21 @@ class ApiClient {
     });
   }
 
+  // ============ VIN DECODE ============
+
+  async decodeVin(vin: string): Promise<ApiVinDecodeResult> {
+    return this.request<ApiVinDecodeResult>(`/vehicles/decode-vin/${encodeURIComponent(vin)}`);
+  }
+
+  async addUserVehicleByVin(data: {
+    vin: string;
+  }): Promise<ApiUserVehicle> {
+    return this.request<ApiUserVehicle>('/vehicles/user/vin', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   // ============ USER VEHICLES ============
 
   async getUserVehicles(): Promise<ApiUserVehicle[]> {
@@ -933,7 +1003,6 @@ class ApiClient {
     modelId: string;
     variantId?: string;
     year: number;
-    nickname?: string;
     vin?: string;
   }): Promise<ApiUserVehicle> {
     return this.request<ApiUserVehicle>('/vehicles/user', {

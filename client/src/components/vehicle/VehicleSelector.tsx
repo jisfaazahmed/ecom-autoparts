@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Car, Search, Check, X, Loader2, Star } from 'lucide-react';
+import { Car, Search, Check, X, Loader2, Star, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -23,7 +23,7 @@ import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
 import { Vehicle } from '@/types';
 import { toast } from 'sonner';
-import { api, ApiVehicleBrand, ApiVehicleModel, ApiVehicleVariant } from '@/lib/api';
+import { api, ApiVehicleBrand, ApiVehicleModel, ApiVehicleVariant, ApiVinDecoded } from '@/lib/api';
 
 interface VehicleSelectorProps {
   trigger?: React.ReactNode;
@@ -31,7 +31,7 @@ interface VehicleSelectorProps {
 }
 
 const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdded }) => {
-  const { setUserVehicle, userVehicle } = useStore();
+  const { setUserVehicle, userVehicle, triggerVehicleRefresh } = useStore();
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<'vin' | 'manual'>('manual');
@@ -47,13 +47,14 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
   // VIN state
   const [vin, setVin] = useState('');
   const [vinLoading, setVinLoading] = useState(false);
+  const [vinDecoded, setVinDecoded] = useState<ApiVinDecoded | null>(null);
+  const [vinSaving, setVinSaving] = useState(false);
   
   // Manual selection state
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedVariant, setSelectedVariant] = useState('');
   const [selectedYear, setSelectedYear] = useState('');
-  const [nickname, setNickname] = useState('');
 
   // Fetch brands on mount
   useEffect(() => {
@@ -128,8 +129,8 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
     setSelectedModel('');
     setSelectedVariant('');
     setSelectedYear('');
-    setNickname('');
     setVin('');
+    setVinDecoded(null);
   };
 
   const handleVinLookup = async () => {
@@ -139,11 +140,70 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
     }
 
     setVinLoading(true);
-    // Mock VIN lookup - in a real app, this would call a VIN decoder API
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    
-    toast.info('VIN lookup is not yet available. Please use manual selection.');
+    setVinDecoded(null);
+
+    try {
+      const result = await api.decodeVin(vin);
+      setVinDecoded(result.decoded);
+
+      if (!result.decoded.make || !result.decoded.model || !result.decoded.modelYear) {
+        toast.error('Failed to decode VIN');
+      } else {
+        toast.success(
+          `Found: ${result.decoded.modelYear} ${result.decoded.make} ${result.decoded.model}${result.decoded.trim ? ` ${result.decoded.trim}` : ''}`
+        );
+      }
+    } catch (error: unknown) {
+      toast.error(
+        'Failed to decode VIN'
+      );
+    }
+
     setVinLoading(false);
+  };
+
+  const handleVinSave = async () => {
+    if (!vinDecoded || !vinDecoded.make || !vinDecoded.model || !vinDecoded.modelYear) {
+      toast.error('No valid vehicle data to save');
+      return;
+    }
+
+    if (!user) {
+      toast.error('Please log in to save vehicles');
+      return;
+    }
+
+    setVinSaving(true);
+
+    try {
+      const saved = await api.addUserVehicleByVin({
+        vin,
+      });
+
+      const vehicle: Vehicle = {
+        id: saved.id,
+        brand: saved.brand?.name || vinDecoded.make,
+        model: saved.model?.name || vinDecoded.model,
+        variant: saved.variant?.name || vinDecoded.trim || 'Base',
+        year: saved.year,
+        vin,
+      };
+
+      setUserVehicle(vehicle);
+      setOpen(false);
+      toast.success(`Vehicle added: ${vehicle.year} ${vehicle.brand} ${vehicle.model}`);
+      resetSelections();
+      triggerVehicleRefresh();
+      onVehicleAdded?.();
+    } catch (error: unknown) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to save vehicle'
+      );
+    }
+
+    setVinSaving(false);
   };
 
   const handleManualSave = async () => {
@@ -166,7 +226,6 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
         modelId: selectedModel,
         variantId: selectedVariant,
         year: parseInt(selectedYear),
-        ...(nickname.trim() && { nickname: nickname.trim() }),
       });
 
       // Also update local store for compatibility filtering
@@ -182,6 +241,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
       setOpen(false);
       toast.success(`Vehicle added: ${vehicle.year} ${vehicle.brand} ${vehicle.model}`);
       resetSelections();
+      triggerVehicleRefresh();
       onVehicleAdded?.();
     } catch (error: unknown) {
       toast.error(error instanceof Error && error.message ? error.message : 'Failed to save vehicle');
@@ -231,7 +291,10 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
                 id="vin"
                 placeholder="e.g., 1HGBH41JXMN109186"
                 value={vin}
-                onChange={(e) => setVin(e.target.value.toUpperCase())}
+                onChange={(e) => {
+                  setVin(e.target.value.toUpperCase());
+                  setVinDecoded(null);
+                }}
                 maxLength={17}
                 className="font-mono tracking-wider bg-secondary/50"
               />
@@ -253,6 +316,86 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
                 </>
               )}
             </Button>
+
+            {/* Decoded VIN results */}
+            <AnimatePresence>
+              {vinDecoded && vinDecoded.make && vinDecoded.model && vinDecoded.modelYear && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-3"
+                >
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-4 space-y-2">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Info className="h-4 w-4 text-primary" />
+                      <span className="text-sm font-semibold text-primary">Vehicle Found</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                      <span className="text-muted-foreground">Year</span>
+                      <span className="font-medium">{vinDecoded.modelYear}</span>
+                      <span className="text-muted-foreground">Make</span>
+                      <span className="font-medium">{vinDecoded.make}</span>
+                      <span className="text-muted-foreground">Model</span>
+                      <span className="font-medium">{vinDecoded.model}</span>
+                      {vinDecoded.trim && (
+                        <>
+                          <span className="text-muted-foreground">Trim</span>
+                          <span className="font-medium">{vinDecoded.trim}</span>
+                        </>
+                      )}
+                      {vinDecoded.bodyClass && (
+                        <>
+                          <span className="text-muted-foreground">Body</span>
+                          <span className="font-medium">{vinDecoded.bodyClass}</span>
+                        </>
+                      )}
+                      {vinDecoded.driveType && (
+                        <>
+                          <span className="text-muted-foreground">Drive</span>
+                          <span className="font-medium">{vinDecoded.driveType}</span>
+                        </>
+                      )}
+                      {vinDecoded.engineCylinders && vinDecoded.engineDisplacement && (
+                        <>
+                          <span className="text-muted-foreground">Engine</span>
+                          <span className="font-medium">
+                            {vinDecoded.engineCylinders}cyl {vinDecoded.engineDisplacement}L
+                          </span>
+                        </>
+                      )}
+                      {vinDecoded.transmissionStyle && (
+                        <>
+                          <span className="text-muted-foreground">Transmission</span>
+                          <span className="font-medium">{vinDecoded.transmissionStyle}</span>
+                        </>
+                      )}
+                      {vinDecoded.fuelType && (
+                        <>
+                          <span className="text-muted-foreground">Fuel</span>
+                          <span className="font-medium">{vinDecoded.fuelType}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <Button
+                    onClick={handleVinSave}
+                    disabled={vinSaving}
+                    className="w-full neon-button"
+                  >
+                    {vinSaving ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Check className="h-4 w-4 mr-2" />
+                        Save {vinDecoded.modelYear} {vinDecoded.make} {vinDecoded.model}
+                      </>
+                    )}
+                  </Button>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </TabsContent>
 
           <TabsContent value="manual" className="space-y-4 mt-4">
@@ -359,26 +502,6 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
                       ))}
                     </SelectContent>
                   </Select>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Nickname (optional) */}
-            <AnimatePresence>
-              {selectedYear && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="space-y-2"
-                >
-                  <Label>Nickname <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                  <Input
-                    placeholder='e.g., "Daily Driver", "Weekend Car"'
-                    value={nickname}
-                    onChange={(e) => setNickname(e.target.value)}
-                    className="bg-secondary/50"
-                  />
                 </motion.div>
               )}
             </AnimatePresence>

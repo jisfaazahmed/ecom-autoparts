@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
   ChevronRight, Zap, Shield, Truck, Star, ArrowRight,
   Car, Cog, Disc, Lightbulb, Gauge, CircleDot, Loader2
@@ -10,6 +10,7 @@ import Navbar from '@/components/layout/Navbar';
 import ProductCard from '@/components/products/ProductCard';
 import VehicleSelector from '@/components/vehicle/VehicleSelector';
 import { useStore } from '@/store/useStore';
+import { useAuth } from '@/hooks/useAuth';
 import { api, ApiProduct, ApiCategory } from '@/lib/api';
 import heroImage from '@/assets/hero-automotive.jpg';
 
@@ -19,6 +20,8 @@ const iconMap: Record<string, React.ElementType> = {
 
 const Index: React.FC = () => {
   const { userVehicle } = useStore();
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [categories, setCategories] = useState<ApiCategory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,9 +66,11 @@ const Index: React.FC = () => {
     shopId: p.shopId,
     shopName: p.shop?.name || 'Unknown Shop',
     stock: p.stock,
-    compatibleVehicles: p.compatibleVariants || [],
-    rating: 4.5,
-    reviewCount: 0,
+    compatibleVehicles: (p.compatibleVehicles || []).map((v) =>
+      typeof v === 'string' ? v : `${v.year} ${v.make} ${v.model}`
+    ),
+    rating: p.rating ?? 0,
+    reviewCount: p.reviewCount ?? 0,
     sku: p.sku || '',
   });
 
@@ -120,14 +125,21 @@ const Index: React.FC = () => {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4">
-              <VehicleSelector
-                trigger={
-                  <Button size="lg" className="neon-button text-base px-8">
-                    <Car className="mr-2 h-5 w-5" />
-                    {userVehicle ? 'Change Vehicle' : 'Add My Vehicle'}
-                  </Button>
-                }
-              />
+              {user ? (
+                <VehicleSelector
+                  trigger={
+                    <Button size="lg" className="neon-button text-base px-8">
+                      <Car className="mr-2 h-5 w-5" />
+                      {userVehicle ? 'Change Vehicle' : 'Add My Vehicle'}
+                    </Button>
+                  }
+                />
+              ) : (
+                <Button size="lg" className="neon-button text-base px-8" onClick={() => navigate('/auth/customer')}>
+                  <Car className="mr-2 h-5 w-5" />
+                  Add My Vehicle
+                </Button>
+              )}
               <Link to="/shop">
                 <Button size="lg" variant="outline" className="border-border/50 hover:border-primary/50 text-base px-8">
                   Browse Parts

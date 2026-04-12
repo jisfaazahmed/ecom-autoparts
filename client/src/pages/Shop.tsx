@@ -26,6 +26,7 @@ import ProductCard from '@/components/products/ProductCard';
 import VehicleSelector from '@/components/vehicle/VehicleSelector';
 import PaginationControls from '@/components/common/PaginationControls';
 import { useStore } from '@/store/useStore';
+import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import { api, ApiProduct, ApiCategory } from '@/lib/api';
 import { usePagination } from '@/hooks/usePagination';
@@ -33,6 +34,7 @@ import { usePagination } from '@/hooks/usePagination';
 const Shop: React.FC = () => {
   const [searchParams] = useSearchParams();
   const { userVehicle } = useStore();
+  const { user } = useAuth();
   
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [categories, setCategories] = useState<ApiCategory[]>([]);
@@ -50,8 +52,21 @@ const Shop: React.FC = () => {
       setLoading(true);
       
       try {
+        // Build product query params
+        const productParams: Parameters<typeof api.getProducts>[0] = {
+          isActive: true,
+          limit: 1000,
+        };
+
+        // When compatibility filter is on, use server-side vehicle filtering
+        if (showCompatibleOnly && userVehicle) {
+          productParams.make = userVehicle.brand;
+          productParams.model = userVehicle.model;
+          productParams.year = userVehicle.year;
+        }
+
         const [productsRes, categoriesRes] = await Promise.all([
-          api.getProducts({ isActive: true, limit: 1000 }),
+          api.getProducts(productParams),
           api.getCategories()
         ]);
 
@@ -65,28 +80,36 @@ const Shop: React.FC = () => {
     };
 
     fetchData();
-  }, []);
+  }, [showCompatibleOnly, userVehicle]);
 
-  const vehicleId = userVehicle
-    ? `${userVehicle.brand.toLowerCase()}-${userVehicle.model.toLowerCase()}-${userVehicle.variant.toLowerCase()}-${userVehicle.year}`
-    : null;
+  const mapToProductCard = (p: ApiProduct) => {
+    // Build human-readable list of compatible vehicles from variant data
+    const vehicleStrings: string[] = [];
+    if (p.compatibleVehicleVariants && p.compatibleVehicleVariants.length > 0) {
+      for (const v of p.compatibleVehicleVariants) {
+        const label = [v.brandName, v.modelName, v.name].filter(Boolean).join(' ');
+        if (label && !vehicleStrings.includes(label)) vehicleStrings.push(label);
+      }
+    }
 
-  const mapToProductCard = (p: ApiProduct) => ({
-    id: p.id,
-    name: p.name,
-    description: p.description || '',
-    price: p.price,
-    image: p.imageUrl || '/placeholder.svg',
-    category: p.category?.name || 'Uncategorized',
-    brand: '',
-    shopId: p.shopId,
-    shopName: p.shop?.name || 'Unknown Shop',
-    stock: p.stock,
-    compatibleVehicles: p.compatibleVariants || [],
-    rating: 4.5,
-    reviewCount: 0,
-    sku: p.sku || '',
-  });
+    return {
+      id: p.id,
+      name: p.name,
+      description: p.description || '',
+      price: p.price,
+      image: p.imageUrl || '/placeholder.svg',
+      category: p.category?.name || 'Uncategorized',
+      categoryId: p.categoryId,
+      brand: '',
+      shopId: p.shopId || '',
+      shopName: p.shop?.name || '',
+      stock: p.stock,
+      compatibleVehicles: vehicleStrings,
+      rating: p.rating ?? 0,
+      reviewCount: p.reviewCount ?? 0,
+      sku: p.sku || '',
+    };
+  };
 
   const filteredProducts = useMemo(() => {
     let filtered = [...products];
@@ -111,12 +134,7 @@ const Shop: React.FC = () => {
       (p) => p.price >= priceRange[0] && p.price <= priceRange[1]
     );
 
-    // Compatibility filter
-    if (showCompatibleOnly && vehicleId) {
-      filtered = filtered.filter((p) =>
-        p.compatibleVariants?.some((v) => v.includes(vehicleId.split('-').slice(0, 3).join('-')))
-      );
-    }
+    // Compatibility filter — when showCompatibleOnly is on, server already returns only matching products so no extra client-side filter needed.
 
     // Sorting
     switch (sortBy) {
@@ -132,7 +150,7 @@ const Shop: React.FC = () => {
     }
 
     return filtered;
-  }, [products, search, selectedCategory, priceRange, sortBy, showCompatibleOnly, vehicleId]);
+  }, [products, search, selectedCategory, priceRange, sortBy]);
 
   const {
     paginatedItems: paginatedProducts,
@@ -142,10 +160,16 @@ const Shop: React.FC = () => {
   } = usePagination(filteredProducts, { itemsPerPage: 12 });
 
   const isProductCompatible = (product: ApiProduct) => {
-    if (!vehicleId) return true;
-    return product.compatibleVariants?.some((v) =>
-      v.includes(vehicleId.split('-').slice(0, 3).join('-'))
-    );
+    if (!userVehicle) return true;
+    // Check new variant-based compatibility
+    const variants = product.compatibleVehicleVariants;
+    if (!variants || variants.length === 0) return true;
+    return variants.some((v) => {
+      const brandMatch = v.brandName?.toLowerCase() === userVehicle.brand.toLowerCase();
+      const modelMatch = v.modelName?.toLowerCase() === userVehicle.model.toLowerCase();
+      const yearMatch = userVehicle.year >= v.yearStart && (v.yearEnd === null || userVehicle.year <= v.yearEnd);
+      return brandMatch && modelMatch && yearMatch;
+    });
   };
 
   const FilterContent = () => (
@@ -153,21 +177,27 @@ const Shop: React.FC = () => {
       {/* Vehicle */}
       <div className="space-y-3">
         <Label className="text-sm font-medium">My Vehicle</Label>
-        <VehicleSelector />
-        {userVehicle && (
-          <div className="flex items-center space-x-2 mt-2">
-            <Checkbox
-              id="compatible"
-              checked={showCompatibleOnly}
-              onCheckedChange={(checked) => setShowCompatibleOnly(checked as boolean)}
-            />
-            <label
-              htmlFor="compatible"
-              className="text-sm text-muted-foreground cursor-pointer"
-            >
-              Show compatible parts only
-            </label>
-          </div>
+        {user ? (
+          <>
+            <VehicleSelector />
+            {userVehicle && (
+              <div className="flex items-center space-x-2 mt-2">
+                <Checkbox
+                  id="compatible"
+                  checked={showCompatibleOnly}
+                  onCheckedChange={(checked) => setShowCompatibleOnly(checked as boolean)}
+                />
+                <label
+                  htmlFor="compatible"
+                  className="text-sm text-muted-foreground cursor-pointer"
+                >
+                  Show compatible parts only
+                </label>
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground">Login to select your vehicle</p>
         )}
       </div>
 
@@ -210,6 +240,7 @@ const Shop: React.FC = () => {
         <Slider
           value={priceRange}
           onValueChange={setPriceRange}
+          min={0}
           max={500000}
           step={1000}
           className="py-4"
@@ -310,7 +341,7 @@ const Shop: React.FC = () => {
         </div>
 
         {/* Active Filters */}
-        {((selectedCategory && selectedCategory !== 'all') || search || userVehicle) && (
+        {((selectedCategory && selectedCategory !== 'all') || search || (user && userVehicle)) && (
           <div className="flex flex-wrap gap-2 mb-6">
             {selectedCategory && selectedCategory !== 'all' && (
               <Badge variant="secondary" className="gap-1">
@@ -327,7 +358,7 @@ const Shop: React.FC = () => {
                 <X className="h-3 w-3 cursor-pointer" onClick={() => setSearch('')} />
               </Badge>
             )}
-            {userVehicle && showCompatibleOnly && (
+            {user && userVehicle && showCompatibleOnly && (
               <Badge className="bg-primary/20 text-primary border-primary/30">
                 Compatible with: {userVehicle.year} {userVehicle.brand} {userVehicle.model}
               </Badge>

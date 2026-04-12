@@ -229,10 +229,25 @@ exports.deleteVehicleModel = async (req, res) => {
 exports.getAllVehicleVariants = async (req, res) => {
   try {
     const variants = await VehicleVariant.find()
-      .populate('model', 'name brand')
+      .populate({
+        path: 'model',
+        select: 'name brand',
+        populate: { path: 'brand', select: 'name' },
+      })
       .sort({ name: 1 })
       .exec();
-    res.json(variants.map(mapVariant));
+    // mapVariant + inject brandName from populated brand
+    const result = variants.map((doc) => {
+      const mapped = mapVariant(doc);
+      if (doc.model && typeof doc.model === 'object' && doc.model.brand && typeof doc.model.brand === 'object') {
+        if (mapped.model) {
+          mapped.model.brandName = doc.model.brand.name;
+          mapped.model.brandId = doc.model.brand._id.toString();
+        }
+      }
+      return mapped;
+    });
+    res.json(result);
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Failed to fetch vehicle variants' });
