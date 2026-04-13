@@ -203,6 +203,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       if (token) {
         await fetchUserData();
         await hydrateActiveVehicle();
+        // Load the user's cart from backend
+        await useStore.getState().syncCartFromApi();
       }
       setLoading(false);
     };
@@ -249,6 +251,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     businessRegistration?: string;
     shopDescription?: string;
     phone?: string;
+    address?: string;
+
   }) => {
     try {
       await api.registerSeller({
@@ -285,6 +289,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       await api.login(email, password);
       await fetchUserData();
       await hydrateActiveVehicle();
+      // Load this user's cart from backend
+      await useStore.getState().syncCartFromApi();
 
       toast({
         title: 'Welcome Back',
@@ -315,6 +321,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setRole(null);
     setShop(null);
     setUserVehicle(null);
+    useStore.getState().clearCart();
     
     toast({
       title: 'Signed Out',

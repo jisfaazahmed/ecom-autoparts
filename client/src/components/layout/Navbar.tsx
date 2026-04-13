@@ -23,7 +23,7 @@ import { api, ApiUserVehicle } from '@/lib/api';
 const Navbar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { cart, getCartCount, userVehicle, setUserVehicle } = useStore();
+  const { cart, getCartCount, userVehicle, setUserVehicle, vehicleRefreshKey } = useStore();
   const { user, profile, role, signOut, loading } = useAuth();
   const cartCount = getCartCount();
   const [savedVehicles, setSavedVehicles] = useState<ApiUserVehicle[]>([]);
@@ -49,7 +49,7 @@ const Navbar: React.FC = () => {
 
   useEffect(() => {
     fetchSavedVehicles();
-  }, [fetchSavedVehicles]);
+  }, [fetchSavedVehicles, vehicleRefreshKey]);
 
   const handleSwitchVehicle = async (vehicle: ApiUserVehicle) => {
     try {
@@ -146,7 +146,7 @@ const Navbar: React.FC = () => {
                     >
                       <div className="flex flex-col">
                         <span className="text-sm font-medium">
-                          {v.nickname || `${v.brand?.name} ${v.model?.name}`}
+                          {`${v.brand?.name} ${v.model?.name}`}
                         </span>
                         <span className="text-xs text-muted-foreground">
                           {v.year} {v.brand?.name} {v.model?.name} {v.variant?.name}
@@ -179,7 +179,7 @@ const Navbar: React.FC = () => {
           <Link to="/cart">
             <Button variant="ghost" size="icon" className="relative">
               <ShoppingCart className="h-5 w-5" />
-              {cartCount > 0 && (
+              {user && cartCount > 0 && (
                 <motion.span
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
