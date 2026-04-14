@@ -9,6 +9,7 @@ router.get('/my_orders', verifyToken, orderController.getAllOrders);
 //vendor
 router.get('/vendor/orders', verifyToken, orderController.getVendorOrders);
 router.get('/seller/orders', verifyToken, orderController.getVendorOrders);
+router.get('/seller/sub-orders', verifyToken, orderController.getMySubOrders);
 router.patch('/:id/item-status', verifyToken, orderController.updateOrderStatus);
 
 //track
@@ -19,7 +20,7 @@ router.get('/:id', verifyToken, orderController.getOrderById);
 router.post('/:id/cancel', verifyToken, orderController.cancelOrder)
 
 //Payment status update (Admin/System)
-router.patch('/:id/payment-status', orderController.updatePaymentStatus);
+router.patch('/:id/payment-status', verifyToken, orderController.updatePaymentStatus);
 
 //Admin 
 router.post('/:id/verify-cod', orderController.verifyCOD);

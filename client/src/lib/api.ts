@@ -57,6 +57,24 @@ export interface Profile {
   updated_at: string;
 }
 
+export interface ApiAddress {
+  _id: string;
+  user: string;
+  fullName: string;
+  phone: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  isDefaultShipping: boolean;
+  isDefaultBilling: boolean;
+  addressType: 'home' | 'office' | 'other';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ApiShop {
   id: string;
   name: string;
@@ -89,6 +107,7 @@ export interface ApiProduct {
   categoryId?: string;
   shopId: string;
   isActive: boolean;
+  status: "Pending" | "Approved" | "Rejected";
   compatibleVariants?: string[];
   specifications?: Record<string, string>;
   createdAt: string;
@@ -295,8 +314,15 @@ export interface ApiRefund {
   _id?: string;
   id?: string;
   order?: string;
+  orderItem?: string;
   payment?: string;
   amount?: number;
+  vendor?: {
+    _id?: string;
+    name?: string;
+    email?: string;
+    shopName?: string;
+  };
   requestNumber?: string;
   status: string;
   refundType?: string;
@@ -617,6 +643,30 @@ class ApiClient {
     });
   }
 
+  // ============ ADDRESSES ============
+
+  async getAddresses(): Promise<ApiAddress[]> {
+    return this.request<ApiAddress[]>('/addresses');
+  }
+
+  async createAddress(data: Omit<ApiAddress, '_id' | 'user' | 'createdAt' | 'updatedAt'>): Promise<{ message: string; address: ApiAddress }> {
+    return this.request<{ message: string; address: ApiAddress }>('/addresses', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAddress(id: string, data: Partial<ApiAddress>): Promise<{ message: string; address: ApiAddress }> {
+    return this.request<{ message: string; address: ApiAddress }>(`/addresses/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAddress(id: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/addresses/${id}`, { method: 'DELETE' });
+  }
+
   // ============ PRODUCTS ============
 
   async getProducts(params?: {
@@ -626,6 +676,7 @@ class ApiClient {
     categoryId?: string;
     shopId?: string;
     shop?: string;
+    status?: string;
     minPrice?: number;
     maxPrice?: number;
     sortBy?: string;
@@ -673,6 +724,13 @@ class ApiClient {
     return this.request<ApiProduct>(`/products/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    });
+  }
+
+  async updateProductStatus(id: string, status: "Pending" | "Approved" | "Rejected"): Promise<ApiProduct> {
+    return this.request<ApiProduct>(`/products/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
     });
   }
 
@@ -1438,6 +1496,7 @@ class ApiClient {
 
   async createRefundRequestByOrder(data: {
     orderId: string;
+    orderItemId?: string;
     paymentId?: string;
     amount: number;
     reason: string;
@@ -1451,6 +1510,27 @@ class ApiClient {
     });
 
     return response?.data;
+  }
+
+  async getVendorRefunds(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<ApiRefundListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const response = await this.request<{ success: boolean; data: ApiRefundListResponse }>(
+      `/refunds/vendor/refunds?${searchParams.toString()}`
+    );
+
+    return response?.data || { refunds: [], pagination: { page: 1, limit: 10, total: 0, pages: 1 } };
   }
 
   async createRefundRequest(orderItemId: string, data: {

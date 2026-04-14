@@ -1,5 +1,6 @@
 const Refund = require('../models/refund.model');
 const Order = require('../models/order.model');
+const OrderItem = require('../models/orderItem.model');
 const Payment = require('../models/payment.model');
 const OrderTimeline = require('../models/timeline.model');
 const paymentService = require('./payment.service');
@@ -59,15 +60,15 @@ class RefundService {
             }
 
             const order = await Order.findOne({
-                'items._id': orderItemId,
+                items: orderItemId,
                 user: userId
-            }).populate('items.product');
+            });
 
             if (!order) {
                 throw new Error('Order not found or unauthorized');
             }
 
-            const orderItem = order.items.id(orderItemId);
+            const orderItem = await OrderItem.findById(orderItemId).populate('product');
             if (!orderItem) {
                 throw new Error('Order Item not found');
             }
@@ -271,10 +272,7 @@ class RefundService {
                 userType: 'vendor'
             });
 
-            const order = await Order.findById(refund.order);
-            const item = order.items.id(refund.orderItem);
-            item.status = 'delivered';
-            await order.save();
+            await OrderItem.findByIdAndUpdate(refund.orderItem, { status: 'delivered' });
         }
 
         await refund.save();
@@ -545,10 +543,7 @@ class RefundService {
 
         await refund.save();
 
-        const order = await Order.findById(refund.order);
-        const item = order.items.id(refund.orderItem);
-        item.status = 'refunded';
-        await order.save();
+        await OrderItem.findByIdAndUpdate(refund.orderItem, { status: 'refunded' });
 
         await OrderTimeline.create({
             order: refund.order,
@@ -709,6 +704,9 @@ class RefundService {
 
         const refunds = await Refund.find(query)
             .populate('customer', 'name phone')
+            .populate('vendor', 'name email shopName')
+            .populate('order', 'orderNumber totalAmount paymentStatus overallStatus')
+            .populate('orderItem', 'product vendor name quantity price finalPrice status')
             .populate('product.productId', 'name images')
             .sort({ createdAt: -1 })
             .limit(limit)
@@ -773,7 +771,7 @@ class RefundService {
     }
 
     async createRefundRequestByOrder(refundData, userId) {
-        const { orderId, paymentId, amount, reason, refundType = 'return', returnStatus = 'pending' } = refundData;
+        const { orderId, orderItemId, paymentId, amount, reason, refundType = 'return', returnStatus = 'pending' } = refundData;
 
         if (!userId) {
             throw new Error('Customer authentication is required');
@@ -787,16 +785,25 @@ class RefundService {
             throw new Error('reason is required');
         }
 
-        const order = await Order.findById(orderId).populate('items.product');
+        const order = await Order.findById(orderId).populate({
+            path: 'items',
+            populate: { path: 'product' }
+        });
         if (!order) {
             throw new Error('Order not found');
         }
 
-        const existingOrderRefund = await Refund.findOne({
+        const existingRefundQuery = {
             customer: userId,
             order: order._id,
             status: { $nin: ['rejected', 'cancelled'] }
-        }).sort({ createdAt: -1 });
+        };
+
+        if (orderItemId) {
+            existingRefundQuery.orderItem = orderItemId;
+        }
+
+        const existingOrderRefund = await Refund.findOne(existingRefundQuery).sort({ createdAt: -1 });
 
         if (existingOrderRefund) {
             throw new Error(`A refund request already exists for this order (${existingOrderRefund.requestNumber})`);
@@ -818,8 +825,15 @@ class RefundService {
             throw new Error('Order is already refunded');
         }
 
-        const firstItem = order.items?.[0];
-        const vendorId = firstItem?.vendor || order.vendor || order.subOrders?.[0]?.vendor || null;
+        const targetOrderItem = orderItemId
+            ? (order.items || []).find((item) => String(item?._id) === String(orderItemId))
+            : (order.items || []).find((item) => String(item?.status || '').toLowerCase() === 'delivered') || order.items?.[0];
+
+        if (!targetOrderItem) {
+            throw new Error('No eligible order item found for refund');
+        }
+
+        const vendorId = targetOrderItem.vendor || order.vendor || order.subOrders?.[0]?.vendor || null;
         if (!vendorId) {
             throw new Error('Vendor could not be determined for this order');
         }
@@ -839,7 +853,7 @@ class RefundService {
         const refund = new Refund({
             requestNumber,
             order: order._id,
-            orderItem: firstItem?._id,
+            orderItem: targetOrderItem?._id,
             customer: userId,
             vendor: vendorId,
             payment: payment?._id,
@@ -848,14 +862,14 @@ class RefundService {
             refundTransactionId: '',
             returnStatus,
             returnReason,
-            product: firstItem ? {
-                productId: firstItem.product?._id,
-                name: firstItem.product?.name || firstItem.name,
-                sku: firstItem.product?.sku,
-                variant: firstItem.variant,
-                quantity: firstItem.quantity,
-                price: firstItem.price,
-                totalAmount: firstItem.finalPrice,
+            product: targetOrderItem ? {
+                productId: targetOrderItem.product?._id,
+                name: targetOrderItem.product?.name || targetOrderItem.name,
+                sku: targetOrderItem.product?.sku,
+                variant: targetOrderItem.variant,
+                quantity: targetOrderItem.quantity,
+                price: targetOrderItem.price,
+                totalAmount: targetOrderItem.finalPrice,
             } : {
                 name: `Order ${order.orderNumber || order._id}`,
                 quantity: 1,
@@ -894,7 +908,7 @@ class RefundService {
 
         await OrderTimeline.create({
             order: order._id,
-            orderItem: firstItem?._id,
+            orderItem: targetOrderItem?._id,
             event: 'return_requested',
             title: 'Return Requested',
             description: `Refund requested for order ${order.orderNumber || order._id}`,
@@ -964,6 +978,13 @@ class RefundService {
         }
 
         const normalizedStatus = String(statusData.returnStatus || statusData.status || '').toLowerCase();
+        const normalizedUserType = (() => {
+            const value = String(userType || 'courier').toLowerCase().replace('_', '');
+            if (value === 'superadmin') return 'admin';
+            if (['customer', 'vendor', 'admin', 'system', 'courier'].includes(value)) return value;
+            return 'system';
+        })();
+
         if (!['pending', 'picked', 'received', 'not_required'].includes(normalizedStatus)) {
             throw new Error('Invalid return status');
         }
@@ -984,7 +1005,7 @@ class RefundService {
             timestamp: new Date(),
             note: `Return status updated to ${normalizedStatus}`,
             updatedBy,
-            userType,
+            userType: normalizedUserType,
         });
 
         await refund.save();

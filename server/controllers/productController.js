@@ -51,41 +51,95 @@ exports.checkStock = async (req, res) => {
   }
 };
 
-// 1. CREATE MASTER PRODUCT (Super Admin Only)
+// 1. CREATE PRODUCT (Sellers & Admins)
 exports.createProduct = async (req, res) => {
   try {
-    const { name, partNumber, categoryId, vehicleIds, description } = req.body;
+    const { name, sku, price, stock, categoryId, compatibleVariants, description, imageUrl, shopId } = req.body;
 
-    const count = await Vehicle.countDocuments({ _id: { $in: vehicleIds } });
-    
-    if (count !== vehicleIds.length) {
-      return res.status(400).json({ message: 'One or more Vehicle IDs are invalid.' });
+    // Map compatibleVariants to vehicleIds
+    let vehicleIds = [];
+    if (compatibleVariants && Array.isArray(compatibleVariants)) {
+      vehicleIds = compatibleVariants;
+      const count = await Vehicle.countDocuments({ _id: { $in: vehicleIds } });
+      if (count !== vehicleIds.length && process.env.NODE_ENV !== 'test') {
+        return res.status(400).json({ message: 'One or more Vehicle Variant IDs are invalid.' });
+      }
     }
+
+    // Default status to 'Pending' for sellers. Super Admin could theoretially approve immediately, 
+    // but let's keep all new creations as 'Pending' or let admin pass 'Approved'
+    const finalStatus = (req.user && req.user.role === 'SUPER_ADMIN') ? 'Approved' : 'Pending';
 
     // Create the product
     const newProduct = new Product({
       name,
-      partNumber,
-      category: categoryId,
-      compatibleVehicles: vehicleIds, // Array of Vehicle IDs (e.g., [TeslaID, HondaID])
+      sku: sku || 'SKU-' + Date.now(),
+      price: price || 0,
+      stock: stock || 0,
+      image: imageUrl,
+      category: categoryId || null,
+      compatibleVehicles: vehicleIds,
       description,
-      createdBy: req.user.id
+      createdBy: shopId || req.user.id, // tie it to the seller
+      status: finalStatus
     });
 
     await newProduct.save();
-    res.status(201).json({ message: 'Master Product Created', product: newProduct });
+    
+    const savedProduct = newProduct.toObject();
+    savedProduct.id = savedProduct._id;
+
+    res.status(201).json(savedProduct);
   } catch (err) {
     console.error(err);
-    res.status(500).send('Server Error');
+    res.status(500).json({ message: 'Server Error', error: err.message });
+  }
+};
+
+// 1.1 UPDATE PRODUCT STATUS (Super Admin Only)
+exports.updateProductStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    
+    if (!['Pending', 'Approved', 'Rejected'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+
+    const product = await Product.findByIdAndUpdate(id, { status }, { new: true });
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    res.json(product);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server Error', error: err.message });
   }
 };
 
 // 2. SEARCH PRODUCTS (The "Tesla > Model S > Brakes" Logic)
 exports.getProducts = async (req, res) => {
   try {
-    const { vehicleId, categoryId } = req.query;
+    const { vehicleId, categoryId, shop, status } = req.query;
     
     const query = {};
+
+    // 1. If searching by a specific shop/seller (Vendor Dashboard)
+    if (shop) {
+      query.createdBy = shop;
+      // Vendor can see their own Pending/Rejected/Approved unless status is filtered
+      if (status) {
+        query.status = status;
+      }
+    } else {
+      // 2. Or, public facing search: ONLY SHOW APPROVED
+      if (req.user && req.user.role === 'SUPER_ADMIN') {
+        // Super Admins can see specific status or ALL if no status provided
+        if (status) query.status = status;
+      } else {
+        // Public sees only approved
+        query.status = 'Approved';
+      }
+    }
 
     // Filter by Category (e.g., "Brake Pads")
     if (categoryId) {

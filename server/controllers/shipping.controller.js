@@ -53,8 +53,8 @@ module.exports.schedulePickup = async (req, res) => {
 module.exports.updateStatus = async (req, res) => {
     try {
         const status = await shippingService.updateStatus(
-            req.body,
-            req.params.shippingId
+            req.params.shippingId,
+            req.body
         );
         res.status(200).json(status);
     } catch (error) {
@@ -229,12 +229,10 @@ exports.submitRating = async (req, res) => {
 
 exports.getShippingDetails = async (req, res) => {
     try {
-        const shipping = await shipping.findById(req.params.shippingId)
-            .populate('order')
-            .populate('vendor', 'name storeName phone')
-            .populate('customer', 'name phone email');
+        const shipment = await shipping.findById(req.params.shippingId)
+            .populate('order');
 
-        if (!shipping) {
+        if (!shipment) {
             return res.status(404).json({
                 success: false,
                 message: 'Shipping not found'
@@ -243,7 +241,7 @@ exports.getShippingDetails = async (req, res) => {
 
         res.json({
             success: true,
-            data: shipping
+            data: shipment
         });
     } catch (error) {
         res.status(500).json({

@@ -56,6 +56,21 @@ class ShippingService {
             .slice(0, 80);
     }
 
+    generateTrackingNumber(courierName) {
+        const prefix = String(courierName || 'SHIP')
+            .replace(/[^a-zA-Z0-9]/g, '')
+            .slice(0, 3)
+            .toUpperCase() || 'SHP';
+
+        const date = new Date();
+        const year = String(date.getFullYear()).slice(-2);
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const stamp = `${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 900) + 100}`;
+
+        return `${prefix}${year}${month}${day}${stamp}`;
+    }
+
     async createLabelPdf(shipping, filePath) {
         return new Promise((resolve, reject) => {
             const doc = new PDFDocument({ size: 'A4', margin: 40 });
@@ -156,15 +171,18 @@ class ShippingService {
     }
 
     async getShippingZone(district) {
+        if (!district) district = '';
+        const normalizedDistrict = district.trim().toLowerCase();
+
         let zone = await ShippingZone.findOne({
-            'district.name': district,
+            'district.name': { $regex: new RegExp('^' + normalizedDistrict + '$', 'i') },
             isActive: true
         });
 
         if (!zone) {
             // Fallback to zone type matching
             for (const [zoneType, data] of Object.entries(ZONES)) {
-                if (data.districts.includes(district)) {
+                if (data.districts.some(d => d.toLowerCase() === normalizedDistrict)) {
                     zone = {
                         zoneName: zoneType,
                         zoneType: zoneType,
@@ -183,6 +201,25 @@ class ShippingService {
                 }
             }
         }
+
+        if (!zone) {
+            // Universal fallback if district totally unknown to avoid 500 error
+            zone = {
+                zoneName: 'zone3',
+                zoneType: 'zone3',
+                rates: {
+                    standard: { baseRate: 350, perKgRate: 50, freeShippingThreshold: 5000 },
+                    express: { baseRate: 600, perKgRate: 100, freeShippingThreshold: 10000 },
+                    same_day: { baseRate: 1000, perKgRate: 200, freeShippingThreshold: 15000 }
+                },
+                estimatedDelivery: {
+                    standard: { min: 1, max: 5 },
+                    express: { min: 1, max: 3 },
+                    same_day: { min: 0, max: 2 }
+                }
+            };
+        }
+
         return zone;
     }
 
@@ -233,15 +270,22 @@ class ShippingService {
             order.shippingMethod
         );
 
+        const selectedOrderItem = vendorItems[0];
+        const courierName = await this.assignCourier(order.shippingAddress.district, order.shippingMethod);
+        const trackingNumber = this.generateTrackingNumber(courierName);
+
         // Create shipping record
         const shipping = new Shipping({
             order: orderId,
+            orderItem: selectedOrderItem._id,
             vendor: vendorId,
             customer: order.user._id,
-            shippingMethod: order.shippingMethod,
-            courierPartner,
-            deliveryAddress: {
-                customerName: order.shippingAddress.fullName,
+            shipmentType: order.shippingMethod,
+            courierPartner: {
+                name: courierName,
+            },
+            shippingAddress: {
+                fullName: order.shippingAddress.fullName,
                 phone: order.shippingAddress.phone,
                 alternatePhone: order.shippingAddress.alternatePhone,
                 addressLine1: order.shippingAddress.addressLine1,
@@ -249,24 +293,26 @@ class ShippingService {
                 city: order.shippingAddress.city,
                 district: order.shippingAddress.district,
                 postalCode: order.shippingAddress.postalCode,
-                addressType: order.shippingAddress.addressType
+                country: order.shippingAddress.country || 'Sri Lanka',
+                addressType: order.shippingAddress.addressType,
             },
-            packageDetails: {
+            package: {
                 weight: totalWeight,
-                packageType,
-                valueDeclaration: vendorItems.reduce((sum, item) => sum + item.finalPrice, 0)
+                packageType: packageType === 'small_box' ? 'box' : 'parcel',
+                packageValue: vendorItems.reduce((sum, item) => sum + item.finalPrice, 0),
             },
-            charges: {
+            shippingCost: {
                 baseCharge: order.shippingCharges,
                 totalCharge: order.shippingCharges,
-                paidBy: 'customer'
+                paidBy: 'sender'
             },
+            trackingNumber,
             estimatedDeliveryDate,
-            status: 'pending',
-            statusHistory: [{
-                status: 'pending',
+            status: 'label_created',
+            trackingEvents: [{
+                status: 'label_created',
                 timestamp: new Date(),
-                note: 'Shipping created, awaiting pickup'
+                description: 'Shipping created, awaiting pickup'
             }]
         });
 
@@ -349,10 +395,11 @@ class ShippingService {
         shipping.estimatedPickupDate = pickupData.pickupDate;
         shipping.status = 'pickup_scheduled';
 
-        shipping.statusHistory.push({
+        shipping.trackingEvents = shipping.trackingEvents || [];
+        shipping.trackingEvents.push({
             status: 'pickup_scheduled',
             timestamp: new Date(),
-            note: `Pickup scheduled for ${pickupData.pickupDate.toLocaleDateString()}`,
+            description: `Pickup scheduled for ${pickupData.pickupDate.toLocaleDateString()}`,
             location: {
                 district: pickupData.pickupAddress.district
             }
@@ -371,12 +418,14 @@ class ShippingService {
         }
 
         const { status, location, note, updatedBy, scanType } = statusData;
+        const nextStatus = this.normalizeShippingStatus(status);
+        const currentStatus = this.normalizeShippingStatus(shipping.status);
 
-        if (!this.isValidStatusTransition(shipping.status, status)) {
-            throw new Error(`Invalid status transition from ${shipping.status} to ${status}`);
+        if (!this.isValidStatusTransition(currentStatus, nextStatus)) {
+            throw new Error(`Invalid status transition from ${currentStatus} to ${nextStatus}`);
         }
 
-        shipping.status = status;
+        shipping.status = nextStatus;
 
         if (location) {
             shipping.currentLocation = {
@@ -385,17 +434,17 @@ class ShippingService {
             };
         }
 
-        shipping.statusHistory.push({
-            status,
+        shipping.trackingEvents = shipping.trackingEvents || [];
+        shipping.trackingEvents.push({
+            status: nextStatus,
             location,
             timestamp: new Date(),
-            note,
-            updatedBy,
-            scanType
+            description: note || `Shipment ${nextStatus}`,
+            scannedBy: updatedBy || scanType || 'system'
         });
 
         // Update specific dates
-        switch (status) {
+        switch (nextStatus) {
             case 'picked_up':
                 shipping.actualPickupDate = new Date();
                 break;
@@ -408,9 +457,9 @@ class ShippingService {
 
         await OrderTimeline.create({
             order: shipping.order,
-            event: this.mapStatusToEvent(status),
-            title: this.getStatusTitle(status),
-            description: note || `Shipment ${status}`,
+            event: this.mapStatusToEvent(nextStatus),
+            title: this.getStatusTitle(nextStatus),
+            description: note || `Shipment ${nextStatus}`,
             actorType: 'courier',
             location: location
         });
@@ -418,18 +467,31 @@ class ShippingService {
         return shipping;
     }
 
+    normalizeShippingStatus(status) {
+        const value = String(status || '').toLowerCase();
+        const aliases = {
+            pending: 'label_created',
+            reached_hub: 'in_transit',
+            failed_delivery: 'failed',
+            returned_to_vendor: 'returned_to_sender',
+        };
+        return aliases[value] || value;
+    }
+
     //statsus of shipping
     isValidStatusTransition(currentStatus, newStatus) {
         const validTransitions = {
-            'pending': ['pickup_scheduled', 'cancelled'],
+            'label_created': ['pickup_scheduled', 'picked_up', 'cancelled', 'on_hold'],
             'pickup_scheduled': ['picked_up', 'cancelled'],
-            'picked_up': ['in_transit', 'cancelled'],
-            'in_transit': ['reached_hub', 'out_for_delivery'],
-            'reached_hub': ['in_transit', 'out_for_delivery'],
-            'out_for_delivery': ['delivered', 'failed_delivery'],
-            'failed_delivery': ['out_for_delivery', 'returned_to_vendor'],
+            'picked_up': ['in_transit', 'cancelled', 'on_hold'],
+            'in_transit': ['out_for_delivery', 'failed', 'lost', 'damaged', 'on_hold'],
+            'out_for_delivery': ['delivered', 'failed', 'on_hold'],
+            'failed': ['out_for_delivery', 'returned_to_sender', 'cancelled'],
+            'on_hold': ['in_transit', 'out_for_delivery', 'cancelled'],
             'delivered': [],
-            'returned_to_vendor': [],
+            'returned_to_sender': [],
+            'lost': [],
+            'damaged': [],
             'cancelled': []
         };
 
@@ -438,28 +500,34 @@ class ShippingService {
 
     mapStatusToEvent(status) {
         const mapping = {
-            'pickup_scheduled': 'pickup_scheduled',
+            'label_created': 'ready_to_ship',
+            'pickup_scheduled': 'ready_to_ship',
             'picked_up': 'picked_up',
             'in_transit': 'in_transit',
-            'reached_hub': 'reached_hub',
             'out_for_delivery': 'out_for_delivery',
             'delivered': 'delivered',
-            'failed_delivery': 'delivery_failed',
-            'returned_to_vendor': 'return_received'
+            'failed': 'delivery_failed',
+            'returned_to_sender': 'return_received',
+            'on_hold': 'in_transit',
+            'lost': 'delivery_failed',
+            'damaged': 'delivery_failed'
         };
-        return mapping[status] || status;
+        return mapping[status] || 'in_transit';
     }
 
     getStatusTitle(status) {
         const titles = {
+            'label_created': 'Label Created',
             'pickup_scheduled': 'Pickup Scheduled',
             'picked_up': 'Package Picked Up',
             'in_transit': 'In Transit',
-            'reached_hub': 'Reached Sorting Hub',
             'out_for_delivery': 'Out for Delivery',
             'delivered': 'Delivered',
-            'failed_delivery': 'Delivery Failed',
-            'returned_to_vendor': 'Returned to Vendor'
+            'failed': 'Delivery Failed',
+            'returned_to_sender': 'Returned to Sender',
+            'on_hold': 'Shipment On Hold',
+            'lost': 'Shipment Lost',
+            'damaged': 'Shipment Damaged'
         };
         return titles[status] || status;
     }

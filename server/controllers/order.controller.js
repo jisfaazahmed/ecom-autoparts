@@ -108,6 +108,11 @@ module.exports.updateOrderStatus = async (req, res) => {
             note
         )
 
+        const item = await OrderItem.findById(id).select('vendor');
+        if (item?.vendor) {
+            await orderService.syncSubOrderStatusByItem(req.params.id, item.vendor);
+        }
+
         res.status(200).json(order);
 
     }
@@ -141,6 +146,14 @@ module.exports.cancelOrder = async (req, res) => {
 // Update Payment Status (Pending → Paid lifecycle)
 module.exports.updatePaymentStatus = async (req, res) => {
     try {
+        const role = String(req.user?.role || '').toLowerCase().replace('_', '');
+        if (!['admin', 'superadmin'].includes(role)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Admin access required to update payment status'
+            });
+        }
+
         const { paymentStatus, transactionId } = req.body;
 
         const order = await orderService.updatePaymentStatus(
@@ -195,55 +208,48 @@ module.exports.getVendorOrders = async (req, res) => {
             });
         }
 
-        const itemQuery = { vendor: vendorId };
-        if (status) itemQuery.status = status;
-
-        const itemIds = await OrderItem.find(itemQuery).distinct('_id');
-
-        const query = {
-            $or: [
-                { items: { $in: itemIds } },
-                { 'subOrders.vendor': vendorId }
-            ]
-        };
-
-        const orders = await order.find(query)
-            .sort({ createdAt: -1 })
-            .limit(limit * 1)
-            .skip((page - 1) * limit)
-            .populate('user', 'name email phone')
-            .populate({
-                path: 'items',
-                populate: { path: 'product', select: 'name images' }
-            });
-
-        const vendorOrders = orders.map(orderDoc => {
-            const vendorItems = (orderDoc.items || []).filter(
-                item => item.vendor && item.vendor.toString() === vendorId.toString()
-            );
-            const subOrder = (orderDoc.subOrders || []).find(sub => String(sub.vendor) === vendorId.toString());
-            return {
-                ...orderDoc.toObject(),
-                items: vendorItems,
-                subOrder: subOrder ? {
-                    ...subOrder.toObject ? subOrder.toObject() : subOrder,
-                    items: vendorItems
-                } : null
-            };
+        const { subOrders, pagination } = await orderService.getSellerSubOrders(vendorId, {
+            status,
+            page,
+            limit,
         });
 
-        const total = await order.countDocuments(query);
+        const vendorOrders = subOrders.map((subOrderDoc) => {
+            const subOrder = subOrderDoc.toObject();
+            const parentOrder = subOrder.order;
+
+            return {
+                _id: parentOrder?._id,
+                orderNumber: parentOrder?.orderNumber,
+                user: subOrder.customer,
+                items: subOrder.items,
+                overallStatus: parentOrder?.overallStatus,
+                paymentStatus: parentOrder?.paymentStatus,
+                totalAmount: parentOrder?.totalAmount,
+                createdAt: parentOrder?.createdAt || subOrder.createdAt,
+                subOrder: {
+                    _id: subOrder._id,
+                    seller: subOrder.seller,
+                    status: subOrder.status,
+                    paymentStatus: subOrder.paymentStatus,
+                    subtotal: subOrder.subtotal,
+                    shippingCharge: subOrder.shippingCharge,
+                    taxAmount: subOrder.taxAmount,
+                    discountAmount: subOrder.discountAmount,
+                    totalAmount: subOrder.totalAmount,
+                    shippingMethod: subOrder.shippingMethod,
+                    trackingNumber: subOrder.trackingNumber,
+                    courierPartner: subOrder.courierPartner,
+                    items: subOrder.items,
+                }
+            };
+        });
 
         res.json({
             success: true,
             data: {
                 orders: vendorOrders,
-                pagination: {
-                    page: parseInt(page),
-                    limit: parseInt(limit),
-                    total,
-                    pages: Math.ceil(total / limit)
-                }
+                pagination
             }
         });
     }
@@ -254,6 +260,37 @@ module.exports.getVendorOrders = async (req, res) => {
                 message: error.message || error
             }
         )
+    }
+}
+
+// direct seller sub-order feed
+module.exports.getMySubOrders = async (req, res) => {
+    try {
+        const { status, page = 1, limit = 10 } = req.query;
+        const sellerId = req.user?._id || req.user?.id;
+
+        if (!sellerId) {
+            return res.status(401).json({
+                success: false,
+                message: 'Unauthorized access'
+            });
+        }
+
+        const result = await orderService.getSellerSubOrders(sellerId, {
+            status,
+            page,
+            limit,
+        });
+
+        res.status(200).json({
+            success: true,
+            data: result
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message || 'Failed to fetch sub-orders'
+        });
     }
 }
 

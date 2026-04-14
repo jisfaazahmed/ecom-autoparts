@@ -40,8 +40,7 @@ const adminLinks = [
 ];
 
 const superAdminLinks = [
-  { href: '/superadmin', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/superadmin/vendors', label: 'Vendors', icon: Building2 },
+  { href: '/superadmin', label: 'Dashboard', icon: LayoutDashboard },    { href: '/superadmin/products', label: 'Products', icon: Package },  { href: '/superadmin/vendors', label: 'Vendors', icon: Building2 },
   { href: '/superadmin/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/superadmin/refunds', label: 'Refunds', icon: CheckCircle },
   { href: '/superadmin/vehicles', label: 'Vehicles', icon: Car },

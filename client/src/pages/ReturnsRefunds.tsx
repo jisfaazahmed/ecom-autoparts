@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { AlertCircle, Loader2, RotateCcw, Search } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
@@ -89,7 +89,7 @@ const ReturnsRefunds: React.FC = () => {
   const [reasonDescription, setReasonDescription] = useState('');
   const [details, setDetails] = useState('');
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const orderFetcher = user?.role === 'admin' || user?.role === 'seller'
@@ -162,11 +162,11 @@ const ReturnsRefunds: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.role]);
 
   useEffect(() => {
     void fetchData();
-  }, []);
+  }, [fetchData]);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search);
@@ -277,6 +277,7 @@ const ReturnsRefunds: React.FC = () => {
     try {
       await api.createRefundRequestByOrder({
         orderId: resolvedOrderId,
+        orderItemId: selectedItem ? String(selectedItem.item._id || selectedItem.item.id || '') : undefined,
         paymentId: paymentId.trim() || undefined,
         amount: Number(amount),
         reason: `${reasonOptions.find((reason) => reason.value === reasonCategory)?.label || 'Other'}: ${reasonDescription.trim()}`,

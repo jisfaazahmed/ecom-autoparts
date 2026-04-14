@@ -13,7 +13,7 @@ import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
-import { api, ApiCoupon } from '@/lib/api';
+import { api, ApiCoupon, ApiAddress } from '@/lib/api';
 import { toast } from 'sonner';
 import { formatLKR } from '@/lib/currency';
 
@@ -182,6 +182,9 @@ export default function Checkout() {
   const [appliedCoupon, setAppliedCoupon] = useState<ApiCoupon | null>(null);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
+  
+  const [savedAddresses, setSavedAddresses] = useState<ApiAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>('new');
 
   const [form, setForm] = useState<ShippingForm>({
     fullName: '',
@@ -235,8 +238,49 @@ export default function Checkout() {
         ...prev,
         email: user.email || prev.email,
       }));
+      api.getAddresses().then(addresses => {
+        setSavedAddresses(addresses);
+        if (addresses.length > 0) {
+           setSelectedAddressId(addresses[0]._id);
+           const addr = addresses[0];
+           setForm((prev) => ({
+             ...prev,
+             fullName: addr.fullName,
+             phone: addr.phone,
+             address: addr.addressLine1,
+             city: addr.city,
+             postalCode: addr.postalCode,
+           }));
+        }
+      }).catch(console.error);
     }
   }, [user]);
+
+  const handleAddressSelect = (addrId: string) => {
+    setSelectedAddressId(addrId);
+    if (addrId === 'new') {
+        setForm(prev => ({
+            ...prev,
+            fullName: '',
+            phone: '',
+            address: '',
+            city: '',
+            postalCode: '',
+        }));
+    } else {
+        const addr = savedAddresses.find(a => a._id === addrId);
+        if (addr) {
+            setForm((prev) => ({
+                 ...prev,
+                 fullName: addr.fullName,
+                 phone: addr.phone,
+                 address: addr.addressLine1,
+                 city: addr.city,
+                 postalCode: addr.postalCode,
+            }));
+        }
+    }
+  };
 
   const cartTotal = getCartTotal();
   const finalTotal = cartTotal + shippingCost - discountAmount;
@@ -273,7 +317,7 @@ export default function Checkout() {
         items: validCart.map((item) => ({
           product: {
             price: item.product.price,
-            weight: item.product.weight,
+            weight: item.product.weight || 0,
           },
           quantity: item.quantity,
         })),
@@ -658,62 +702,108 @@ export default function Checkout() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      <div>
-                        <Label>Full Name *</Label>
-                        <Input
-                          value={form.fullName}
-                          onChange={(e) => handleInputChange('fullName', e.target.value)}
-                          placeholder="John Doe"
-                        />
+                    {savedAddresses.length > 0 && (
+                      <div className="mb-6 space-y-4">
+                        <Label className="text-base font-semibold">Select Shipping Address</Label>
+                        <RadioGroup
+                          value={selectedAddressId}
+                          onValueChange={handleAddressSelect}
+                          className="grid gap-4"
+                        >
+                          {savedAddresses.map((addr) => (
+                            <Label
+                              key={addr._id}
+                              htmlFor={addr._id}
+                              className={`flex items-start space-x-3 rounded-lg border p-4 cursor-pointer transition-colors ${
+                                selectedAddressId === addr._id ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
+                              }`}
+                            >
+                              <RadioGroupItem value={addr._id} id={addr._id} className="mt-1" />
+                              <div className="space-y-1 w-full">
+                                <p className="font-medium leading-none flex items-center justify-between">
+                                    <span>{addr.fullName}</span>
+                                    {addr.addressType && <span className="text-xs py-0.5 px-2 bg-primary/10 text-primary rounded-full uppercase">{addr.addressType}</span>}
+                                </p>
+                                <p className="text-sm text-muted-foreground">{addr.addressLine1}{addr.addressLine2 ? `, ${addr.addressLine2}` : ''}</p>
+                                <p className="text-sm text-muted-foreground">{addr.city}, {addr.postalCode}, {addr.state}</p>
+                                <p className="text-sm text-muted-foreground">{addr.phone}</p>
+                              </div>
+                            </Label>
+                          ))}
+                          <Label
+                            htmlFor="new"
+                            className={`flex items-center space-x-3 rounded-lg border p-4 cursor-pointer transition-colors ${
+                              selectedAddressId === 'new' ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
+                            }`}
+                          >
+                            <RadioGroupItem value="new" id="new" />
+                            <span className="font-medium">Deliver to a new address</span>
+                          </Label>
+                        </RadioGroup>
                       </div>
-                      <div>
-                        <Label>Email *</Label>
-                        <Input
-                          type="email"
-                          value={form.email}
-                          onChange={(e) => handleInputChange('email', e.target.value)}
-                          placeholder="john@example.com"
-                        />
-                      </div>
-                    </div>
+                    )}
 
-                    <div>
-                      <Label>Phone *</Label>
-                      <Input
-                        value={form.phone}
-                        onChange={(e) => handleInputChange('phone', e.target.value)}
-                        placeholder="+1 234 567 8900"
-                      />
-                    </div>
+                    {selectedAddressId === 'new' && (
+                      <div className="space-y-4 pt-4 border-t">
+                        <h3 className="font-medium mb-4">Enter New Address details</h3>
+                        <div className="grid sm:grid-cols-2 gap-4">
+                          <div>
+                            <Label>Full Name *</Label>
+                            <Input
+                              value={form.fullName}
+                              onChange={(e) => handleInputChange('fullName', e.target.value)}
+                              placeholder="John Doe"
+                            />
+                          </div>
+                          <div>
+                            <Label>Email *</Label>
+                            <Input
+                              type="email"
+                              value={form.email}
+                              onChange={(e) => handleInputChange('email', e.target.value)}
+                              placeholder="john@example.com"
+                            />
+                          </div>
+                        </div>
 
-                    <div>
-                      <Label>Address *</Label>
-                      <Input
-                        value={form.address}
-                        onChange={(e) => handleInputChange('address', e.target.value)}
-                        placeholder="123 Main Street"
-                      />
-                    </div>
+                        <div>
+                          <Label>Phone *</Label>
+                          <Input
+                            value={form.phone}
+                            onChange={(e) => handleInputChange('phone', e.target.value)}
+                            placeholder="+1 234 567 8900"
+                          />
+                        </div>
 
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      <div>
-                        <Label>City *</Label>
-                        <Input
-                          value={form.city}
-                          onChange={(e) => handleInputChange('city', e.target.value)}
-                          placeholder="New York"
-                        />
+                        <div>
+                          <Label>Address *</Label>
+                          <Input
+                            value={form.address}
+                            onChange={(e) => handleInputChange('address', e.target.value)}
+                            placeholder="123 Main Street"
+                          />
+                        </div>
+
+                        <div className="grid sm:grid-cols-2 gap-4">
+                          <div>
+                            <Label>City *</Label>
+                            <Input
+                              value={form.city}
+                              onChange={(e) => handleInputChange('city', e.target.value)}
+                              placeholder="New York"
+                            />
+                          </div>
+                          <div>
+                            <Label>Postal Code *</Label>
+                            <Input
+                              value={form.postalCode}
+                              onChange={(e) => handleInputChange('postalCode', e.target.value)}
+                              placeholder="10001"
+                            />
+                          </div>
+                        </div>
                       </div>
-                      <div>
-                        <Label>Postal Code *</Label>
-                        <Input
-                          value={form.postalCode}
-                          onChange={(e) => handleInputChange('postalCode', e.target.value)}
-                          placeholder="10001"
-                        />
-                      </div>
-                    </div>
+                    )}
 
                     <Button
                       className="w-full mt-4"

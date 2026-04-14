@@ -1,5 +1,6 @@
 const Order = require('../models/order.model');
 const OrderItem = require('../models/orderItem.model');
+const SubOrder = require('../models/subOrder.model');
 const Product = require('../models/product');
 const VendorProduct = require('../models/vendorProduct');
 const User = require('../models/user');
@@ -57,6 +58,57 @@ class OrderService {
         }));
     }
 
+    buildSubOrderPayload(mainOrder, groupedSubOrder) {
+        const subtotal = Number(groupedSubOrder.subtotal || 0);
+        const orderSubtotal = Number(mainOrder.itemsTotal || 0);
+        const ratio = orderSubtotal > 0 ? subtotal / orderSubtotal : 0;
+
+        const shippingCharge = Math.round(Number(mainOrder.shippingCharges || 0) * ratio);
+        const taxAmount = Math.round(Number(mainOrder.taxAmount || 0) * ratio);
+        const discountAmount = Math.round(Number(mainOrder.discountAmount || 0) * ratio);
+
+        return {
+            order: mainOrder._id,
+            seller: groupedSubOrder.vendor,
+            customer: mainOrder.user || null,
+            items: groupedSubOrder.items,
+            status: groupedSubOrder.status || 'pending',
+            paymentStatus: mainOrder.paymentStatus || 'pending',
+            subtotal,
+            shippingCharge,
+            taxAmount,
+            discountAmount,
+            totalAmount: subtotal + shippingCharge + taxAmount - discountAmount,
+            shippingAddress: mainOrder.shippingAddress,
+            shippingMethod: mainOrder.shippingMethod || 'standard',
+            estimatedDeliveryDate: mainOrder.estimatedDeliveryDate,
+            courierPartner: groupedSubOrder.courierPartner || mainOrder.courierPartner,
+            trackingNumber: groupedSubOrder.trackingNumber,
+        };
+    }
+
+    async persistSubOrders(mainOrder, groupedSubOrders = []) {
+        if (!Array.isArray(groupedSubOrders) || groupedSubOrders.length === 0) {
+            return [];
+        }
+
+        const operations = groupedSubOrders.map((groupedSubOrder) => ({
+            updateOne: {
+                filter: {
+                    order: mainOrder._id,
+                    seller: groupedSubOrder.vendor,
+                },
+                update: {
+                    $set: this.buildSubOrderPayload(mainOrder, groupedSubOrder),
+                },
+                upsert: true,
+            }
+        }));
+
+        await SubOrder.bulkWrite(operations);
+        return SubOrder.find({ order: mainOrder._id });
+    }
+
     async resolveVendorForOrderItem(product, item = {}, orderData = {}) {
         const candidateVendor =
             item.vendorId ||
@@ -71,7 +123,18 @@ class OrderService {
             null;
 
         if (candidateVendor) {
-            return String(candidateVendor);
+            const normalizedVendorId = String(candidateVendor);
+            const matchingOffer = await VendorProduct.findOne({
+                product: product._id,
+                vendor: normalizedVendorId,
+                isActive: true,
+            }).select('_id');
+
+            if (!matchingOffer) {
+                throw new Error(`Selected seller is not offering product ${product.name}`);
+            }
+
+            return normalizedVendorId;
         }
 
         const offer = await VendorProduct.findOne({
@@ -178,6 +241,8 @@ class OrderService {
             });
 
             await order.save();
+
+            await this.persistSubOrders(order, subOrders);
 
             //stock update
             for (const { product, quantity } of enrichedItems) {
@@ -474,6 +539,10 @@ class OrderService {
         }
 
         await order.save();
+        await SubOrder.updateMany(
+            { order: order._id },
+            { $set: { paymentStatus: order.paymentStatus } }
+        );
         return order;
     }
 
@@ -569,6 +638,18 @@ class OrderService {
             }
 
             await order.save(session ? { session } : undefined);
+
+            await SubOrder.updateMany(
+                { order: order._id },
+                {
+                    $set: {
+                        status: 'cancelled',
+                        paymentStatus: order.paymentStatus,
+                        actualDeliveryDate: null,
+                        notes: reason
+                    }
+                }
+            );
 
             for (const item of orderItems) {
                 await Product.findByIdAndUpdate(
@@ -670,6 +751,50 @@ class OrderService {
             .populate('actor', 'name');
 
         return { order, timeline };
+    }
+
+    async getSellerSubOrders(sellerId, { status, page = 1, limit = 10 } = {}) {
+        const query = { seller: sellerId };
+        if (status) {
+            query.status = this.normalizeStatus(status);
+        }
+
+        const safePage = Math.max(parseInt(page, 10) || 1, 1);
+        const safeLimit = Math.max(parseInt(limit, 10) || 10, 1);
+
+        const [subOrders, total] = await Promise.all([
+            SubOrder.find(query)
+                .sort({ createdAt: -1 })
+                .skip((safePage - 1) * safeLimit)
+                .limit(safeLimit)
+                .populate('customer', 'name email phone')
+                .populate('order', 'orderNumber overallStatus paymentStatus createdAt totalAmount')
+                .populate({
+                    path: 'items',
+                    populate: { path: 'product', select: 'name images price' }
+                }),
+            SubOrder.countDocuments(query)
+        ]);
+
+        return {
+            subOrders,
+            pagination: {
+                page: safePage,
+                limit: safeLimit,
+                total,
+                pages: Math.ceil(total / safeLimit)
+            }
+        };
+    }
+
+    async syncSubOrderStatusByItem(orderId, vendorId) {
+        const subOrder = await SubOrder.findOne({ order: orderId, seller: vendorId }).populate('items');
+        if (!subOrder) return null;
+
+        const nextStatus = this.calculateOverallStatus(subOrder.items || []);
+        subOrder.status = nextStatus;
+        await subOrder.save();
+        return subOrder;
     }
 
     // Notification methods (stubs for development)

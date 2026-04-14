@@ -10,6 +10,8 @@
     "seed:vehicles": "node seedVehicles.js",
     "seed:products": "node seedProducts.js",
     "seed:all": "node seedVehicles.js && node seedProducts.js",
+    "backfill:suborders": "node scripts/backfill-suborders.js",
+    "qa:regression": "node scripts/qa-regression.js",
     "lint": "eslint ."
   },
   "keywords": [],

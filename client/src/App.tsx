@@ -31,6 +31,7 @@ import AdminSettings from "./pages/admin/Settings";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import SuperAdminVendors from "./pages/superadmin/Vendors";
 import SuperAdminAnalytics from "./pages/superadmin/Analytics";
+import SuperAdminProducts from "./pages/superadmin/Products";
 import SuperAdminVehicles from "./pages/superadmin/Vehicles";
 import SuperAdminCategories from "./pages/superadmin/Categories";
 import SuperAdminCoupons from "./pages/superadmin/Coupons";
@@ -133,6 +134,11 @@ const App = () => (
             <Route path="/superadmin/analytics" element={
               <ProtectedRoute requiredRole="superadmin">
                 <SuperAdminAnalytics />
+              </ProtectedRoute>
+            } />
+            <Route path="/superadmin/products" element={
+              <ProtectedRoute requiredRole="superadmin">
+                <SuperAdminProducts />
               </ProtectedRoute>
             } />
             <Route path="/superadmin/vehicles" element={
