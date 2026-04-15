@@ -117,7 +117,8 @@ const AdminDashboard: React.FC = () => {
   const parentCategories = categories.filter(c => !c.parentId);
   const getSubcategories = (parentId: string) => categories.filter(c => c.parentId === parentId);
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string | undefined | null) => {
+    if (!status) return <Badge variant="outline">Unknown</Badge>;
     const styles: Record<string, string> = { pending: 'bg-warning/20 text-warning border-warning/30', processing: 'bg-primary/20 text-primary border-primary/30', shipped: 'bg-purple-500/20 text-purple-400 border-purple-500/30', delivered: 'bg-success/20 text-success border-success/30', cancelled: 'bg-destructive/20 text-destructive border-destructive/30' };
     return <Badge variant="outline" className={styles[status] || ''}>{status.charAt(0).toUpperCase() + status.slice(1)}</Badge>;
   };
