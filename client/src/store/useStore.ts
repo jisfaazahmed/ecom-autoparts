@@ -5,7 +5,7 @@ import { api, ApiCart, ApiCartItem, ApiProduct } from '@/lib/api';
 
 // Helper to map an API product (from backend cart) to the frontend Product type
 const mapApiProductToProduct = (p: ApiProduct): Product => ({
-  id: p.id,
+  id: p.id || p._id || '',
   name: p.name,
   description: p.description || '',
   price: p.price,
@@ -82,7 +82,10 @@ export const useStore = create<AppState>()(
         }),
       updateQuantity: (productId, quantity) =>
         set((state) => {
-          api.updateCartItem(productId, quantity).catch(() => {});
+          api.updateCartItem(productId, quantity).catch(() => {
+            // Keep local state aligned with server when optimistic update fails.
+            get().syncCartFromApi().catch(() => {});
+          });
           return {
             cart: state.cart.map((item) =>
               item.product.id === productId ? { ...item, quantity } : item
