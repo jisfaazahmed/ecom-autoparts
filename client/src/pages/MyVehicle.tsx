@@ -194,17 +194,11 @@ const MyVehicle: React.FC = () => {
                     <CardHeader className="pb-3">
                       <CardTitle className="flex items-center gap-2 text-lg">
                         <Car className="h-5 w-5 text-primary" />
-                        {vehicle.nickname || `${vehicle.brand?.name} ${vehicle.model?.name}`}
+                        {`${vehicle.brand?.name} ${vehicle.model?.name}`}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-2 text-sm text-muted-foreground mb-4">
-                        {vehicle.nickname && (
-                          <div className="flex justify-between">
-                            <span>Nickname:</span>
-                            <span className="text-foreground font-medium">{vehicle.nickname}</span>
-                          </div>
-                        )}
                         <div className="flex justify-between">
                           <span>Brand:</span>
                           <span className="text-foreground font-medium">{vehicle.brand?.name}</span>

@@ -26,11 +26,6 @@ const userVehicleSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
-    nickname: {
-      type: String,
-      default: null,
-      trim: true,
-    },
     vin: {
       type: String,
       default: null,
