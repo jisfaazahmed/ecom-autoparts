@@ -30,6 +30,8 @@ module.exports.createOrder = async (req, res) => {
         const message = String(error?.message || 'Failed to place order');
         const isValidationError =
             message.includes('not assigned to a vendor') ||
+            message.includes('does not own product') ||
+            message.includes('unavailable for purchase') ||
             message.includes('Shipping address is incomplete') ||
             message.includes('No items provided for order') ||
             message.includes('Product not found') ||
@@ -117,6 +119,25 @@ module.exports.updateOrderStatus = async (req, res) => {
 
     }
     catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+}
+
+// Update Overall Order status by Admin
+module.exports.adminUpdateOrderStatus = async (req, res) => {
+    try {
+        const { status, trackingNumber } = req.body;
+        const userId = req.user?._id || req.user?.id;
+        
+        const order = await orderService.adminUpdateOrderStatus(
+            req.params.id, 
+            status, 
+            userId, 
+            trackingNumber
+        );
+
+        res.status(200).json(order);
+    } catch (error) {
         res.status(500).json({ message: error.message });
     }
 }

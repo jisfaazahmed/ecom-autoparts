@@ -109,44 +109,49 @@ class OrderService {
         return SubOrder.find({ order: mainOrder._id });
     }
 
-    async resolveVendorForOrderItem(product, item = {}, orderData = {}) {
-        const candidateVendor =
-            item.vendorId ||
-            item.vendor ||
-            orderData.shopId ||
-            product.vendor ||
+    async resolveVendorForOrderItem(product, item = {}) {
+        const ownerVendor = String(
             product.createdBy ||
+            product.vendor ||
             product.createdby ||
             product.shopId ||
             product.owner ||
             product.seller ||
-            null;
+            ''
+        ).trim();
 
-        if (candidateVendor) {
-            const normalizedVendorId = String(candidateVendor);
-            const matchingOffer = await VendorProduct.findOne({
-                product: product._id,
-                vendor: normalizedVendorId,
-                isActive: true,
-            }).select('_id');
-
-            if (!matchingOffer) {
-                throw new Error(`Selected seller is not offering product ${product.name}`);
-            }
-
-            return normalizedVendorId;
+        if (!ownerVendor) {
+            return null;
         }
 
-        const offer = await VendorProduct.findOne({
+        if (!/^[a-fA-F0-9]{24}$/.test(ownerVendor)) {
+            return null;
+        }
+
+        const selectedVendor = String(
+            item.vendorId ||
+            item.vendor ||
+            ''
+        ).trim();
+
+        // Customer must buy from the product owner only.
+        if (selectedVendor && selectedVendor !== ownerVendor) {
+            throw new Error(`Selected seller does not own product ${product.name}`);
+        }
+
+        // Prefer explicit owner offer if present, but do not block checkout when owner offers
+        // table hasn't been backfilled yet.
+        const ownerOffer = await VendorProduct.findOne({
             product: product._id,
+            vendor: ownerVendor,
             isActive: true,
-        }).sort({ price: 1 }).select('vendor');
+        }).select('_id');
 
-        if (offer?.vendor) {
-            return String(offer.vendor);
+        if (ownerOffer) {
+            return ownerVendor;
         }
 
-        return null;
+        return ownerVendor;
     }
 
     // Create Order
@@ -180,6 +185,11 @@ class OrderService {
                 if (!product) {
                     throw new Error('Product not found');
                 }
+
+                if (!product.isActive || String(product.status || '') !== 'Approved') {
+                    throw new Error(`${product.name} is currently unavailable for purchase`);
+                }
+
                 if (product.stock < item.quantity) {
                     throw new Error(`${product.name} stock not available`);
                 }
@@ -355,6 +365,57 @@ class OrderService {
         const deliveryDate = new Date();
         deliveryDate.setDate(deliveryDate.getDate() + (days[shippingMethod] || 5));
         return deliveryDate;
+    }
+
+    async adminUpdateOrderStatus(orderId, status, userId, trackingNumber) {
+        const order = await Order.findById(orderId).populate('items');
+        if (!order) {
+            throw new Error('Order not found');
+        }
+
+        const normalizedStatus = this.normalizeStatus(status);
+
+        for (const item of order.items) {
+            item.status = normalizedStatus;
+            item.statusHistory.push({
+                status: normalizedStatus,
+                timestamp: new Date(),
+                note: `Admin updated order status to ${normalizedStatus}`,
+                updatedBy: userId
+            });
+            if (trackingNumber && normalizedStatus === 'shipped') {
+                item.trackingNumber = trackingNumber;
+            }
+            await item.save();
+
+            await OrderTimeLine.create({
+                order: orderId,
+                orderItem: item._id,
+                event: this.mapStatusToEvent(normalizedStatus),
+                title: this.getStatusTitle(normalizedStatus),
+                description: `Admin updated order status to ${normalizedStatus}`,
+                actor: userId,
+                actorType: 'admin'
+            });
+        }
+
+        const allItems = await OrderItem.find({ _id: { $in: order.items } });
+        order.overallStatus = this.calculateOverallStatus(allItems);
+
+        if (order.subOrders) {
+            order.subOrders = order.subOrders.map(subOrder => {
+                const sub = subOrder.toObject ? subOrder.toObject() : subOrder;
+                return {
+                    ...sub,
+                    status: normalizedStatus,
+                    trackingNumber: trackingNumber || sub.trackingNumber,
+                    updatedAt: new Date()
+                };
+            });
+        }
+
+        await order.save();
+        return order;
     }
 
     async updateItemStatus(orderId, itemId, status, userId, note) {

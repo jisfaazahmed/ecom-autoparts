@@ -8,6 +8,7 @@ interface CartItem {
     _id?: string;
     name: string;
     price: number;
+    weight?: number;
     image: string;
     shopId?: string;
     brand?: string;

@@ -6,17 +6,18 @@ exports.register = async (req, res) => {
   try {
     const { name, fullName, email, password, role, shopName } = req.body;
     const displayName = name || fullName;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
     const normalizedRole = role || 'CUSTOMER';
 
     if (normalizedRole === 'SUPER_ADMIN') {
       return res.status(403).json({ message: 'Cannot register as Super Admin.' });
     }
 
-    if (!displayName || !email || !password) {
+    if (!displayName || !normalizedEmail || !password) {
       return res.status(400).json({ message: 'Name, email, and password are required' });
     }
 
-    let user = await User.findOne({ email });
+    let user = await User.findOne({ email: normalizedEmail });
     if (user) return res.status(400).json({ message: 'User already exists' });
 
     const salt = await bcrypt.genSalt(10);
@@ -24,7 +25,7 @@ exports.register = async (req, res) => {
 
     user = new User({
       name: displayName,
-      email,
+      email: normalizedEmail,
       password: hashedPassword,
       role: normalizedRole,
       shopName: normalizedRole === 'ADMIN' ? shopName : undefined,
@@ -64,8 +65,13 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
 
-    const user = await User.findOne({ email });
+    if (!normalizedEmail || !password) {
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) return res.status(400).json({ message: 'Invalid Credentials' });
 
     const isMatch = await bcrypt.compare(password, user.password);

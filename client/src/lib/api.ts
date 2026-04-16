@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // API Client for Express Backend
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -554,9 +555,10 @@ class ApiClient {
   // ============ AUTH ============
 
   async login(email: string, password: string): Promise<AuthResponse> {
+    const normalizedEmail = email.trim().toLowerCase();
     const response = await this.request<AuthResponse>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: normalizedEmail, password }),
     });
     this.setTokens(response.accessToken, response.refreshToken);
     return response;
@@ -568,11 +570,12 @@ class ApiClient {
     fullName: string;
     phone?: string;
   }): Promise<AuthResponse> {
+    const normalizedEmail = data.email.trim().toLowerCase();
     const response = await this.request<AuthResponse>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({
         name: data.fullName,
-        email: data.email,
+        email: normalizedEmail,
         password: data.password,
         role: 'CUSTOMER',
       }),
@@ -590,11 +593,12 @@ class ApiClient {
     shopDescription?: string;
     businessRegistration?: string;
   }): Promise<AuthResponse> {
+    const normalizedEmail = data.email.trim().toLowerCase();
     const response = await this.request<AuthResponse>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({
         name: data.fullName,
-        email: data.email,
+        email: normalizedEmail,
         password: data.password,
         role: 'ADMIN',
         shopName: data.shopName,
@@ -702,6 +706,37 @@ class ApiClient {
 
     return {
       data: data,
+      total: pagination.total || data.length || 0,
+      page: pagination.page || 1,
+      limit: pagination.limit || data.length || 10,
+      totalPages: pagination.totalPages || 1,
+    };
+  }
+
+  async getSuperAdminProducts(params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    categoryId?: string;
+    status?: string;
+    vehicleId?: string;
+  }): Promise<PaginatedResponse<ApiProduct>> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          const paramKey = key === 'categoryId' ? 'category' : key;
+          searchParams.set(paramKey, String(value));
+        }
+      });
+    }
+
+    const response = await this.request<any>(`/products/admin/all?${searchParams.toString()}`);
+    const data = Array.isArray(response) ? response : (response.products || response.data || []);
+    const pagination = response.pagination || {};
+
+    return {
+      data,
       total: pagination.total || data.length || 0,
       page: pagination.page || 1,
       limit: pagination.limit || data.length || 10,

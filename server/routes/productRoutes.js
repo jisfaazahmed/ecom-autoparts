@@ -6,12 +6,18 @@ const { verifyToken, isSuperAdmin, attachUserIfPresent } = require('../middlewar
 // Public: Search for parts (The User Flow)
 router.post('/check-stock', productController.checkStock);
 router.get('/', attachUserIfPresent, productController.getProducts);
+router.get('/admin/all', verifyToken, isSuperAdmin, productController.getSuperAdminProducts);
 router.get('/featured', productController.getFeaturedProducts);
 router.get('/categories', productController.getCategories);
-router.get('/:id', productController.getProductById);
+router.get('/:id/reviews', productController.getProductReviews);
+router.post('/:id/reviews', verifyToken, productController.createProductReview);
+router.delete('/:id/reviews/:reviewId', verifyToken, productController.deleteProductReview);
+router.get('/:id', attachUserIfPresent, productController.getProductById);
 
 // Private: Create generic parts (Sellers & Admins)
 router.post('/', verifyToken, productController.createProduct);
+router.put('/:id', verifyToken, productController.updateProduct);
+router.delete('/:id', verifyToken, productController.deleteProduct);
 
 // Super Admin: Approve / Reject product
 router.put('/:id/status', verifyToken, isSuperAdmin, productController.updateProductStatus);

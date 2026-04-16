@@ -18,6 +18,7 @@ router.get('/track/:trackingNumber', orderController.trackOrder);
 //customer order details
 router.get('/:id', verifyToken, orderController.getOrderById);
 router.post('/:id/cancel', verifyToken, orderController.cancelOrder)
+router.put('/:id/status', verifyToken, orderController.adminUpdateOrderStatus);
 
 //Payment status update (Admin/System)
 router.patch('/:id/payment-status', verifyToken, orderController.updatePaymentStatus);

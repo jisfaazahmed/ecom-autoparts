@@ -43,7 +43,9 @@ const AdminDashboard: React.FC = () => {
         api.getProducts({ shop: shop.id }),
         api.getOrders({ limit: 10 }),
         api.getCategories(),
-        api.getAdminRefunds({ limit: 200 }),
+        profile?.role === 'admin' || profile?.role === 'superadmin' 
+          ? api.getAdminRefunds({ limit: 200 }) 
+          : api.getVendorRefunds({ limit: 200 }),
       ]);
       setProducts(productsRes.data || []);
       setOrders(ordersRes.data || []);

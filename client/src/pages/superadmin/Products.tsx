@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Package, Search, MoreVertical, Eye, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -21,26 +21,30 @@ const SuperAdminProducts: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'Pending' | 'Approved' | 'Rejected'>('all');
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const [productsRes, categoriesRes] = await Promise.all([
-        api.getProducts({}), // Super admin gets all by default
-        api.getCategories(),
+        api.getSuperAdminProducts({}),
+        api.getCategories() as Promise<{ data?: ApiCategory[] } | ApiCategory[]>,
       ]);
       // The array comes either direct or standard paged structure
       setProducts(Array.isArray(productsRes) ? productsRes : (productsRes.data || productsRes));
-      setCategories(Array.isArray(categoriesRes) ? categoriesRes : (categoriesRes.data || categoriesRes));
+      setCategories(Array.isArray(categoriesRes) ? categoriesRes : (categoriesRes.data || []));
     } catch (error) {
       console.error('Error fetching data:', error);
-      toast({ title: 'Error', description: 'Failed to fetch data.', variant: 'destructive' });
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to fetch data.',
+        variant: 'destructive',
+      });
     }
     setLoading(false);
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const getCategoryName = (categoryId: string | null | undefined) => {
     if (!categoryId) return '-';
@@ -50,10 +54,10 @@ const SuperAdminProducts: React.FC = () => {
   const handleUpdateStatus = async (productId: string, newStatus: 'Approved' | 'Rejected') => {
     try {
       await api.updateProductStatus(productId, newStatus);
-      toast({ title: 'Status Updated', description: 'product has been ' });
+      toast({ title: 'Status Updated', description: `Product has been ${newStatus.toLowerCase()}.` });
       setProducts(prev => prev.map(p => (p.id || p._id) === productId ? { ...p, status: newStatus } : p));
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to update status', variant: 'destructive' });
+    } catch (error) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to update status', variant: 'destructive' });
     }
   };
 
@@ -90,10 +94,10 @@ const SuperAdminProducts: React.FC = () => {
           <div className="flex flex-col md:flex-row gap-4 mb-6">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search products by name or SKU..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 bg-background/50" />
+              <Input id="product-search" name="productSearch" placeholder="Search products by name or SKU..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9 bg-background/50" />
             </div>
             <div className="w-full md:w-48">
-              <Select value={statusFilter} onValueChange={(value: any) => setStatusFilter(value)}>
+              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}>
                 <SelectTrigger className="bg-background/50"><SelectValue placeholder="Filter by status" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
@@ -110,6 +114,7 @@ const SuperAdminProducts: React.FC = () => {
               <TableHeader>
                 <TableRow className="border-border/50">
                   <TableHead>Product</TableHead>
+                  <TableHead className="hidden lg:table-cell">Seller</TableHead>
                   <TableHead className="hidden md:table-cell">SKU</TableHead>
                   <TableHead className="hidden lg:table-cell">Category</TableHead>
                   <TableHead className="text-right">Price</TableHead>
@@ -119,13 +124,16 @@ const SuperAdminProducts: React.FC = () => {
               </TableHeader>
               <TableBody>
                 {paginatedItems.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} className="text-center py-12 text-muted-foreground">No products found</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">No products found</TableCell></TableRow>
                 ) : (
                   paginatedItems.map((product, index) => (
                     <TableRow key={product.id || product._id || index} className="border-border/50">
-                      <TableCell><div className="font-medium">{product.name}</div></TableCell>
+                        <TableCell><div className="font-medium">{product.name}</div></TableCell>
+                        <TableCell className="hidden lg:table-cell">
+                          {product.shop?.name || 'Unknown Shop'}
+                        </TableCell>
                       <TableCell className="hidden md:table-cell">{product.sku || '-'}</TableCell>
-                      <TableCell className="hidden lg:table-cell">{getCategoryName(product.categoryId)}</TableCell>
+                        <TableCell className="hidden lg:table-cell">{product.category?.name || getCategoryName(product.categoryId)}</TableCell>
                       <TableCell className="text-right font-medium">{formatLKR(product.price)}</TableCell>
                       <TableCell className="text-center">
                         <Badge variant="outline" className={

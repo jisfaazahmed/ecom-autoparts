@@ -31,20 +31,37 @@ const ProductDetail: React.FC = () => {
 
   useEffect(() => {
     const fetchProduct = async () => {
-      if (!id) return;
-      
-      try {
-        const [productData, reviewsData] = await Promise.all([
-          api.getProduct(id),
-          api.getProductReviews(id)
-        ]);
-        
-        setProduct(productData);
-        setReviews(reviewsData || []);
-      } catch (error) {
-        console.error('Failed to fetch product:', error);
+      if (!id) {
+        setLoading(false);
+        return;
       }
-      
+
+      const isObjectId = /^[a-fA-F0-9]{24}$/.test(id);
+      if (!isObjectId) {
+        setProduct(null);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const productData = await api.getProduct(id);
+        setProduct(productData);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('Failed to fetch product:', message);
+        setProduct(null);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const reviewsData = await api.getProductReviews(id);
+        setReviews(reviewsData || []);
+      } catch {
+        // Reviews endpoints are optional in current backend; do not block product details.
+        setReviews([]);
+      }
+
       setLoading(false);
     };
 
@@ -111,10 +128,11 @@ const ProductDetail: React.FC = () => {
       
       setNewComment('');
       setNewRating(5);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to submit review';
       toast({
         title: 'Error',
-        description: error.message || 'Failed to submit review',
+        description: message,
         variant: 'destructive',
       });
     }

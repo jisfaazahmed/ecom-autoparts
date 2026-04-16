@@ -235,10 +235,10 @@ const AdminProducts: React.FC = () => {
             </TableHeader>
             <TableBody>
               {paginatedProducts.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">{searchQuery || statusFilter !== 'all' ? 'No products match your filters' : 'No products yet. Add your first product!'}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">{searchQuery || statusFilter !== 'all' ? 'No products match your filters' : 'No products yet. Add your first product!'}</TableCell></TableRow>
               ) : (
-                paginatedProducts.map((product) => (
-                  <TableRow key={product.id} className="border-border/50">
+                paginatedProducts.map((product, i) => (
+                  <TableRow key={product.id || `temp-${i}`} className="border-border/50">
                     <TableCell>
                       <div className="w-12 h-12 rounded-lg bg-secondary/50 overflow-hidden flex-shrink-0">
                         {product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><ImagePlus className="h-5 w-5 text-muted-foreground" /></div>}
@@ -250,7 +250,8 @@ const AdminProducts: React.FC = () => {
                     <TableCell className="text-right font-medium">{formatLKR(product.price)}</TableCell>
                     <TableCell className="text-center hidden sm:table-cell">
                       <Badge variant="outline" className={product.stock === 0 ? 'text-destructive border-destructive/30' : product.stock < 10 ? 'text-warning border-warning/30' : 'text-success border-success/30'}>{product.stock}</Badge>
-                    </TableCell>                      <TableCell className="text-center">
+                    </TableCell>
+                    <TableCell className="text-center">
                         <Badge variant="outline" className={
                           product.status === 'Approved' ? 'bg-success/10 text-success border-success/20' : 
                           product.status === 'Rejected' ? 'bg-destructive/10 text-destructive border-destructive/20' : 
@@ -258,7 +259,8 @@ const AdminProducts: React.FC = () => {
                         }>
                           {product.status || 'Pending'}
                         </Badge>
-                      </TableCell>                    <TableCell className="text-center"><Switch checked={product.isActive} onCheckedChange={() => toggleProductActive(product)} /></TableCell>
+                    </TableCell>
+                    <TableCell className="text-center"><Switch checked={product.isActive} onCheckedChange={() => toggleProductActive(product)} /></TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>

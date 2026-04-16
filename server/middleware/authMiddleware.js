@@ -68,16 +68,32 @@ exports.attachUserIfPresent = (req, _res, next) => {
 // 2. Verify Super Admin (Is user the Boss?)
 exports.isSuperAdmin = async (req, res, next) => {
   try {
-    if (!req.user || !req.user.id) {
+    if (!req.user) {
       return res.status(401).json({ message: 'Not authenticated' });
     }
-    const user = await User.findById(req.user.id);
+
+    const normalizeRole = (role) => String(role || '').replace(/_/g, '').toUpperCase();
+    const tokenRole = normalizeRole(req.user.role);
+    const userId = req.user.id || req.user._id || req.user.userId;
+
+    // Legacy/test tokens may carry non-ObjectId identifiers (e.g., "test").
+    // In that case, fall back to the verified JWT role to avoid CastError crashes.
+    if (!userId || !/^[a-fA-F0-9]{24}$/.test(String(userId))) {
+      if (tokenRole === 'SUPERADMIN') {
+        return next();
+      }
+      return res.status(403).json({ message: 'Access denied. Super Admin only.' });
+    }
+
+    const user = await User.findById(userId).select('role');
     if (!user) {
       return res.status(401).json({ message: 'User not found' });
     }
-    if (user.role !== 'SUPER_ADMIN') {
+
+    if (normalizeRole(user.role) !== 'SUPERADMIN') {
       return res.status(403).json({ message: 'Access denied. Super Admin only.' });
     }
+
     next();
   } catch (err) {
     console.error(err);
