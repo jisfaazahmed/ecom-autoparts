@@ -26,6 +26,7 @@ const Navbar: React.FC = () => {
   const { cart, getCartCount, userVehicle, setUserVehicle, vehicleRefreshKey } = useStore();
   const { user, profile, role, signOut, loading } = useAuth();
   const cartCount = getCartCount();
+  const [searchQuery, setSearchQuery] = useState('');
   const [savedVehicles, setSavedVehicles] = useState<ApiUserVehicle[]>([]);
   const [vehiclesLoading, setVehiclesLoading] = useState(false);
 
@@ -51,6 +52,11 @@ const Navbar: React.FC = () => {
     fetchSavedVehicles();
   }, [fetchSavedVehicles, vehicleRefreshKey]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    setSearchQuery(params.get('search') ?? '');
+  }, [location.pathname, location.search]);
+
   const handleSwitchVehicle = async (vehicle: ApiUserVehicle) => {
     try {
       await api.setActiveVehicle(vehicle.id);
@@ -73,6 +79,27 @@ const Navbar: React.FC = () => {
   const handleSignOut = async () => {
     await signOut();
     navigate('/');
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const nextParams = new URLSearchParams();
+    const trimmedSearch = searchQuery.trim();
+
+    // Keep active category filter when searching from the shop page.
+    if (location.pathname === '/shop') {
+      const currentParams = new URLSearchParams(location.search);
+      const category = currentParams.get('category');
+      if (category) nextParams.set('category', category);
+    }
+
+    if (trimmedSearch) {
+      nextParams.set('search', trimmedSearch);
+    }
+
+    const queryString = nextParams.toString();
+    navigate(`/shop${queryString ? `?${queryString}` : ''}`);
   };
 
   return (
@@ -110,13 +137,25 @@ const Navbar: React.FC = () => {
 
         {/* Search Bar */}
         <div className="hidden lg:flex flex-1 max-w-md">
-          <div className="relative w-full">
+          <form className="relative w-full" onSubmit={handleSearchSubmit}>
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search parts, brands, or categories..."
-              className="pl-10 bg-secondary/50 border-border/50 focus:border-primary"
+              placeholder="Search parts..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 pr-24 bg-secondary/50 border-border/50 focus:border-primary"
             />
-          </div>
+            <div className="absolute right-1 top-1/2 -translate-y-1/2 z-10">
+              <Button
+                type="submit"
+                size="sm"
+                className="neon-button h-8 px-3"
+                aria-label="Search"
+              >
+                Search
+              </Button>
+            </div>
+          </form>
         </div>
 
         {/* Vehicle Switcher */}

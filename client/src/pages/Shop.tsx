@@ -35,13 +35,15 @@ const Shop: React.FC = () => {
   const [searchParams] = useSearchParams();
   const { userVehicle } = useStore();
   const { user } = useAuth();
+  const searchFromUrl = searchParams.get('search') || '';
+  const categoryFromUrl = searchParams.get('category') || 'all';
   
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [categories, setCategories] = useState<ApiCategory[]>([]);
   const [loading, setLoading] = useState(true);
   
-  const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState(searchParams.get('category') || 'all');
+  const [search, setSearch] = useState(searchFromUrl);
+  const [selectedCategory, setSelectedCategory] = useState(categoryFromUrl);
   const [priceRange, setPriceRange] = useState([0, 500000]);
   const [sortBy, setSortBy] = useState('featured');
   const [showCompatibleOnly, setShowCompatibleOnly] = useState(false);
@@ -81,6 +83,11 @@ const Shop: React.FC = () => {
 
     fetchData();
   }, [showCompatibleOnly, userVehicle]);
+
+  useEffect(() => {
+    setSearch(searchFromUrl);
+    setSelectedCategory(categoryFromUrl);
+  }, [searchFromUrl, categoryFromUrl]);
 
   const mapToProductCard = (p: ApiProduct) => {
     // Build human-readable list of compatible vehicles from variant data
