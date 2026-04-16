@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ShoppingCart, CreditCard, Truck, Check, AlertCircle, Loader2, Tag, ShieldCheck } from 'lucide-react';
@@ -11,6 +11,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
 import { api, ApiCoupon, ApiAddress } from '@/lib/api';
@@ -624,40 +625,60 @@ export default function Checkout() {
   ];
 
   return (
-    <div className="min-h-screen bg-background py-8">
-      <div className="container max-w-6xl mx-auto px-4">
-        <h1 className="text-3xl font-bold mb-8">Checkout</h1>
+    <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 py-8">
+      <div className="container max-w-7xl mx-auto px-4">
+        {/* Header */}
+        <div className="mb-12">
+          <h1 className="text-4xl font-display font-bold mb-2 bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+            Secure Checkout
+          </h1>
+          <p className="text-muted-foreground">Complete your purchase securely in just 3 steps</p>
+        </div>
 
-        {/* Progress Steps */}
-        <div className="flex items-center justify-center mb-8">
-          {steps.map((s, index) => (
-            <div key={s.number} className="flex items-center">
-              <div
-                className={`
-                  flex items-center justify-center w-10 h-10 rounded-full border-2
-                  ${step >= s.number
-                    ? 'bg-primary border-primary text-primary-foreground'
-                    : 'border-muted-foreground/25 text-muted-foreground'}
-                `}
-              >
-                <s.icon className="h-5 w-5" />
-              </div>
-              <span
-                className={`ml-2 text-sm font-medium ${
-                  step >= s.number ? 'text-primary' : 'text-muted-foreground'
-                }`}
-              >
-                {s.title}
-              </span>
-              {index < steps.length - 1 && (
-                <div
-                  className={`w-16 h-0.5 mx-4 ${
-                    step > s.number ? 'bg-primary' : 'bg-muted-foreground/25'
-                  }`}
-                />
-              )}
-            </div>
-          ))}
+        {/* Modern Progress Steps */}
+        <div className="mb-10">
+          <div className="relative flex items-center justify-between max-w-xl mx-auto">
+            {steps.map((s, index) => (
+              <React.Fragment key={s.number}>
+                {/* Step Circle */}
+                <div className="flex flex-col items-center">
+                  <motion.div
+                    initial={false}
+                    animate={{
+                      scale: step === s.number ? 1.15 : step > s.number ? 1 : 0.9,
+                    }}
+                    className={`
+                      relative flex items-center justify-center w-12 h-12 rounded-full font-semibold transition-all
+                      ${step >= s.number
+                        ? 'bg-primary text-primary-foreground shadow-lg shadow-primary/25'
+                        : 'bg-muted text-muted-foreground'}
+                    `}
+                  >
+                    {step > s.number ? (
+                      <Check className="h-6 w-6" />
+                    ) : (
+                      s.number
+                    )}
+                  </motion.div>
+                  <span className={`mt-2 text-sm font-medium hidden sm:block ${step >= s.number ? 'text-primary' : 'text-muted-foreground'}`}>
+                    {s.title}
+                  </span>
+                </div>
+
+                {/* Connecting Line */}
+                {index < steps.length - 1 && (
+                  <motion.div
+                    initial={false}
+                    animate={{
+                      background: step > s.number ? '#3b82f6' : '#e5e7eb',
+                    }}
+                    transition={{ duration: 0.5 }}
+                    className="flex-1 h-1 mx-2 rounded-full"
+                  />
+                )}
+              </React.Fragment>
+            ))}
+          </div>
         </div>
 
         {/* Stock Issues Alert */}
@@ -825,53 +846,85 @@ export default function Checkout() {
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
               >
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <CreditCard className="h-5 w-5" />
-                      Payment Method
+                <Card className="border-0 shadow-lg">
+                  <CardHeader className="bg-gradient-to-r from-primary/5 to-transparent pb-6">
+                    <CardTitle className="flex items-center gap-3 text-2xl">
+                      <div className="p-2 rounded-lg bg-primary/10">
+                        <CreditCard className="h-6 w-6 text-primary" />
+                      </div>
+                      Choose Payment Method
                     </CardTitle>
+                    <p className="text-sm text-muted-foreground mt-2">Select your preferred payment method to complete your purchase</p>
                   </CardHeader>
-                  <CardContent>
-                    <RadioGroup
-                      value={paymentMethod}
-                      onValueChange={(v) => setPaymentMethod(v as 'stripe' | 'cod')}
-                      className="space-y-4"
-                    >
-                      <div
-                        className={`flex items-center space-x-3 p-4 border rounded-lg cursor-pointer transition-colors ${
-                          paymentMethod === 'stripe' ? 'border-primary bg-primary/5' : 'border-border'
-                        }`}
-                        onClick={() => setPaymentMethod('stripe')}
+                  <CardContent className="pt-8">
+                    <RadioGroup value={paymentMethod} onValueChange={setPaymentMethod} className="space-y-4 mb-8">
+                      {/* Credit Card Option */}
+                      <motion.div
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.98 }}
+                        className={`
+                          relative p-6 rounded-xl border-2 cursor-pointer transition-all
+                          ${paymentMethod === 'stripe'
+                            ? 'border-primary bg-primary/5 shadow-lg shadow-primary/10'
+                            : 'border-border hover:border-muted-foreground/50 bg-background'}
+                        `}
                       >
-                        <RadioGroupItem value="stripe" id="stripe" />
-                        <Label htmlFor="stripe" className="flex-1 cursor-pointer">
-                          <div className="font-medium">Credit / Debit Card</div>
-                          <div className="text-sm text-muted-foreground">
-                            Secure payment via Stripe
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-4 flex-1">
+                            <RadioGroupItem value="stripe" id="stripe" className="mt-1" />
+                            <Label htmlFor="stripe" className="flex-1 cursor-pointer">
+                              <span className="text-base font-semibold block">💳 Credit / Debit Card</span>
+                              <span className="text-sm text-muted-foreground mt-1 block">Visa, Mastercard, and more. Fast & secure checkout.</span>
+                            </Label>
                           </div>
-                        </Label>
-                        <div className="flex gap-2">
-                          <img src="/visa.svg" alt="Visa" className="h-6" onError={(e) => (e.currentTarget.style.display = 'none')} />
-                          <img src="/mastercard.svg" alt="Mastercard" className="h-6" onError={(e) => (e.currentTarget.style.display = 'none')} />
+                          <motion.div
+                            initial={false}
+                            animate={{ scale: paymentMethod === 'stripe' ? 1 : 0.8, opacity: paymentMethod === 'stripe' ? 1 : 0.5 }}
+                            className="flex gap-2 ml-4"
+                          >
+                            <Badge variant="secondary" className="bg-blue-500/10 text-blue-600 border-0">Visa</Badge>
+                            <Badge variant="secondary" className="bg-red-500/10 text-red-600 border-0">MC</Badge>
+                          </motion.div>
                         </div>
-                      </div>
+                        {paymentMethod === 'stripe' && (
+                          <motion.div
+                            layoutId="selected-indicator"
+                            className="absolute top-3 right-3 p-1.5 bg-primary rounded-full"
+                          >
+                            <Check className="h-4 w-4 text-white" />
+                          </motion.div>
+                        )}
+                      </motion.div>
 
-                      <div
-                        className={`flex items-center space-x-3 p-4 border rounded-lg cursor-pointer transition-colors ${
-                          paymentMethod === 'cod' ? 'border-primary bg-primary/5' : 'border-border'
-                        }`}
-                        onClick={() => setPaymentMethod('cod')}
+                      {/* Cash on Delivery Option */}
+                      <motion.div
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.98 }}
+                        className={`
+                          relative p-6 rounded-xl border-2 cursor-pointer transition-all
+                          ${paymentMethod === 'cod'
+                            ? 'border-primary bg-primary/5 shadow-lg shadow-primary/10'
+                            : 'border-border hover:border-muted-foreground/50 bg-background'}
+                        `}
                       >
-                        <RadioGroupItem value="cod" id="cod" />
-                        <Label htmlFor="cod" className="flex-1 cursor-pointer">
-                          <div className="font-medium">Cash on Delivery</div>
-                          <div className="text-sm text-muted-foreground">
-                            Pay when you receive your order
-                          </div>
-                        </Label>
-                      </div>
+                        <div className="flex items-start gap-4 flex-1">
+                          <RadioGroupItem value="cod" id="cod" className="mt-1" />
+                          <Label htmlFor="cod" className="flex-1 cursor-pointer">
+                            <span className="text-base font-semibold block">🚚 Cash on Delivery</span>
+                            <span className="text-sm text-muted-foreground mt-1 block">Pay conveniently when your order arrives at your doorstep.</span>
+                          </Label>
+                        </div>
+                        {paymentMethod === 'cod' && (
+                          <motion.div
+                            layoutId="selected-indicator"
+                            className="absolute top-3 right-3 p-1.5 bg-primary rounded-full"
+                          >
+                            <Check className="h-4 w-4 text-white" />
+                          </motion.div>
+                        )}
+                      </motion.div>
                     </RadioGroup>
 
                     {paymentMethod === 'stripe' && (
@@ -1099,94 +1152,128 @@ export default function Checkout() {
 
           {/* Order Summary Sidebar */}
           <div className="lg:col-span-1">
-            <Card className="sticky top-4">
-              <CardHeader>
-                <CardTitle>Order Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Cart Items */}
-                <div className="space-y-3">
-                  {validCart.map((item, i) => (
-                    <div key={item.product.id || item.product._id || i} className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">
-                        {item.product.name} × {item.quantity}
-                      </span>
-                      <span>{formatLKR(item.product.price * item.quantity)}</span>
-                    </div>
-                  ))}
-                </div>
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4 }}
+            >
+              <Card className="sticky top-4 border-0 shadow-lg overflow-hidden">
+                <CardHeader className="bg-gradient-to-r from-primary/5 to-transparent">
+                  <CardTitle className="text-lg">📦 Order Summary</CardTitle>
+                </CardHeader>
+                <CardContent className="pt-6 space-y-4">
+                  {/* Cart Items */}
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                    {validCart.map((item, i) => (
+                      <motion.div 
+                        key={item.product.id || item.product._id || i}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="flex justify-between items-start text-sm pb-3 border-b border-border/50 last:border-0"
+                      >
+                        <div className="flex gap-3 flex-1">
+                          <img 
+                            src={item.product.image || '/placeholder.svg'} 
+                            alt={item.product.name}
+                            className="w-10 h-10 rounded object-cover"
+                          />
+                          <div className="min-w-0">
+                            <p className="font-medium truncate text-foreground">{item.product.name}</p>
+                            <p className="text-xs text-muted-foreground">Qty: {item.quantity}</p>
+                          </div>
+                        </div>
+                        <span className="font-semibold text-primary">{formatLKR(item.product.price * item.quantity)}</span>
+                      </motion.div>
+                    ))}
+                  </div>
 
-                <Separator />
-
-                {/* Coupon */}
-                <div>
-                  {appliedCoupon ? (
-                    <div className="flex items-center justify-between p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
-                      <div className="flex items-center gap-2">
-                        <Tag className="h-4 w-4 text-green-500" />
-                        <span className="text-sm font-medium">{appliedCoupon.code}</span>
+                  <div className="pt-2 border-t border-border/50">
+                    {/* Coupon Section */}
+                    {appliedCoupon ? (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="mb-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Tag className="h-4 w-4 text-green-500" />
+                            <span className="text-sm font-medium text-green-600">{appliedCoupon.code}</span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={removeCoupon}
+                            className="h-auto p-1 text-xs"
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </motion.div>
+                    ) : (
+                      <div className="mb-4 flex gap-2">
+                        <Input
+                          placeholder="Coupon code"
+                          value={couponCode}
+                          onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                          className="text-sm"
+                        />
+                        <Button
+                          variant="outline"
+                          onClick={validateCoupon}
+                          disabled={validatingCoupon}
+                          size="sm"
+                        >
+                          {validatingCoupon ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            'Apply'
+                          )}
+                        </Button>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={removeCoupon}
-                        className="h-auto p-1"
-                      >
-                        Remove
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Coupon code"
-                        value={couponCode}
-                        onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                      />
-                      <Button
-                        variant="outline"
-                        onClick={validateCoupon}
-                        disabled={validatingCoupon}
-                      >
-                        {validatingCoupon ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          'Apply'
-                        )}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-                <Separator />
-
-                {/* Totals */}
-                <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal</span>
-                    <span>{formatLKR(cartTotal)}</span>
+                    )}
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Shipping</span>
-                    <span>{shippingLoading ? 'Calculating...' : formatLKR(shippingCost)}</span>
-                  </div>
-                  {shippingError && (
-                    <p className="text-xs text-amber-500">{shippingError}</p>
-                  )}
-                  {discountAmount > 0 && (
-                    <div className="flex justify-between text-sm text-green-500">
-                      <span>Discount</span>
-                      <span>-{formatLKR(discountAmount)}</span>
+
+                  {/* Pricing Breakdown */}
+                  <div className="space-y-3 pt-2 border-t border-border/50">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Subtotal</span>
+                      <span className="font-medium">{formatLKR(cartTotal)}</span>
                     </div>
-                  )}
-                </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Shipping</span>
+                      {shippingLoading ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <span className="font-medium">{formatLKR(shippingCost)}</span>
+                      )}
+                    </div>
+                    {shippingError && (
+                      <p className="text-xs text-amber-500 col-span-2">{shippingError}</p>
+                    )}
+                    {discountAmount > 0 && (
+                      <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="flex justify-between items-center bg-green-500/10 p-2 rounded"
+                      >
+                        <span className="text-sm text-green-600 font-medium">Discount</span>
+                        <span className="font-semibold text-green-600">-{formatLKR(discountAmount)}</span>
+                      </motion.div>
+                    )}
+                  </div>
 
-                <Separator />
-
-                <div className="flex justify-between font-semibold text-lg">
-                  <span>Total</span>
-                  <span>{formatLKR(finalTotal)}</span>
-                </div>
-              </CardContent>
-            </Card>
+                  {/* Total */}
+                  <div className="pt-4 border-t border-border/50 bg-gradient-to-r from-primary/5 to-transparent -mx-6 px-6 py-4 -mb-6">
+                    <div className="flex justify-between items-center">
+                      <span className="text-base font-semibold">Total Amount</span>
+                      <span className="text-2xl font-bold text-primary">{formatLKR(finalTotal)}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">✓ Secure & encrypted checkout</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
           </div>
         </div>
       </div>
