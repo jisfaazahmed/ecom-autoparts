@@ -35,7 +35,10 @@ module.exports.createOrder = async (req, res) => {
             message.includes('Shipping address is incomplete') ||
             message.includes('No items provided for order') ||
             message.includes('Product not found') ||
-            message.includes('stock not available');
+            message.includes('stock not available') ||
+            message.includes('coupon') ||
+            message.includes('Coupon') ||
+            message.includes('Minimum order amount');
 
         res.status(isValidationError ? 400 : 500).json({ message });
     }

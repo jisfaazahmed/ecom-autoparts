@@ -859,7 +859,15 @@ export default function Checkout() {
                     <p className="text-sm text-muted-foreground mt-2">Select your preferred payment method to complete your purchase</p>
                   </CardHeader>
                   <CardContent className="pt-8">
-                    <RadioGroup value={paymentMethod} onValueChange={setPaymentMethod} className="space-y-4 mb-8">
+                    <RadioGroup
+                      value={paymentMethod}
+                      onValueChange={(value) => {
+                        if (value === 'stripe' || value === 'cod') {
+                          setPaymentMethod(value);
+                        }
+                      }}
+                      className="space-y-4 mb-8"
+                    >
                       {/* Credit Card Option */}
                       <motion.div
                         whileHover={{ scale: 1.01 }}

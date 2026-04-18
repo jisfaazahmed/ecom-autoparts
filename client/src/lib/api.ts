@@ -191,7 +191,7 @@ export interface ApiCoupon {
   id: string;
   code: string;
   description?: string;
-  discountType: 'percentage' | 'fixed';
+  discountType: 'percentage' | 'fixed' | 'fixed_amount';
   discountValue: number;
   minimumOrderAmount?: number;
   maxUses?: number;
@@ -1232,6 +1232,11 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ code, orderTotal, shopId }),
     });
+  }
+
+  async getPublicActiveCoupons(limit = 20): Promise<ApiCoupon[]> {
+    const response = await this.request<{ coupons: ApiCoupon[] }>(`/coupons/public/active?limit=${limit}`);
+    return response?.coupons || [];
   }
 
   async createCoupon(data: Omit<ApiCoupon, 'id' | 'usedCount'>): Promise<ApiCoupon> {

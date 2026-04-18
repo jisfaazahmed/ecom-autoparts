@@ -3,6 +3,7 @@ const OrderItem = require('../models/orderItem.model');
 const SubOrder = require('../models/subOrder.model');
 const Product = require('../models/product');
 const VendorProduct = require('../models/vendorProduct');
+const Coupon = require('../models/coupon.model');
 const User = require('../models/user');
 const OrderTimeLine = require('../models/timeline.model')
 const Cart = require('../models/Cart');
@@ -205,7 +206,10 @@ class OrderService {
             const itemTotal = enrichedItems.reduce((sum, { product, quantity }) => sum + (product.price * quantity), 0);
             const shippingCharge = this.calculateShipping(enrichedItems.map(({ product, quantity }) => ({ product, quantity })), { city: normalizedShippingAddress.city || '' });
             const texAmount = this.calculateTax(itemTotal);
-            const discountAmount = couponCode ? await this.applyCoupon(couponCode, itemTotal) : 0;
+            const couponResult = couponCode
+                ? await this.applyCoupon(couponCode, itemTotal, orderData?.shopId)
+                : { discountAmount: 0, coupon: null };
+            const discountAmount = couponResult.discountAmount;
             const totalAmount = itemTotal + shippingCharge + texAmount - discountAmount;
 
             const orderItemDocs = await OrderItem.create(
@@ -239,6 +243,8 @@ class OrderService {
                 taxAmount: texAmount,
                 discountAmount,
                 couponDiscount: discountAmount,
+                couponCode: couponResult?.coupon?.code || null,
+                couponId: couponResult?.coupon?._id || null,
                 totalAmount,
                 paymentMethod,
                 paymentStatus: paymentMethod === 'cod' ? 'pending' : 'processing',
@@ -869,11 +875,80 @@ class OrderService {
         // TODO: Implement actual notification sending to relevant parties
     }
 
-    // Coupon methods (stubs for development)
-    async applyCoupon(couponCode, itemTotal) {
-        console.log(`Applying coupon ${couponCode} to total ${itemTotal}`);
-        // TODO: Implement actual coupon validation and discount calculation
-        return 0; // Return discount amount
+    // Coupon methods
+    async applyCoupon(couponCode, itemTotal, shopId) {
+        const normalizedCode = String(couponCode || '').trim().toUpperCase();
+        if (!normalizedCode) {
+            return { discountAmount: 0, coupon: null };
+        }
+
+        const now = new Date();
+        const query = {
+            code: normalizedCode,
+            isActive: true,
+            validFrom: { $lte: now },
+            $or: [
+                { validUntil: null },
+                { validUntil: { $gte: now } }
+            ],
+        };
+
+        if (shopId) {
+            query.$and = [{
+                $or: [
+                    { shopId: null },
+                    { shopId }
+                ]
+            }];
+        }
+
+        let coupon = await Coupon.findOne(query);
+        if (!coupon) {
+            throw new Error('Invalid or expired coupon code');
+        }
+
+        if (coupon.minimumOrderAmount && Number(itemTotal) < Number(coupon.minimumOrderAmount)) {
+            throw new Error(`Minimum order amount is ${coupon.minimumOrderAmount}`);
+        }
+
+        if (coupon.maxUses && coupon.usedCount >= coupon.maxUses) {
+            throw new Error('Coupon usage limit reached');
+        }
+
+        if (coupon.maxUses) {
+            const reserved = await Coupon.findOneAndUpdate(
+                {
+                    _id: coupon._id,
+                    usedCount: { $lt: coupon.maxUses },
+                    isActive: true,
+                },
+                { $inc: { usedCount: 1 } },
+                { new: true }
+            );
+
+            if (!reserved) {
+                throw new Error('Coupon usage limit reached');
+            }
+
+            coupon = reserved;
+        } else {
+            coupon.usedCount = Number(coupon.usedCount || 0) + 1;
+            await coupon.save();
+        }
+
+        const type = String(coupon.discountType || '').toLowerCase();
+        const value = Number(coupon.discountValue || 0);
+
+        let discountAmount = 0;
+        if (type === 'percentage') {
+            discountAmount = Math.round((Number(itemTotal) * value) / 100);
+        } else {
+            discountAmount = Math.round(value);
+        }
+
+        discountAmount = Math.max(0, Math.min(Number(itemTotal), discountAmount));
+
+        return { discountAmount, coupon };
     }
 }
 
