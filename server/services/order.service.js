@@ -5,8 +5,7 @@ const Product = require('../models/product');
 const VendorProduct = require('../models/vendorProduct');
 const Coupon = require('../models/coupon.model');
 const User = require('../models/user');
-const OrderTimeLine = require('../models/timeline.model')
-const Cart = require('../models/Cart');
+const OrderTimeLine = require('../models/timeline.model');
 
 class OrderService {
 
@@ -157,7 +156,6 @@ class OrderService {
 
     // Create Order
     async createOrder(userId, orderData) {
-        try {
             const { shippingAddress, shippingCity, shippingPostalCode, fullName, phone, shippingCountry = 'Sri Lanka', paymentMethod = 'cod', deliveryInstructions, couponCode, items = [] } = orderData;
 
             const normalizedShippingAddress = typeof shippingAddress === 'string'
@@ -195,7 +193,7 @@ class OrderService {
                     throw new Error(`${product.name} stock not available`);
                 }
 
-                const resolvedVendorId = await this.resolveVendorForOrderItem(product, item, orderData);
+                const resolvedVendorId = await this.resolveVendorForOrderItem(product, item);
                 if (!resolvedVendorId) {
                     throw new Error(`Product ${product.name} is not assigned to a vendor. Please choose a seller before checkout.`);
                 }
@@ -205,12 +203,12 @@ class OrderService {
 
             const itemTotal = enrichedItems.reduce((sum, { product, quantity }) => sum + (product.price * quantity), 0);
             const shippingCharge = this.calculateShipping(enrichedItems.map(({ product, quantity }) => ({ product, quantity })), { city: normalizedShippingAddress.city || '' });
-            const texAmount = this.calculateTax(itemTotal);
+            const taxAmount = this.calculateTax(itemTotal);
             const couponResult = couponCode
                 ? await this.applyCoupon(couponCode, itemTotal, orderData?.shopId)
                 : { discountAmount: 0, coupon: null };
             const discountAmount = couponResult.discountAmount;
-            const totalAmount = itemTotal + shippingCharge + texAmount - discountAmount;
+            const totalAmount = itemTotal + shippingCharge + taxAmount - discountAmount;
 
             const orderItemDocs = await OrderItem.create(
                 enrichedItems.map(({ product, quantity, resolvedVendorId }) => ({
@@ -240,7 +238,7 @@ class OrderService {
                 shippingAddress: normalizedShippingAddress,
                 itemsTotal: itemTotal,
                 shippingCharges: shippingCharge,
-                taxAmount: texAmount,
+                taxAmount: taxAmount,
                 discountAmount,
                 couponDiscount: discountAmount,
                 couponCode: couponResult?.coupon?.code || null,
@@ -283,10 +281,8 @@ class OrderService {
             this.sendOrderNotification(order, 'order Placed');
 
             return order;
-        }
-        catch (error) {
-            throw error;
-        }
+        
+    
     }
 
     //multi venodr
@@ -627,7 +623,7 @@ class OrderService {
     }
 
     //attempts
-    async verfyCOD(orderId, verifiedBy, status, notes) {
+    async verifyCOD(orderId, verifiedBy, status, notes) {
         const order = await Order.findById(orderId);
 
         const lastAttempt = order.codVerificationAttempts[order.codVerificationAttempts.length - 1];

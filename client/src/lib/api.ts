@@ -1697,6 +1697,94 @@ class ApiClient {
     return response?.data;
   }
 
+  // ============ POLICIES ============
+
+  async getPolicy(policyType: string): Promise<any> {
+    return this.request(`/policies/${policyType}`);
+  }
+
+  async getAllPublicPolicies(): Promise<any[]> {
+    const response = await this.request<{ success: boolean; data: any[] }>('/policies');
+    return response?.data || [];
+  }
+
+  async getPolicyWithFAQ(policyType: string): Promise<any> {
+    return this.request(`/policies/${policyType}/faq`);
+  }
+
+  async searchPolicies(query: string, isActive?: boolean): Promise<any[]> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('q', query);
+    if (isActive !== undefined) searchParams.set('isActive', String(isActive));
+    const response = await this.request<{ success: boolean; data: any[] }>(`/policies/search?${searchParams.toString()}`);
+    return response?.data || [];
+  }
+
+  async getReturnPolicyForCategory(category?: string): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (category) searchParams.set('category', category);
+    const response = await this.request<{ success: boolean; data: any }>(`/policies/utils/return-policy?${searchParams.toString()}`);
+    return response?.data;
+  }
+
+  async getShippingPolicy(): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>('/policies/utils/shipping-policy');
+    return response?.data;
+  }
+
+  // Admin policy methods
+  async createPolicy(data: {
+    policyType: 'return' | 'shipping' | 'cancellation' | 'terms_conditions' | 'privacy' | 'warranty';
+    title: string;
+    description: string;
+    content: string;
+    sections?: Array<{ title: string; content: string; order: number }>;
+    metadata?: any;
+    displaySettings?: any;
+  }): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>('/policies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return response?.data;
+  }
+
+  async updatePolicy(policyType: string, data: any): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>(`/policies/${policyType}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return response?.data;
+  }
+
+  async getAllPolicies(filters?: { policyType?: string; isActive?: boolean }): Promise<any[]> {
+    const searchParams = new URLSearchParams();
+    if (filters?.policyType) searchParams.set('policyType', filters.policyType);
+    if (filters?.isActive !== undefined) searchParams.set('isActive', String(filters.isActive));
+    const response = await this.request<{ success: boolean; data: any[] }>(`/policies/admin/all?${searchParams.toString()}`);
+    return response?.data || [];
+  }
+
+  async getPolicyVersionHistory(policyType: string): Promise<any[]> {
+    const response = await this.request<{ success: boolean; data: any[] }>(`/policies/admin/versions/${policyType}`);
+    return response?.data || [];
+  }
+
+  async addPolicyFAQ(policyType: string, data: { question: string; answer: string; category?: string }): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>(`/policies/${policyType}/faq`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return response?.data;
+  }
+
+  async deactivatePolicy(policyType: string): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>(`/policies/${policyType}/deactivate`, {
+      method: 'PATCH',
+    });
+    return response?.data;
+  }
+
   // ============ FILE UPLOAD ============
 
   async uploadFile(file: File, type: string = 'products'): Promise<string> {

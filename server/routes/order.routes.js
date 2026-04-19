@@ -27,6 +27,6 @@ router.put('/:id/status', verifyToken, orderController.adminUpdateOrderStatus);
 router.patch('/:id/payment-status', verifyToken, orderController.updatePaymentStatus);
 
 //Admin 
-router.post('/:id/verify-cod', orderController.verifyCOD);
+router.post('/:id/verify-cod', verifyToken, orderController.verifyCOD);
 
 module.exports = router;

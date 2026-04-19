@@ -35,6 +35,11 @@ import SuperAdminProducts from "./pages/superadmin/Products";
 import SuperAdminVehicles from "./pages/superadmin/Vehicles";
 import SuperAdminCategories from "./pages/superadmin/Categories";
 import SuperAdminCoupons from "./pages/superadmin/Coupons";
+import SuperAdminPolicies from "./pages/superadmin/Policies";
+import ReturnPolicy from "./pages/ReturnPolicy";
+import ShippingPolicy from "./pages/ShippingPolicy";
+import CancellationPolicy from "./pages/CancellationPolicy";
+import TermsConditions from "./pages/TermsConditions";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -92,6 +97,12 @@ const App = () => (
               </ProtectedRoute>
             } />
             <Route path="/track-order" element={<TrackOrder />} />
+            
+            {/* Policy pages */}
+            <Route path="/policy/return" element={<ReturnPolicy />} />
+            <Route path="/policy/shipping" element={<ShippingPolicy />} />
+            <Route path="/policy/cancellation" element={<CancellationPolicy />} />
+            <Route path="/policy/terms" element={<TermsConditions />} />
             
             {/* Admin routes */}
             <Route path="/admin" element={
@@ -154,6 +165,11 @@ const App = () => (
             <Route path="/superadmin/coupons" element={
               <ProtectedRoute requiredRole="superadmin">
                 <SuperAdminCoupons />
+              </ProtectedRoute>
+            } />
+            <Route path="/superadmin/policies" element={
+              <ProtectedRoute requiredRole="superadmin">
+                <SuperAdminPolicies />
               </ProtectedRoute>
             } />
             <Route path="/superadmin/refunds" element={

@@ -1,6 +1,7 @@
 const User = require('../models/user')
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
 exports.register = async (req, res) => {
   try {
@@ -128,5 +129,143 @@ exports.getMe = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).send('Server error');
+  }
+};
+
+// POST /auth/forgot-password - Request password reset
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      // For security, don't reveal if email exists
+      return res.status(200).json({ 
+        message: 'If an account with this email exists, a password reset link will be sent.' 
+      });
+    }
+
+    // Generate reset token (valid for 1 hour)
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    user.resetToken = resetTokenHash;
+    user.resetTokenExpiry = resetTokenExpiry;
+    await user.save();
+
+    // TODO: Send email with reset link
+    // For now, return token for testing (in production, send via email)
+    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/reset-password?token=${resetToken}`;
+    
+    console.log(`Password reset link for ${normalizedEmail}: ${resetLink}`);
+
+    res.status(200).json({ 
+      message: 'Password reset link has been sent to your email',
+      // Only in development - remove in production
+      ...(process.env.NODE_ENV !== 'production' && { resetToken, resetLink })
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error processing password reset request' });
+  }
+};
+
+// POST /auth/reset-password - Reset password with token
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token, password, passwordConfirm } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ message: 'Token and password are required' });
+    }
+
+    if (password !== passwordConfirm) {
+      return res.status(400).json({ message: 'Passwords do not match' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    // Hash the token to compare with stored hash
+    const resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Find user with matching reset token and non-expired token
+    const user = await User.findOne({
+      resetToken: resetTokenHash,
+      resetTokenExpiry: { $gt: new Date() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Reset token is invalid or has expired' });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Update password and clear reset token
+    user.password = hashedPassword;
+    user.resetToken = null;
+    user.resetTokenExpiry = null;
+    await user.save();
+
+    res.status(200).json({ message: 'Password has been reset successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error resetting password' });
+  }
+};
+
+// POST /auth/change-password - Change password when logged in
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword, passwordConfirm } = req.body;
+    const userId = req.user?.id || req.user?._id;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current password and new password are required' });
+    }
+
+    if (newPassword !== passwordConfirm) {
+      return res.status(400).json({ message: 'New passwords do not match' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Verify current password
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Current password is incorrect' });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    user.password = hashedPassword;
+    await user.save();
+
+    res.status(200).json({ message: 'Password has been changed successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error changing password' });
   }
 };

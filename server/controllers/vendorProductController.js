@@ -1,4 +1,4 @@
-const VendorProduct = require('../models/VendorProduct');
+const VendorProduct = require('../models/vendorProduct');
 
 // 1. ADD OFFER (Vendor Only)
 // Vendor says: "I have this item."
