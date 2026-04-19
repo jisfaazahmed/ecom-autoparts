@@ -9,6 +9,8 @@ interface User {
   id: string;
   email: string;
   name: string;
+  fullName?: string;
+  phone?: string;
   role: string;
   status?: string;
   shopName?: string;
@@ -104,6 +106,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     id: apiUser?.id || apiUser?._id || apiUser?.userId || '',
     email: apiUser?.email || '',
     name: apiUser?.fullName || apiUser?.name || 'User',
+    fullName: apiUser?.fullName || apiUser?.name,
+    phone: apiUser?.phone,
     role: (apiUser?.role || apiUser?.userRoles?.[0]?.role || 'customer').toString().toLowerCase(),
     status: apiUser?.status,
     shopName: apiUser?.shopName,

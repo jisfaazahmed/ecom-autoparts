@@ -238,6 +238,8 @@ export default function Checkout() {
       setForm((prev) => ({
         ...prev,
         email: user.email || prev.email,
+        fullName: user.fullName || prev.fullName,
+        phone: user.phone || prev.phone,
       }));
       api.getAddresses().then(addresses => {
         setSavedAddresses(addresses);

@@ -835,7 +835,7 @@ class OrderService {
                 .skip((safePage - 1) * safeLimit)
                 .limit(safeLimit)
                 .populate('customer', 'name email phone')
-                .populate('order', 'orderNumber overallStatus paymentStatus createdAt totalAmount')
+                .populate('order', 'orderNumber overallStatus paymentStatus createdAt totalAmount shippingAddress')
                 .populate({
                     path: 'items',
                     populate: { path: 'product', select: 'name images price' }

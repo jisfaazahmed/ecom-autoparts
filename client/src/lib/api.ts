@@ -137,7 +137,7 @@ export interface ApiOrder {
   paymentStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'refunded' | 'partially_refunded';
   paymentMethod?: string;
   totalAmount: number;
-  shippingAddress: string;
+  shippingAddress: string | { fullName: string; phone: string; addressLine1: string; city?: string; state?: string; postalCode?: string };
   shippingCity?: string;
   shippingPostalCode?: string;
   trackingNumber?: string;
@@ -440,10 +440,17 @@ class ApiClient {
       ? order.items.map((item: any) => this.normalizeOrderItem(item))
       : undefined;
 
+    const normalizedStatus =
+      order?.status ||
+      order?.subOrder?.status ||
+      order?.overallStatus ||
+      'pending';
+
     return {
       ...order,
       id: order?.id || order?._id || '',
       _id: order?._id,
+      status: normalizedStatus,
       items,
     };
   }
@@ -994,6 +1001,13 @@ class ApiClient {
     return this.request(`/orders/track/${trackingNumber}`);
   }
 
+  async recoverGuestOrders(email: string): Promise<{ message: string; orders: ApiOrder[] }> {
+    return this.request<{ message: string; orders: ApiOrder[] }>('/orders/recover-guest', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
   // ============ SHIPPING ============
 
   async calculateShipping(data: ShippingCalculationRequest): Promise<ShippingCalculationResponse> {
@@ -1186,6 +1200,60 @@ class ApiClient {
     } catch {
       return null;
     }
+  }
+
+  // ============ VENDOR ANALYTICS ============
+
+  async getVendorAnalytics(vendorId: string, params?: {
+    range?: '7d' | '30d' | '90d' | '1y';
+  }): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (params?.range) searchParams.set('range', params.range);
+    return this.request<any>(`/vendors/${vendorId}/analytics?${searchParams.toString()}`);
+  }
+
+  async getVendorTimeSeriesAnalytics(vendorId: string, params?: {
+    range?: '7d' | '30d' | '90d' | '1y';
+    granularity?: 'daily' | 'weekly' | 'monthly';
+  }): Promise<{ timeSeries: any[] }> {
+    const searchParams = new URLSearchParams();
+    if (params?.range) searchParams.set('range', params.range);
+    if (params?.granularity) searchParams.set('granularity', params.granularity);
+    return this.request<{ timeSeries: any[] }>(`/vendors/${vendorId}/analytics/timeseries?${searchParams.toString()}`);
+  }
+
+  async getVendorEarningsBreakdown(vendorId: string, params?: {
+    range?: '7d' | '30d' | '90d' | '1y';
+  }): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (params?.range) searchParams.set('range', params.range);
+    return this.request<any>(`/vendors/${vendorId}/analytics/earnings?${searchParams.toString()}`);
+  }
+
+  // ============ SETTLEMENT / PAYOUT ============
+
+  async getSettlementSummary(vendorId: string): Promise<any> {
+    return this.request<any>(`/vendors/${vendorId}/settlement/summary`);
+  }
+
+  async getVendorSettlements(vendorId: string, params?: {
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    return this.request<any>(`/vendors/${vendorId}/settlements?${searchParams.toString()}`);
+  }
+
+  async getSettlementDetails(settlementId: string): Promise<any> {
+    return this.request<any>(`/settlements/${settlementId}`);
+  }
+
+  async getTotalPayable(vendorId: string): Promise<{ totalPayable: number; totalSettlements: number }> {
+    return this.request<{ totalPayable: number; totalSettlements: number }>(`/vendors/${vendorId}/payable`);
   }
 
   // ============ COUPONS ============

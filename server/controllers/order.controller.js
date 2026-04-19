@@ -250,6 +250,7 @@ module.exports.getVendorOrders = async (req, res) => {
                 overallStatus: parentOrder?.overallStatus,
                 paymentStatus: parentOrder?.paymentStatus,
                 totalAmount: parentOrder?.totalAmount,
+                shippingAddress: parentOrder?.shippingAddress,
                 createdAt: parentOrder?.createdAt || subOrder.createdAt,
                 subOrder: {
                     _id: subOrder._id,
@@ -351,5 +352,61 @@ module.exports.trackOrder = async (req, res) => {
         res.status(200).json({ order: orderPayload, timeline });
     } catch (error) {
         res.status(500).json({ message: error.message });
+    }
+};
+
+// Recover guest orders when a user registers with the same email they used for checkout
+module.exports.recoverGuestOrders = async (req, res) => {
+    try {
+        const userId = req.user?.id || req.user?._id;
+        const userEmail = req.user?.email;
+        
+        if (!userId || !userEmail) {
+            return res.status(401).json({
+                success: false,
+                message: 'Authentication required'
+            });
+        }
+
+        // Find orders with no user but matching email in shippingAddress
+        const guestOrders = await order.find({
+            $or: [
+                { user: null },
+                { user: { $exists: false } }
+            ],
+            'shippingAddress.fullName': { $regex: userEmail, $options: 'i' },
+            createdAt: { $gte: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) } // Last 90 days
+        }).limit(50);
+
+        if (guestOrders.length === 0) {
+            return res.status(200).json({
+                success: true,
+                message: 'No guest orders found for recovery',
+                orders: []
+            });
+        }
+
+        // Associate guest orders to the new user
+        const result = await order.updateMany(
+            {
+                _id: { $in: guestOrders.map(o => o._id) },
+                $or: [
+                    { user: null },
+                    { user: { $exists: false } }
+                ]
+            },
+            { $set: { user: userId } }
+        );
+
+        res.status(200).json({
+            success: true,
+            message: `Recovered ${result.modifiedCount} guest order(s)`,
+            orders: guestOrders
+        });
+    } catch (error) {
+        res.status(400).json({
+            success: false,
+            message: error.message || 'Failed to recover guest orders'
+        });
     }
 };

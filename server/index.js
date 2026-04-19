@@ -25,6 +25,7 @@ const shippingRoutes = require('./routes/shipping.routes');
 const refundRoutes = require('./routes/refund.routes');
 const addressRoutes = require('./routes/address.routes');
 const couponRoutes = require('./routes/coupon.routes');
+const settlementRoutes = require('./routes/settlement.routes');
 const swaggerUI = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
 
@@ -65,6 +66,7 @@ app.use('/api/shipping', shippingRoutes);
 app.use('/api/refunds', refundRoutes);
 app.use('/api/addresses', addressRoutes);
 app.use('/api/coupons', couponRoutes);
+app.use('/api/settlements', settlementRoutes);
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpecs));
 console.log("📄 Documentation available at http://localhost:5000/api-docs");
 
