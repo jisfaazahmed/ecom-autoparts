@@ -36,6 +36,15 @@ const userSchema = new mongoose.Schema({
     min: 0,
     max: 100,
   },
+  // Password reset fields
+  resetToken: {
+    type: String,
+    default: null
+  },
+  resetTokenExpiry: {
+    type: Date,
+    default: null
+  },
   createdAt: {
     type: Date,
     default: Date.now,

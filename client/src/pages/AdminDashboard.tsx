@@ -41,7 +41,7 @@ const AdminDashboard: React.FC = () => {
     try {
       const [productsRes, ordersRes, categoriesRes, refundsRes] = await Promise.all([
         api.getProducts({ shop: shop.id }),
-        api.getOrders({ limit: 10 }),
+        api.getVendorOrders({ limit: 10 }),
         api.getCategories(),
         profile?.role === 'admin' || profile?.role === 'superadmin' 
           ? api.getAdminRefunds({ limit: 200 }) 
@@ -222,31 +222,42 @@ const AdminDashboard: React.FC = () => {
                   <TableHead className="hidden sm:table-cell">Customer</TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="hidden lg:table-cell">Delivery Address</TableHead>
                   <TableHead className="hidden md:table-cell">Date</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {orders.map((order) => (
-                  <TableRow key={order.id} className="border-border/50">
-                    <TableCell className="font-mono text-sm">#{order.id.slice(0, 8)}</TableCell>
-                    <TableCell className="hidden sm:table-cell">Customer</TableCell>
-                    <TableCell className="font-medium">{formatLKR(order.totalAmount)}</TableCell>
-                    <TableCell>{getStatusBadge(order.status)}</TableCell>
-                    <TableCell className="text-muted-foreground hidden md:table-cell">{new Date(order.createdAt).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="glass-card">
-                          <DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View Details</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => updateOrderStatus(order.id, 'processing')}>Mark as Processing</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => updateOrderStatus(order.id, 'shipped')}>Mark as Shipped</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => updateOrderStatus(order.id, 'delivered')}>Mark as Delivered</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {orders.map((order) => {
+                  const address = order.shippingAddress;
+                  const addressStr = typeof address === 'string' 
+                    ? address 
+                    : (address && typeof address === 'object' && 'addressLine1' in address 
+                      ? address.addressLine1 
+                      : 'N/A');
+                  const addressDisplay = addressStr.length > 25 ? addressStr.substring(0, 22) + '...' : addressStr;
+                  return (
+                    <TableRow key={order.id} className="border-border/50">
+                      <TableCell className="font-mono text-sm">#{order.id.slice(0, 8)}</TableCell>
+                      <TableCell className="hidden sm:table-cell">Customer</TableCell>
+                      <TableCell className="font-medium">{formatLKR(order.totalAmount)}</TableCell>
+                      <TableCell>{getStatusBadge(order.status)}</TableCell>
+                      <TableCell className="hidden lg:table-cell text-xs text-muted-foreground" title={addressStr}>{addressDisplay}</TableCell>
+                      <TableCell className="text-muted-foreground hidden md:table-cell">{new Date(order.createdAt).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="glass-card">
+                            <DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View Details</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateOrderStatus(order.id, 'processing')}>Mark as Processing</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateOrderStatus(order.id, 'shipped')}>Mark as Shipped</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateOrderStatus(order.id, 'delivered')}>Mark as Delivered</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

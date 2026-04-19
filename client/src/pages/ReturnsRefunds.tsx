@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { AlertCircle, Loader2, RotateCcw, Search } from 'lucide-react';
+import { AlertCircle, Loader2, RotateCcw, Search, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import Navbar from '@/components/layout/Navbar';
+import RefundForm from '@/components/orders/RefundForm';
 import { useAuth } from '@/hooks/useAuth';
 import { api, ApiOrderItem, ApiRefund } from '@/lib/api';
 import { formatLKR } from '@/lib/currency';
@@ -12,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -52,7 +54,7 @@ const reasonOptions = [
 ];
 
 const statusColorMap: Record<string, string> = {
-  requested: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+  requested: 'bg-primary/20 text-primary border-primary/30',
   approved: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
   rejected: 'bg-red-500/20 text-red-400 border-red-500/30',
   pickup_scheduled: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
@@ -181,7 +183,7 @@ const ReturnsRefunds: React.FC = () => {
       setDetails('');
       setDialogOpen(true);
     }
-  }, [location.search, dialogOpen]);
+  }, [location.search]); // Remove dialogOpen from dependencies
 
   const filteredRefunds = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -250,7 +252,7 @@ const ReturnsRefunds: React.FC = () => {
     return input;
   };
 
-  const submitRefundRequest = async () => {
+  const submitRefundRequest = async (formData: any) => {
     if (!orderId.trim()) {
       toast.error('Please enter an order ID');
       return;
@@ -268,11 +270,6 @@ const ReturnsRefunds: React.FC = () => {
       return;
     }
 
-    if (!reasonDescription.trim()) {
-      toast.error('Please provide a short reason description');
-      return;
-    }
-
     setSubmitting(true);
     try {
       await api.createRefundRequestByOrder({
@@ -280,9 +277,9 @@ const ReturnsRefunds: React.FC = () => {
         orderItemId: selectedItem ? String(selectedItem.item._id || selectedItem.item.id || '') : undefined,
         paymentId: paymentId.trim() || undefined,
         amount: Number(amount),
-        reason: `${reasonOptions.find((reason) => reason.value === reasonCategory)?.label || 'Other'}: ${reasonDescription.trim()}`,
+        reason: formData.returnReason.description,
         refundType: 'return',
-        details: details.trim() || undefined,
+        details: `Reason: ${formData.returnReason.category}\nCondition: ${formData.productCondition.productState}\nPackaging: ${formData.productCondition.packaging}\nAccessories: ${formData.productCondition.accessories}`,
         returnStatus: 'pending',
       });
 
@@ -420,100 +417,56 @@ const ReturnsRefunds: React.FC = () => {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Request Return / Refund</DialogTitle>
-            <DialogDescription>
-              Submit the reason for your return request. The seller team will review it.
-            </DialogDescription>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="flex flex-row items-center justify-between">
+            <div className="flex-1">
+              <DialogTitle>Request Return / Refund</DialogTitle>
+              <DialogDescription>
+                Follow the steps below to submit your return request. Our team will review it shortly.
+              </DialogDescription>
+            </div>
           </DialogHeader>
 
-          <div className="space-y-4">
+          <div className="space-y-4 mb-4">
             <div>
-              <Label>Order ID</Label>
+              <Label className="text-slate-300">Order ID</Label>
               <Input
                 value={orderId}
                 onChange={(event) => setOrderId(event.target.value)}
                 placeholder="Enter order ID or Order #"
+                className="bg-slate-700 border-slate-600 text-slate-200 placeholder:text-slate-500"
               />
             </div>
 
             <div>
-              <Label>Payment ID (optional)</Label>
-              <Input
-                value={paymentId}
-                onChange={(event) => setPaymentId(event.target.value)}
-                placeholder="Enter payment ID if available"
-              />
-            </div>
-
-            <div>
-              <Label>Refund Amount</Label>
+              <Label className="text-slate-300">Refund Amount</Label>
               <Input
                 type="number"
                 value={amount}
                 onChange={(event) => setAmount(event.target.value)}
                 placeholder="15000"
+                className="bg-slate-700 border-slate-600 text-slate-200 placeholder:text-slate-500"
               />
             </div>
+          </div>
 
-            <div>
-              <Label>Reason Category</Label>
-              <Select value={reasonCategory} onValueChange={setReasonCategory}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select reason" />
-                </SelectTrigger>
-                <SelectContent>
-                  {reasonOptions.map((reason) => (
-                    <SelectItem key={reason.value} value={reason.value}>
-                      {reason.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <RefundForm
+            onSubmit={submitRefundRequest}
+            isSubmitting={submitting}
+            selectedItem={selectedItem}
+          />
 
-            <div>
-              <Label>Short Description</Label>
-              <Input
-                value={reasonDescription}
-                onChange={(event) => setReasonDescription(event.target.value)}
-                placeholder="Example: Item arrived damaged"
-              />
-            </div>
-
-            <div>
-              <Label>More Details</Label>
-              <Textarea
-                value={details}
-                onChange={(event) => setDetails(event.target.value)}
-                placeholder="Add any extra details for faster review"
-                rows={4}
-              />
-            </div>
-
-            <div className="rounded-lg border border-amber-400/30 bg-amber-400/10 p-3 text-xs text-amber-300 flex gap-2">
-              <AlertCircle className="h-4 w-4 mt-0.5" />
-              <p>
-                For now, this form submits core return reason details. You can extend it later with photo/video upload fields.
-              </p>
-            </div>
-
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={submitting}>
+          <div className="flex gap-3 pt-4 border-t border-slate-700 mt-4">
+            <DialogClose asChild>
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                disabled={submitting}
+              >
                 Cancel
               </Button>
-              <Button onClick={submitRefundRequest} disabled={submitting}>
-                {submitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Submitting...
-                  </>
-                ) : (
-                  'Submit Request'
-                )}
-              </Button>
-            </div>
+            </DialogClose>
           </div>
         </DialogContent>
       </Dialog>

@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
-  Search, ShoppingCart, User, Menu, Car, LogOut, Store, Shield, UserCircle 
+  Search, ShoppingCart, User, Menu, Car, LogOut, Store, Shield, UserCircle, FileText 
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Button } from '@/components/ui/button';
@@ -39,6 +39,13 @@ const Navbar: React.FC = () => {
     { href: '/deals', label: 'Deals' },
   ];
 
+  const policyLinks = [
+    { href: '/policy/return', label: 'Return Policy' },
+    { href: '/policy/shipping', label: 'Shipping Policy' },
+    { href: '/policy/cancellation', label: 'Cancellation Policy' },
+    { href: '/policy/terms', label: 'Terms & Conditions' },
+  ];
+
   const handleSignOut = async () => {
     await signOut();
     navigate('/');
@@ -68,13 +75,30 @@ const Navbar: React.FC = () => {
             <Link
               key={link.href}
               to={link.href}
-              className={`text-sm font-medium transition-colors hover:text-primary ${
-                location.pathname === link.href ? 'text-primary' : 'text-muted-foreground'
-              }`}
+              className={`text-sm font-medium transition-colors ${location.pathname === link.href ? 'text-primary' : 'text-muted-foreground hover:text-black dark:hover:text-black font-semibold'}`}
             >
               {link.label}
             </Link>
           ))}
+          
+          {/* Policies Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="text-sm font-medium text-muted-foreground hover:text-black dark:hover:text-black hover:font-semibold transition-all">
+                <FileText className="h-4 w-4 mr-1" />
+                Policies
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="glass-card border-border/50 w-48">
+              {policyLinks.map((link) => (
+                <DropdownMenuItem key={link.href} asChild>
+                  <Link to={link.href} className="w-full">
+                    {link.label}
+                  </Link>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </nav>
 
         {/* Search Bar */}
@@ -210,18 +234,35 @@ const Navbar: React.FC = () => {
                   <Link
                     key={link.href}
                     to={link.href}
-                    className="text-lg font-medium transition-colors hover:text-primary"
+                    className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold"
                   >
                     {link.label}
                   </Link>
                 ))}
+                
+                {/* Mobile Policies Section */}
+                <DropdownMenuSeparator />
+                <div className="text-lg font-medium text-primary flex items-center gap-2 mb-2">
+                  <FileText className="h-5 w-5" />
+                  Policies
+                </div>
+                {policyLinks.map((link) => (
+                  <Link
+                    key={link.href}
+                    to={link.href}
+                    className="text-sm text-muted-foreground hover:text-black dark:hover:text-black hover:font-semibold transition-all pl-7"
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+                
                 <DropdownMenuSeparator />
                 {user ? (
                   <>
-                    <Link to="/orders" className="text-lg font-medium transition-colors hover:text-primary">
+                    <Link to="/orders" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
                       My Orders
                     </Link>
-                    <Link to="/returns" className="text-lg font-medium transition-colors hover:text-primary">
+                    <Link to="/returns" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
                       Returns & Refunds
                     </Link>
                     {role === 'admin' && (

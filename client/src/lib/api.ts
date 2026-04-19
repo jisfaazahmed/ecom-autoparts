@@ -137,7 +137,7 @@ export interface ApiOrder {
   paymentStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'refunded' | 'partially_refunded';
   paymentMethod?: string;
   totalAmount: number;
-  shippingAddress: string;
+  shippingAddress: string | { fullName: string; phone: string; addressLine1: string; city?: string; state?: string; postalCode?: string };
   shippingCity?: string;
   shippingPostalCode?: string;
   trackingNumber?: string;
@@ -191,7 +191,7 @@ export interface ApiCoupon {
   id: string;
   code: string;
   description?: string;
-  discountType: 'percentage' | 'fixed';
+  discountType: 'percentage' | 'fixed' | 'fixed_amount';
   discountValue: number;
   minimumOrderAmount?: number;
   maxUses?: number;
@@ -440,10 +440,17 @@ class ApiClient {
       ? order.items.map((item: any) => this.normalizeOrderItem(item))
       : undefined;
 
+    const normalizedStatus =
+      order?.status ||
+      order?.subOrder?.status ||
+      order?.overallStatus ||
+      'pending';
+
     return {
       ...order,
       id: order?.id || order?._id || '',
       _id: order?._id,
+      status: normalizedStatus,
       items,
     };
   }
@@ -994,6 +1001,13 @@ class ApiClient {
     return this.request(`/orders/track/${trackingNumber}`);
   }
 
+  async recoverGuestOrders(email: string): Promise<{ message: string; orders: ApiOrder[] }> {
+    return this.request<{ message: string; orders: ApiOrder[] }>('/orders/recover-guest', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
   // ============ SHIPPING ============
 
   async calculateShipping(data: ShippingCalculationRequest): Promise<ShippingCalculationResponse> {
@@ -1188,6 +1202,60 @@ class ApiClient {
     }
   }
 
+  // ============ VENDOR ANALYTICS ============
+
+  async getVendorAnalytics(vendorId: string, params?: {
+    range?: '7d' | '30d' | '90d' | '1y';
+  }): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (params?.range) searchParams.set('range', params.range);
+    return this.request<any>(`/vendors/${vendorId}/analytics?${searchParams.toString()}`);
+  }
+
+  async getVendorTimeSeriesAnalytics(vendorId: string, params?: {
+    range?: '7d' | '30d' | '90d' | '1y';
+    granularity?: 'daily' | 'weekly' | 'monthly';
+  }): Promise<{ timeSeries: any[] }> {
+    const searchParams = new URLSearchParams();
+    if (params?.range) searchParams.set('range', params.range);
+    if (params?.granularity) searchParams.set('granularity', params.granularity);
+    return this.request<{ timeSeries: any[] }>(`/vendors/${vendorId}/analytics/timeseries?${searchParams.toString()}`);
+  }
+
+  async getVendorEarningsBreakdown(vendorId: string, params?: {
+    range?: '7d' | '30d' | '90d' | '1y';
+  }): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (params?.range) searchParams.set('range', params.range);
+    return this.request<any>(`/vendors/${vendorId}/analytics/earnings?${searchParams.toString()}`);
+  }
+
+  // ============ SETTLEMENT / PAYOUT ============
+
+  async getSettlementSummary(vendorId: string): Promise<any> {
+    return this.request<any>(`/vendors/${vendorId}/settlement/summary`);
+  }
+
+  async getVendorSettlements(vendorId: string, params?: {
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    return this.request<any>(`/vendors/${vendorId}/settlements?${searchParams.toString()}`);
+  }
+
+  async getSettlementDetails(settlementId: string): Promise<any> {
+    return this.request<any>(`/settlements/${settlementId}`);
+  }
+
+  async getTotalPayable(vendorId: string): Promise<{ totalPayable: number; totalSettlements: number }> {
+    return this.request<{ totalPayable: number; totalSettlements: number }>(`/vendors/${vendorId}/payable`);
+  }
+
   // ============ COUPONS ============
 
   async getCoupons(params?: {
@@ -1232,6 +1300,11 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ code, orderTotal, shopId }),
     });
+  }
+
+  async getPublicActiveCoupons(limit = 20): Promise<ApiCoupon[]> {
+    const response = await this.request<{ coupons: ApiCoupon[] }>(`/coupons/public/active?limit=${limit}`);
+    return response?.coupons || [];
   }
 
   async createCoupon(data: Omit<ApiCoupon, 'id' | 'usedCount'>): Promise<ApiCoupon> {
@@ -1621,6 +1694,94 @@ class ApiClient {
       body: JSON.stringify({ returnStatus }),
     });
 
+    return response?.data;
+  }
+
+  // ============ POLICIES ============
+
+  async getPolicy(policyType: string): Promise<any> {
+    return this.request(`/policies/${policyType}`);
+  }
+
+  async getAllPublicPolicies(): Promise<any[]> {
+    const response = await this.request<{ success: boolean; data: any[] }>('/policies');
+    return response?.data || [];
+  }
+
+  async getPolicyWithFAQ(policyType: string): Promise<any> {
+    return this.request(`/policies/${policyType}/faq`);
+  }
+
+  async searchPolicies(query: string, isActive?: boolean): Promise<any[]> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('q', query);
+    if (isActive !== undefined) searchParams.set('isActive', String(isActive));
+    const response = await this.request<{ success: boolean; data: any[] }>(`/policies/search?${searchParams.toString()}`);
+    return response?.data || [];
+  }
+
+  async getReturnPolicyForCategory(category?: string): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (category) searchParams.set('category', category);
+    const response = await this.request<{ success: boolean; data: any }>(`/policies/utils/return-policy?${searchParams.toString()}`);
+    return response?.data;
+  }
+
+  async getShippingPolicy(): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>('/policies/utils/shipping-policy');
+    return response?.data;
+  }
+
+  // Admin policy methods
+  async createPolicy(data: {
+    policyType: 'return' | 'shipping' | 'cancellation' | 'terms_conditions' | 'privacy' | 'warranty';
+    title: string;
+    description: string;
+    content: string;
+    sections?: Array<{ title: string; content: string; order: number }>;
+    metadata?: any;
+    displaySettings?: any;
+  }): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>('/policies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return response?.data;
+  }
+
+  async updatePolicy(policyType: string, data: any): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>(`/policies/${policyType}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return response?.data;
+  }
+
+  async getAllPolicies(filters?: { policyType?: string; isActive?: boolean }): Promise<any[]> {
+    const searchParams = new URLSearchParams();
+    if (filters?.policyType) searchParams.set('policyType', filters.policyType);
+    if (filters?.isActive !== undefined) searchParams.set('isActive', String(filters.isActive));
+    const response = await this.request<{ success: boolean; data: any[] }>(`/policies/admin/all?${searchParams.toString()}`);
+    return response?.data || [];
+  }
+
+  async getPolicyVersionHistory(policyType: string): Promise<any[]> {
+    const response = await this.request<{ success: boolean; data: any[] }>(`/policies/admin/versions/${policyType}`);
+    return response?.data || [];
+  }
+
+  async addPolicyFAQ(policyType: string, data: { question: string; answer: string; category?: string }): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>(`/policies/${policyType}/faq`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return response?.data;
+  }
+
+  async deactivatePolicy(policyType: string): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>(`/policies/${policyType}/deactivate`, {
+      method: 'PATCH',
+    });
     return response?.data;
   }
 

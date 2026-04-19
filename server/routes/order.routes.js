@@ -6,6 +6,9 @@ const { verifyToken, attachUserIfPresent } = require('../middleware/authMiddlewa
 router.post('/', attachUserIfPresent, orderController.createOrder);
 router.get('/my_orders', verifyToken, orderController.getAllOrders);
 
+// Guest order recovery (for newly registered users)
+router.post('/recover-guest', verifyToken, orderController.recoverGuestOrders);
+
 //vendor
 router.get('/vendor/orders', verifyToken, orderController.getVendorOrders);
 router.get('/seller/orders', verifyToken, orderController.getVendorOrders);
@@ -24,6 +27,6 @@ router.put('/:id/status', verifyToken, orderController.adminUpdateOrderStatus);
 router.patch('/:id/payment-status', verifyToken, orderController.updatePaymentStatus);
 
 //Admin 
-router.post('/:id/verify-cod', orderController.verifyCOD);
+router.post('/:id/verify-cod', verifyToken, orderController.verifyCOD);
 
 module.exports = router;
