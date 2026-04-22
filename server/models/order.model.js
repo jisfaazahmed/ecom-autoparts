@@ -1,29 +1,36 @@
 const mongoose = require('mongoose');
 
-const UserSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  
-  // ENUMS MUST MATCH EXACTLY WHAT THE CONTROLLER SENDS
-  role: { 
-    type: String, 
-    default: 'USER', 
-    enum: ['USER', 'ADMIN', 'SUPER_ADMIN'] // <--- Verify these are UPPERCASE
+const orderItemSchema = new mongoose.Schema(
+  {
+    vendorProduct: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'VendorProduct',
+    },
+    product: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Product',
+    },
+    quantity: { type: Number, required: true, default: 1 },
+    price: { type: Number, required: true },
   },
-  
-  shopName: { type: String }, 
-  
-  status: { 
-    type: String, 
-    default: 'PENDING', 
-    enum: ['PENDING', 'APPROVED', 'REJECTED'] // <--- Verify these are UPPERCASE
-  }
-}, { timestamps: true });
+  { _id: false }
+);
 
-// Prevent "OverwriteModelError" while ensuring we use the NEW schema
-if (mongoose.models.User) {
-  delete mongoose.models.User;
-}
+const orderSchema = new mongoose.Schema(
+  {
+    vendor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    buyerName: String,
+    buyerEmail: String,
+    items: [orderItemSchema],
+    totalAmount: { type: Number, default: 0 },
+    status: { type: String, default: 'Pending' },
+    shippingAddress: String,
+  },
+  { timestamps: true }
+);
 
-module.exports = mongoose.model('User', UserSchema);
+module.exports = mongoose.models.Order || mongoose.model('Order', orderSchema);

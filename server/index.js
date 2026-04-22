@@ -18,6 +18,7 @@ const categoryRoutes = require('./routes/categoryRoutes');
 const productRoutes = require('./routes/productRoutes');
 const vendorProductRoutes = require('./routes/vendorProductRoutes');
 const OrderRoutes = require('./routes/order.routes');
+const vendorDashboardRoutes = require('./routes/vendorDashboardRoutes');
 
 const swaggerUI = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
@@ -62,6 +63,7 @@ app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/offers', vendorProductRoutes);
+app.use('/api/vendor/dashboard', vendorDashboardRoutes);
 app.use('/api/orders', OrderRoutes);  // Order Management
 app.use('/api/admin', require('./routes/admin.routes'));
 

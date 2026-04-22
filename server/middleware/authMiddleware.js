@@ -7,8 +7,8 @@ exports.verifyToken = (req, res, next) => {
   if (!token) return res.status(401).json({ message: 'No token, authorization denied' });
 
   try {
-    // In production, use process.env.JWT_SECRET
-    const decoded = jwt.verify(token, 'secret123'); 
+    const secret = process.env.JWT_SECRET || 'mysecretkey123';
+    const decoded = jwt.verify(token, secret);
     req.user = decoded.user;
     next();
   } catch (err) {
@@ -27,4 +27,11 @@ exports.isSuperAdmin = async (req, res, next) => {
   } catch (err) {
     res.status(500).send('Server Error');
   }
+};
+
+exports.requireVendor = (req, res, next) => {
+  if (!req.user || req.user.role !== 'ADMIN') {
+    return res.status(403).json({ message: 'Vendor access only.' });
+  }
+  next();
 };
