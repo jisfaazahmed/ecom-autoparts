@@ -4,6 +4,8 @@ const OrderItem = require('../models/orderItem.model');
 const Payment = require('../models/payment.model');
 const OrderTimeline = require('../models/timeline.model');
 const paymentService = require('./payment.service');
+const NotificationService = require('./notification.service');
+const InventoryReservationService = require('./inventoryReservation.service');
 const { randomInt } = require('crypto');
 
 class RefundService {
@@ -553,6 +555,16 @@ class RefundService {
             description: `Refund of LKR ${refund.refundAmount.totalRefund} processed successfully`,
             actorType: 'system'
         });
+
+        // Send refund completed notification
+        try {
+            const order = await Order.findById(refund.order);
+            if (order) {
+                await NotificationService.notifyRefundCompleted(order, refund, refund.refundAmount.totalRefund);
+            }
+        } catch (error) {
+            console.error('Error sending refund notification:', error);
+        }
     }
 
     async processBankTransferRefund(refund) {
@@ -571,6 +583,16 @@ class RefundService {
         });
 
         await refund.save();
+
+        // Send refund initiated notification
+        try {
+            const order = await Order.findById(refund.order);
+            if (order) {
+                await NotificationService.notifyRefundInitiated(order, refund, refund.refundAmount.totalRefund);
+            }
+        } catch (error) {
+            console.error('Error sending refund initiated notification:', error);
+        }
 
     }
 

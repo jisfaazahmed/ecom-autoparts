@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { AlertCircle, Loader2, ChevronDown } from 'lucide-react';
+import { AlertCircle, Loader2 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import { api } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,10 +35,80 @@ interface Policy {
   updatedAt?: string;
 }
 
+const RETURN_POLICY_FALLBACK: Policy = {
+  title: 'Return Policy',
+  description: 'Clear and fair return rules for parts, accessories, and vehicle-fitment orders.',
+  content: `
+    <p>We want you to shop with confidence. If a part does not fit, arrives damaged, or is not what you expected, you may request a return within the policy window below.</p>
+    <ul>
+      <li><strong>Standard return window:</strong> 30 days from delivery.</li>
+      <li><strong>Defective or incorrect items:</strong> up to 90 days from delivery.</li>
+      <li><strong>Restocking fee:</strong> may apply on opened, non-defective items.</li>
+      <li><strong>Condition:</strong> items must be unused, uninstalled, and returned with original packaging where applicable.</li>
+    </ul>
+  `,
+  sections: [
+    {
+      title: 'Eligibility for Returns',
+      order: 1,
+      content: `
+        <p>Returns are accepted for unused products in original condition. Items must include all accessories, manuals, and packaging. Electrical parts, fluids, special-order items, and installed components may be non-returnable unless they are defective on arrival.</p>
+      `,
+    },
+    {
+      title: 'How to Start a Return',
+      order: 2,
+      content: `
+        <ol>
+          <li>Go to <strong>My Orders</strong> and open the relevant order.</li>
+          <li>Choose the item you want to return and provide a reason.</li>
+          <li>Attach clear photos if the item is damaged, incorrect, or defective.</li>
+          <li>Wait for return approval and instructions from our support team.</li>
+        </ol>
+      `,
+    },
+    {
+      title: 'Refund Timing',
+      order: 3,
+      content: `
+        <p>Once the returned item is inspected and approved, refunds are processed to the original payment method. Bank and gateway transfers usually take 3-7 business days depending on the payment provider.</p>
+      `,
+    },
+    {
+      title: 'Items That Cannot Be Returned',
+      order: 4,
+      content: `
+        <p>Installed parts, custom-built items, clearance goods, opened fluids, and any product marked as non-returnable at checkout are excluded unless the item is defective or shipped incorrectly.</p>
+      `,
+    },
+  ],
+  faqItems: [
+    {
+      question: 'Can I return a part that I installed?',
+      answer: 'Installed items are generally not returnable unless the item was defective, damaged, or incorrectly supplied.',
+      category: 'returns',
+    },
+    {
+      question: 'Who pays the return shipping cost?',
+      answer: 'If we shipped the wrong or defective item, we cover return shipping. For change-of-mind returns, the customer may be responsible for shipping costs.',
+      category: 'returns',
+    },
+    {
+      question: 'How do I know if a part is compatible?',
+      answer: 'Always check the product compatibility notes and vehicle selector before ordering. If you are unsure, contact support before purchase.',
+      category: 'compatibility',
+    },
+  ],
+  metadata: {
+    returnDays: 30,
+    restockingFeePercentage: 5,
+    extendedForDefects: 90,
+  },
+};
+
 const ReturnPolicy: React.FC = () => {
-  const [policy, setPolicy] = useState<Policy | null>(null);
+  const [policy, setPolicy] = useState<Policy | null>(RETURN_POLICY_FALLBACK);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<string>('0');
 
   useEffect(() => {
@@ -46,9 +116,9 @@ const ReturnPolicy: React.FC = () => {
       try {
         setLoading(true);
         const data = await api.getPolicy('return');
-        setPolicy(data);
+        setPolicy(data || RETURN_POLICY_FALLBACK);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load return policy');
+        setPolicy(RETURN_POLICY_FALLBACK);
       } finally {
         setLoading(false);
       }
@@ -73,19 +143,7 @@ const ReturnPolicy: React.FC = () => {
       <Navbar />
       
       <div className="container mx-auto px-4 py-12 max-w-4xl">
-        {error ? (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            <Card className="border-red-500/50 bg-red-500/10">
-              <CardContent className="flex items-start gap-4 pt-6">
-                <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
-                <div>
-                  <h3 className="font-semibold text-red-500">Error</h3>
-                  <p className="text-red-400 text-sm">{error}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ) : policy ? (
+        {policy ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -123,7 +181,7 @@ const ReturnPolicy: React.FC = () => {
                       <div className="text-sm text-slate-400">Restocking Fee</div>
                     </div>
                   )}
-                  {policy.metadata.extendedForDefects && (
+                  {policy.metadata.extendedForDefects !== undefined && (
                     <div className="text-center">
                       <div className="text-3xl font-bold text-amber-400 mb-2">
                         {policy.metadata.extendedForDefects}

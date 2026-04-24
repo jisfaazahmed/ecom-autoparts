@@ -18,6 +18,7 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
+import NotificationBell from '@/components/notifications/NotificationBell';
 
 const Navbar: React.FC = () => {
   const location = useLocation();
@@ -126,6 +127,9 @@ const Navbar: React.FC = () => {
         <div className="flex items-center gap-2">
           {/* Theme Toggle */}
           <ThemeToggle />
+
+          {/* Notifications */}
+          {user && <NotificationBell />}
           
           {/* Cart */}
           <Link to="/cart">

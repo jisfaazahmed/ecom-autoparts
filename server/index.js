@@ -28,6 +28,9 @@ const couponRoutes = require('./routes/coupon.routes');
 const settlementRoutes = require('./routes/settlement.routes');
 const shopRoutes = require('./routes/shopRoutes');
 const policyRoutes = require('./routes/policy.routes');
+const notificationRoutes = require('./routes/notificationRoutes');
+const inventoryRoutes = require('./routes/inventoryRoutes');
+const BackgroundJobs = require('./jobs/backgroundJobs');
 const swaggerUI = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
 
@@ -45,6 +48,8 @@ app.use('/labels', express.static(path.join(__dirname, 'uploads', 'labels')));
 //MongoDB connection
 mongoose.connect(`mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_IP}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`).then(() => {
   console.log('Connected to MongoDB');
+  // Initialize background jobs after DB connection
+  BackgroundJobs.initializeJobs();
 }).catch((err) => {
   console.error('Error connecting to MongoDB:', err);
 });
@@ -71,6 +76,8 @@ app.use('/api/coupons', couponRoutes);
 app.use('/api/settlements', settlementRoutes);
 app.use('/api/shops', shopRoutes);
 app.use('/api/policies', policyRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/inventory', inventoryRoutes);
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpecs));
 console.log("📄 Documentation available at http://localhost:5000/api-docs");
 

@@ -28,19 +28,83 @@ interface Policy {
   };
 }
 
+const SHIPPING_POLICY_FALLBACK: Policy = {
+  title: 'Shipping Policy',
+  description: 'Delivery timelines, shipping charges, and tracking rules for your orders.',
+  content: `
+    <p>We ship automotive parts across the country using reliable courier partners. Shipping cost, delivery time, and carrier availability can vary depending on your delivery zone and package weight.</p>
+    <ul>
+      <li><strong>Metro/major cities:</strong> typically delivered in 1-3 business days.</li>
+      <li><strong>Other regions:</strong> typically delivered in 3-7 business days.</li>
+      <li><strong>Tracking:</strong> every dispatched order receives a tracking number.</li>
+      <li><strong>Free shipping:</strong> may apply for eligible orders above the minimum threshold.</li>
+    </ul>
+  `,
+  sections: [
+    {
+      title: 'Shipping Charges',
+      order: 1,
+      content: `
+        <p>Shipping charges are calculated at checkout based on package weight, delivery location, and selected service level. Express or same-day delivery, where available, will incur an additional charge.</p>
+      `,
+    },
+    {
+      title: 'Delivery Timeframes',
+      order: 2,
+      content: `
+        <p>Orders are usually processed within 24 hours on business days. Delivery estimates are provided at checkout and are subject to stock availability, courier capacity, and public holidays.</p>
+      `,
+    },
+    {
+      title: 'Tracking Your Order',
+      order: 3,
+      content: `
+        <p>Once your order ships, we send tracking details by email and/or in-app notification. You can use the tracking number on the carrier website or your order details page to monitor progress.</p>
+      `,
+    },
+    {
+      title: 'Delivery Issues',
+      order: 4,
+      content: `
+        <p>If your parcel arrives damaged, incomplete, or delayed beyond the expected window, contact our support team with your order number and photos if applicable. We will help resolve the issue as quickly as possible.</p>
+      `,
+    },
+  ],
+  faqItems: [
+    {
+      question: 'Do you offer free shipping?',
+      answer: 'Yes, eligible orders may qualify for free shipping once the minimum order threshold is met.',
+      category: 'shipping',
+    },
+    {
+      question: 'Can I change my delivery address after placing an order?',
+      answer: 'Address changes may be possible before dispatch. Contact support immediately if you need to update your address.',
+      category: 'shipping',
+    },
+    {
+      question: 'What if my package is delayed?',
+      answer: 'Check tracking first. If there is no update for a long time, contact support and we will coordinate with the courier.',
+      category: 'shipping',
+    },
+  ],
+  metadata: {
+    freeShippingThreshold: 15000,
+    shippingChargePolicy: 'Calculated by weight and delivery zone',
+  },
+};
+
 const ShippingPolicy: React.FC = () => {
-  const [policy, setPolicy] = useState<Policy | null>(null);
+  const [policy, setPolicy] = useState<Policy | null>(SHIPPING_POLICY_FALLBACK);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadPolicy = async () => {
       try {
         setLoading(true);
         const data = await api.getPolicy('shipping');
-        setPolicy(data);
+        setPolicy(data || SHIPPING_POLICY_FALLBACK);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load shipping policy');
+        setPolicy(SHIPPING_POLICY_FALLBACK);
       } finally {
         setLoading(false);
       }
@@ -65,19 +129,7 @@ const ShippingPolicy: React.FC = () => {
       <Navbar />
 
       <div className="container mx-auto px-4 py-12 max-w-4xl">
-        {error ? (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            <Card className="border-red-500/50 bg-red-500/10">
-              <CardContent className="flex items-start gap-4 pt-6">
-                <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
-                <div>
-                  <h3 className="font-semibold text-red-500">Error</h3>
-                  <p className="text-red-400 text-sm">{error}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ) : policy ? (
+        {policy ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

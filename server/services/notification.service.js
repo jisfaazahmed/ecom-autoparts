@@ -1,0 +1,289 @@
+const Notification = require('../models/notification.model');
+
+class NotificationService {
+    static async createNotification(userId, type, data) {
+        try {
+            const notificationTemplates = {
+                order_placed: {
+                    title: 'Order Placed Successfully',
+                    message: (data) => `Your order #${data.orderNumber} has been placed successfully!`,
+                    priority: 'normal'
+                },
+                order_confirmed: {
+                    title: 'Order Confirmed',
+                    message: (data) => `Order #${data.orderNumber} has been confirmed by the seller.`,
+                    priority: 'normal'
+                },
+                order_shipped: {
+                    title: 'Order Shipped',
+                    message: (data) => `Your order #${data.orderNumber} has been shipped! Tracking #${data.trackingNumber} via ${data.courierPartner}`,
+                    priority: 'high'
+                },
+                order_delivered: {
+                    title: 'Order Delivered',
+                    message: (data) => `Your order #${data.orderNumber} has been delivered successfully!`,
+                    priority: 'high'
+                },
+                refund_initiated: {
+                    title: 'Refund Initiated',
+                    message: (data) => `Refund of ₹${data.refundAmount} initiated for order #${data.orderNumber}.`,
+                    priority: 'high'
+                },
+                refund_completed: {
+                    title: 'Refund Completed',
+                    message: (data) => `Refund of ₹${data.refundAmount} completed for order #${data.orderNumber}.`,
+                    priority: 'high'
+                },
+                payment_failed: {
+                    title: 'Payment Failed',
+                    message: (data) => `Payment failed for order #${data.orderNumber}.`,
+                    priority: 'high'
+                },
+                payment_success: {
+                    title: 'Payment Successful',
+                    message: (data) => `Payment of ₹${data.paymentAmount} received for order #${data.orderNumber}.`,
+                    priority: 'high'
+                }
+            };
+
+            const template = notificationTemplates[type] || {
+                title: 'Notification',
+                message: () => 'You have a new notification',
+                priority: 'normal'
+            };
+
+            const notification = new Notification({
+                user: userId,
+                type,
+                order: data.orderId,
+                refund: data.refundId,
+                title: template.title,
+                message: typeof template.message === 'function' ? template.message(data) : template.message,
+                data: {
+                    orderNumber: data.orderNumber,
+                    trackingNumber: data.trackingNumber,
+                    courierPartner: data.courierPartner,
+                    refundAmount: data.refundAmount,
+                    paymentMethod: data.paymentMethod,
+                    paymentAmount: data.paymentAmount
+                },
+                priority: template.priority,
+                channel: data.channel || 'in_app'
+            });
+
+            await notification.save();
+            return notification;
+        } catch (error) {
+            console.error('Error creating notification:', error);
+            throw error;
+        }
+    }
+
+    static async getUserNotifications(userId, page = 1, limit = 10, filters = {}) {
+        try {
+            const query = { user: userId };
+            if (filters.type) query.type = filters.type;
+            if (filters.isRead !== undefined) query.isRead = filters.isRead;
+            if (filters.priority) query.priority = filters.priority;
+
+            const notifications = await Notification.find(query)
+                .populate('order', 'orderNumber')
+                .populate('refund', 'refundNumber')
+                .sort({ createdAt: -1 })
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .lean();
+
+            const total = await Notification.countDocuments(query);
+
+            return {
+                notifications,
+                total,
+                page,
+                limit,
+                pages: Math.ceil(total / limit)
+            };
+        } catch (error) {
+            console.error('Error fetching notifications:', error);
+            throw error;
+        }
+    }
+
+    static async markAsRead(notificationId, userId) {
+        try {
+            const notification = await Notification.findOneAndUpdate(
+                { _id: notificationId, user: userId },
+                { isRead: true, readAt: new Date() },
+                { new: true }
+            );
+
+            if (!notification) {
+                throw new Error('Notification not found');
+            }
+
+            return notification;
+        } catch (error) {
+            console.error('Error marking notification as read:', error);
+            throw error;
+        }
+    }
+
+    static async markAllAsRead(userId) {
+        try {
+            const result = await Notification.updateMany(
+                { user: userId, isRead: false },
+                { isRead: true, readAt: new Date() }
+            );
+            return result;
+        } catch (error) {
+            console.error('Error marking all notifications as read:', error);
+            throw error;
+        }
+    }
+
+    static async getUnreadCount(userId) {
+        try {
+            const count = await Notification.countDocuments({
+                user: userId,
+                isRead: false
+            });
+            return count;
+        } catch (error) {
+            console.error('Error getting unread count:', error);
+            throw error;
+        }
+    }
+
+    static async deleteNotification(notificationId, userId) {
+        try {
+            const result = await Notification.findOneAndDelete({
+                _id: notificationId,
+                user: userId
+            });
+
+            if (!result) {
+                throw new Error('Notification not found');
+            }
+
+            return result;
+        } catch (error) {
+            console.error('Error deleting notification:', error);
+            throw error;
+        }
+    }
+
+    static async deleteAllNotifications(userId) {
+        try {
+            const result = await Notification.deleteMany({ user: userId });
+            return result;
+        } catch (error) {
+            console.error('Error deleting all notifications:', error);
+            throw error;
+        }
+    }
+
+    static async notifyOrderCreated(order) {
+        try {
+            if (!order.user) return;
+            await this.createNotification(order.user, 'order_placed', {
+                orderId: order._id,
+                orderNumber: order.orderNumber
+            });
+        } catch (error) {
+            console.error('Error notifying order created:', error);
+        }
+    }
+
+    static async notifyOrderConfirmed(order) {
+        try {
+            if (!order.user) return;
+            await this.createNotification(order.user, 'order_confirmed', {
+                orderId: order._id,
+                orderNumber: order.orderNumber
+            });
+        } catch (error) {
+            console.error('Error notifying order confirmed:', error);
+        }
+    }
+
+    static async notifyOrderShipped(order, trackingNumber, courierPartner) {
+        try {
+            if (!order.user) return;
+            await this.createNotification(order.user, 'order_shipped', {
+                orderId: order._id,
+                orderNumber: order.orderNumber,
+                trackingNumber,
+                courierPartner
+            });
+        } catch (error) {
+            console.error('Error notifying order shipped:', error);
+        }
+    }
+
+    static async notifyOrderDelivered(order) {
+        try {
+            if (!order.user) return;
+            await this.createNotification(order.user, 'order_delivered', {
+                orderId: order._id,
+                orderNumber: order.orderNumber
+            });
+        } catch (error) {
+            console.error('Error notifying order delivered:', error);
+        }
+    }
+
+    static async notifyRefundInitiated(order, refund, refundAmount) {
+        try {
+            if (!order.user) return;
+            await this.createNotification(order.user, 'refund_initiated', {
+                orderId: order._id,
+                refundId: refund._id,
+                orderNumber: order.orderNumber,
+                refundAmount
+            });
+        } catch (error) {
+            console.error('Error notifying refund initiated:', error);
+        }
+    }
+
+    static async notifyRefundCompleted(order, refund, refundAmount) {
+        try {
+            if (!order.user) return;
+            await this.createNotification(order.user, 'refund_completed', {
+                orderId: order._id,
+                refundId: refund._id,
+                orderNumber: order.orderNumber,
+                refundAmount
+            });
+        } catch (error) {
+            console.error('Error notifying refund completed:', error);
+        }
+    }
+
+    static async notifyPaymentFailed(order) {
+        try {
+            if (!order.user) return;
+            await this.createNotification(order.user, 'payment_failed', {
+                orderId: order._id,
+                orderNumber: order.orderNumber
+            });
+        } catch (error) {
+            console.error('Error notifying payment failed:', error);
+        }
+    }
+
+    static async notifyPaymentSuccess(order, paymentAmount) {
+        try {
+            if (!order.user) return;
+            await this.createNotification(order.user, 'payment_success', {
+                orderId: order._id,
+                orderNumber: order.orderNumber,
+                paymentAmount
+            });
+        } catch (error) {
+            console.error('Error notifying payment success:', error);
+        }
+    }
+}
+
+module.exports = NotificationService;

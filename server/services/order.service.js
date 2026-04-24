@@ -6,6 +6,8 @@ const VendorProduct = require('../models/vendorProduct');
 const Coupon = require('../models/coupon.model');
 const User = require('../models/user');
 const OrderTimeLine = require('../models/timeline.model');
+const NotificationService = require('./notification.service');
+const InventoryReservationService = require('./inventoryReservation.service');
 
 class OrderService {
 
@@ -177,7 +179,7 @@ class OrderService {
                 throw new Error('No items provided for order');
             }
 
-            // Load products, resolve vendor ownership, and check stock
+            // Load products, resolve vendor ownership, and check stock with inventory service
             const enrichedItems = [];
             for (const item of items) {
                 const product = await Product.findById(item.productId || item.product);
@@ -189,8 +191,10 @@ class OrderService {
                     throw new Error(`${product.name} is currently unavailable for purchase`);
                 }
 
-                if (product.stock < item.quantity) {
-                    throw new Error(`${product.name} stock not available`);
+                // Check available stock using inventory reservation service
+                const availableStock = await InventoryReservationService.getAvailableStock(product._id);
+                if (availableStock < item.quantity) {
+                    throw new Error(`${product.name} stock not available. Available: ${availableStock}, Requested: ${item.quantity}`);
                 }
 
                 const resolvedVendorId = await this.resolveVendorForOrderItem(product, item);
@@ -258,8 +262,20 @@ class OrderService {
 
             await this.persistSubOrders(order, subOrders);
 
-            //stock update
+            // Create inventory reservations and deduct stock
             for (const { product, quantity } of enrichedItems) {
+                // Create reservation
+                try {
+                    await InventoryReservationService.reserveStock(
+                        product._id,
+                        userId,
+                        quantity
+                    );
+                } catch (error) {
+                    console.warn(`Warning: Could not create reservation for ${product.name}:`, error.message);
+                }
+
+                // Deduct stock
                 await Product.findByIdAndUpdate(
                     product._id,
                     { $inc: { stock: -quantity, soldCount: quantity } }
@@ -277,8 +293,8 @@ class OrderService {
                 metadata: { totalAmount, itemCount: orderItemDocs.length }
             }]);
 
-            //Notification
-            this.sendOrderNotification(order, 'order Placed');
+            // Send notification
+            await this.sendOrderNotification(order, 'order_placed');
 
             return order;
         
@@ -860,15 +876,37 @@ class OrderService {
         return subOrder;
     }
 
-    // Notification methods (stubs for development)
-    sendOrderNotification(order, event) {
-        console.log(`Order notification: ${event} for order ${order.orderNumber}`);
-        // TODO: Implement actual notification sending (email, SMS, push)
+    // Notification methods
+    async sendOrderNotification(order, event) {
+        try {
+            if (!order.user) return;
+
+            if (event === 'order_placed' || event === 'order Placed') {
+                await NotificationService.notifyOrderCreated(order);
+            } else if (event === 'order_confirmed') {
+                await NotificationService.notifyOrderConfirmed(order);
+            } else if (event === 'order_shipped') {
+                await NotificationService.notifyOrderShipped(order, order.trackingNumber, order.courierPartner);
+            } else if (event === 'order_delivered') {
+                await NotificationService.notifyOrderDelivered(order);
+            } else if (event === 'payment_failed') {
+                await NotificationService.notifyPaymentFailed(order);
+            } else if (event === 'payment_success') {
+                await NotificationService.notifyPaymentSuccess(order, order.totalAmount);
+            }
+
+            console.log(`✓ Order notification sent: ${event} for order ${order.orderNumber}`);
+        } catch (error) {
+            console.error(`✗ Error sending notification: ${event}`, error);
+        }
     }
 
-    sendOrderNotifications(order, event) {
-        console.log(`Order notifications: ${event} for order ${order.orderNumber}`);
-        // TODO: Implement actual notification sending to relevant parties
+    async sendOrderNotifications(order, event) {
+        try {
+            await this.sendOrderNotification(order, event);
+        } catch (error) {
+            console.error(`✗ Error sending order notifications: ${event}`, error);
+        }
     }
 
     // Coupon methods

@@ -1,5 +1,6 @@
 const Cart = require('../models/Cart');
 const Product = require('../models/product');
+const InventoryReservationService = require('../services/inventoryReservation.service');
 
 // Get user's cart
 exports.getCart = async (req, res) => {
@@ -38,11 +39,12 @@ exports.addToCart = async (req, res) => {
       });
     }
 
-    // Check stock availability
-    if (product.stock < quantity) {
+    // Check stock availability using inventory service
+    const availableStock = await InventoryReservationService.getAvailableStock(productId);
+    if (availableStock < quantity) {
       return res.status(400).json({ 
         success: false,
-        message: 'Insufficient stock available' 
+        message: `Insufficient stock available. Available: ${availableStock}, Requested: ${quantity}`
       });
     }
 
@@ -61,10 +63,10 @@ exports.addToCart = async (req, res) => {
       // Update quantity if item exists
       const newQuantity = cart.items[existingItemIndex].quantity + quantity;
       
-      if (product.stock < newQuantity) {
+      if (availableStock < newQuantity) {
         return res.status(400).json({ 
           success: false,
-          message: 'Insufficient stock for requested quantity' 
+          message: `Insufficient stock for requested quantity. Available: ${availableStock}`
         });
       }
       
@@ -116,10 +118,12 @@ exports.updateCartItem = async (req, res) => {
       });
     }
 
-    if (product.stock < quantity) {
+    // Check stock availability using inventory service
+    const availableStock = await InventoryReservationService.getAvailableStock(productId);
+    if (availableStock < quantity) {
       return res.status(400).json({ 
         success: false,
-        message: 'Insufficient stock available' 
+        message: `Insufficient stock available. Available: ${availableStock}, Requested: ${quantity}`
       });
     }
 

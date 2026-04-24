@@ -41,6 +41,7 @@ import ShippingPolicy from "./pages/ShippingPolicy";
 import CancellationPolicy from "./pages/CancellationPolicy";
 import TermsConditions from "./pages/TermsConditions";
 import NotFound from "./pages/NotFound";
+import NotificationToast from "@/components/notifications/NotificationToast";
 
 const queryClient = new QueryClient();
 
@@ -50,6 +51,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
+        <NotificationToast />
         <BrowserRouter>
           <Routes>
             {/* Public routes */}
