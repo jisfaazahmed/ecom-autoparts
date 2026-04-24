@@ -275,6 +275,43 @@ export interface StockCheckResult {
   sufficient: boolean;
 }
 
+export interface ApiNotification {
+  _id: string;
+  user: string;
+  type: string;
+  title: string;
+  message: string;
+  data?: {
+    orderNumber?: string;
+    trackingNumber?: string;
+    courierPartner?: string;
+    refundAmount?: number;
+    paymentMethod?: string;
+    reason?: string;
+  };
+  priority: 'low' | 'normal' | 'high';
+  channel: 'in_app' | 'email' | 'sms' | 'push';
+  isRead: boolean;
+  readAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiNotificationListResponse {
+  notifications: ApiNotification[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
+
+export interface ApiStockSummary {
+  totalStock: number;
+  reserved: number;
+  available: number;
+  reservationCount: number;
+}
+
 export interface ApiOrderTimelineEvent {
   event: string;
   title: string;
@@ -1783,6 +1820,107 @@ class ApiClient {
       method: 'PATCH',
     });
     return response?.data;
+  }
+
+  // ============ NOTIFICATIONS ============
+
+  async getNotifications(params?: {
+    page?: number;
+    limit?: number;
+    type?: string;
+    isRead?: boolean;
+    priority?: 'low' | 'normal' | 'high';
+  }): Promise<ApiNotificationListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const queryString = searchParams.toString();
+    const response = await this.request<{ success: boolean; data: ApiNotificationListResponse }>(
+      `/notifications${queryString ? `?${queryString}` : ''}`
+    );
+
+    return response?.data || {
+      notifications: [],
+      total: 0,
+      page: params?.page || 1,
+      limit: params?.limit || 10,
+      pages: 0,
+    };
+  }
+
+  async getUnreadNotificationCount(): Promise<number> {
+    const response = await this.request<{ success: boolean; unreadCount: number }>(
+      '/notifications/unread/count'
+    );
+    return response?.unreadCount ?? 0;
+  }
+
+  async markNotificationAsRead(notificationId: string): Promise<ApiNotification> {
+    const response = await this.request<{ success: boolean; data: ApiNotification }>(
+      `/notifications/${notificationId}/read`,
+      { method: 'PUT' }
+    );
+    return response.data;
+  }
+
+  async markAllNotificationsAsRead(): Promise<{ modifiedCount?: number; matchedCount?: number }> {
+    const response = await this.request<{ success: boolean; data: { modifiedCount?: number; matchedCount?: number } }>(
+      '/notifications/read/all',
+      { method: 'PUT' }
+    );
+    return response?.data || {};
+  }
+
+  async deleteNotification(notificationId: string): Promise<void> {
+    await this.request(`/notifications/${notificationId}`, { method: 'DELETE' });
+  }
+
+  async deleteAllNotifications(): Promise<{ deletedCount?: number }> {
+    const response = await this.request<{ success: boolean; data: { deletedCount?: number } }>(
+      '/notifications',
+      { method: 'DELETE' }
+    );
+    return response?.data || {};
+  }
+
+  // ============ INVENTORY ============
+
+  async checkStockAvailability(productId: string, quantity: number): Promise<boolean> {
+    const response = await this.request<{ success: boolean; available?: boolean }>(
+      '/inventory/check-availability',
+      {
+        method: 'POST',
+        body: JSON.stringify({ productId, quantity }),
+      }
+    );
+
+    return !!response?.available;
+  }
+
+  async getAvailableStock(productId: string): Promise<number> {
+    const response = await this.request<{ success: boolean; data?: { available?: number } }>(
+      `/inventory/available/${productId}`
+    );
+    return response?.data?.available ?? 0;
+  }
+
+  async getStockSummary(productId: string): Promise<ApiStockSummary> {
+    const response = await this.request<{ success: boolean; data: ApiStockSummary }>(
+      `/inventory/summary/${productId}`
+    );
+
+    return response?.data || {
+      totalStock: 0,
+      reserved: 0,
+      available: 0,
+      reservationCount: 0,
+    };
   }
 
   // ============ FILE UPLOAD ============
