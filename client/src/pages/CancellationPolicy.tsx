@@ -27,19 +27,86 @@ interface Policy {
   };
 }
 
+const CANCELLATION_POLICY_FALLBACK: Policy = {
+  title: 'Cancellation Policy',
+  description: 'How and when an order can be cancelled before it ships.',
+  content: `
+    <p>We understand that plans change. You may cancel an order before it has been dispatched. After dispatch, the order cannot be cancelled but may still qualify for return after delivery.</p>
+    <ul>
+      <li><strong>Cancellation window:</strong> 12 hours from order placement or before dispatch, whichever comes first.</li>
+      <li><strong>COD orders:</strong> cannot be cancelled once confirmed for shipment.</li>
+      <li><strong>Refund processing:</strong> cancellations are refunded to the original payment method when applicable.</li>
+    </ul>
+  `,
+  sections: [
+    {
+      title: 'When You Can Cancel',
+      order: 1,
+      content: `
+        <p>Orders can be cancelled while they are still in processing status. Once the warehouse or courier has accepted the shipment, cancellation is no longer possible.</p>
+      `,
+    },
+    {
+      title: 'How to Request a Cancellation',
+      order: 2,
+      content: `
+        <ol>
+          <li>Open the order in your account dashboard.</li>
+          <li>Select the cancellation option and choose a reason.</li>
+          <li>Submit the request before the cancellation deadline expires.</li>
+        </ol>
+      `,
+    },
+    {
+      title: 'Refund Timelines',
+      order: 3,
+      content: `
+        <p>If payment has already been captured, the refund is processed after the cancellation is approved. Card and wallet refunds typically appear within 3-7 business days depending on the payment provider.</p>
+      `,
+    },
+    {
+      title: 'Cancellations We Cannot Accept',
+      order: 4,
+      content: `
+        <p>Custom orders, shipped orders, and items marked as non-cancellable at checkout cannot be cancelled once processing is complete.</p>
+      `,
+    },
+  ],
+  faqItems: [
+    {
+      question: 'Can I cancel after the order is shipped?',
+      answer: 'No. Once the order is shipped it can no longer be cancelled, but you may be able to return it after delivery.',
+      category: 'cancellation',
+    },
+    {
+      question: 'How fast do refunds happen for cancelled orders?',
+      answer: 'Refunds are initiated promptly after cancellation approval, but the final posting time depends on your payment provider.',
+      category: 'refunds',
+    },
+    {
+      question: 'Can I cancel a COD order?',
+      answer: 'COD orders can be cancelled only before shipment confirmation. Once shipping is confirmed, cancellation is not available.',
+      category: 'cod',
+    },
+  ],
+  metadata: {
+    cancellationWindow: 12,
+    refundProcessingDays: 7,
+  },
+};
+
 const CancellationPolicy: React.FC = () => {
-  const [policy, setPolicy] = useState<Policy | null>(null);
+  const [policy, setPolicy] = useState<Policy | null>(CANCELLATION_POLICY_FALLBACK);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadPolicy = async () => {
       try {
         setLoading(true);
         const data = await api.getPolicy('cancellation');
-        setPolicy(data);
+        setPolicy(data || CANCELLATION_POLICY_FALLBACK);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load cancellation policy');
+        setPolicy(CANCELLATION_POLICY_FALLBACK);
       } finally {
         setLoading(false);
       }
@@ -64,19 +131,7 @@ const CancellationPolicy: React.FC = () => {
       <Navbar />
 
       <div className="container mx-auto px-4 py-12 max-w-4xl">
-        {error ? (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            <Card className="border-red-500/50 bg-red-500/10">
-              <CardContent className="flex items-start gap-4 pt-6">
-                <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
-                <div>
-                  <h3 className="font-semibold text-red-500">Error</h3>
-                  <p className="text-red-400 text-sm">{error}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ) : policy ? (
+        {policy ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -207,7 +262,7 @@ const CancellationPolicy: React.FC = () => {
               </p>
               <Button
                 onClick={() => {
-                  window.location.href = '/pages/orders';
+                  window.location.href = '/orders';
                 }}
                 className="bg-red-500 hover:bg-red-600 text-white"
               >

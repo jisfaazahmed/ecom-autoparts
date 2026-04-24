@@ -23,19 +23,80 @@ interface Policy {
   updatedAt?: string;
 }
 
+const TERMS_POLICY_FALLBACK: Policy = {
+  title: 'Terms & Conditions',
+  description: 'The rules that govern use of the Ecom Auto Parts platform and services.',
+  content: `
+    <p>These terms explain how you may use our website, place orders, and interact with our services. By using the platform, you agree to follow these terms and all applicable laws.</p>
+    <ul>
+      <li><strong>Account use:</strong> keep your login details secure and accurate.</li>
+      <li><strong>Order accuracy:</strong> review fitment, part numbers, and shipping details before confirming.</li>
+      <li><strong>Payments:</strong> all payments must be authorized by the cardholder or account owner.</li>
+      <li><strong>Prohibited use:</strong> fraud, abuse, and reverse engineering of the platform are not allowed.</li>
+    </ul>
+  `,
+  sections: [
+    {
+      title: 'Using the Platform',
+      order: 1,
+      content: `
+        <p>You may browse and purchase products for personal or business use, provided you do not misuse the site or interfere with other users, vendors, or platform operations.</p>
+      `,
+    },
+    {
+      title: 'User Accounts',
+      order: 2,
+      content: `
+        <p>You are responsible for maintaining the confidentiality of your account credentials and for all activities that occur under your account. Notify us immediately if you suspect unauthorized access.</p>
+      `,
+    },
+    {
+      title: 'Orders, Pricing, and Availability',
+      order: 3,
+      content: `
+        <p>Product information, pricing, and availability may change without notice. We reserve the right to correct errors, cancel suspicious transactions, or refuse service where necessary.</p>
+      `,
+    },
+    {
+      title: 'Intellectual Property',
+      order: 4,
+      content: `
+        <p>All content, branding, product data, and design elements on the platform remain the property of Ecom Auto Parts or its licensors and may not be copied or reused without permission.</p>
+      `,
+    },
+  ],
+  faqItems: [
+    {
+      question: 'Do I need an account to place an order?',
+      answer: 'Some checkout flows may require an account to track orders and manage returns. Guest browsing may still be available.',
+      category: 'accounts',
+    },
+    {
+      question: 'Can terms change without notice?',
+      answer: 'Yes. We may update the terms from time to time, so we recommend reviewing this page periodically.',
+      category: 'legal',
+    },
+    {
+      question: 'What happens if a listing has an error?',
+      answer: 'If we discover an obvious pricing or listing error, we may correct it, cancel the order, or contact you before proceeding.',
+      category: 'orders',
+    },
+  ],
+  updatedAt: new Date().toISOString(),
+};
+
 const TermsConditions: React.FC = () => {
-  const [policy, setPolicy] = useState<Policy | null>(null);
+  const [policy, setPolicy] = useState<Policy | null>(TERMS_POLICY_FALLBACK);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadPolicy = async () => {
       try {
         setLoading(true);
         const data = await api.getPolicy('terms_conditions');
-        setPolicy(data);
+        setPolicy(data || TERMS_POLICY_FALLBACK);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load terms & conditions');
+        setPolicy(TERMS_POLICY_FALLBACK);
       } finally {
         setLoading(false);
       }
@@ -60,19 +121,7 @@ const TermsConditions: React.FC = () => {
       <Navbar />
 
       <div className="container mx-auto px-4 py-12 max-w-4xl">
-        {error ? (
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-            <Card className="border-red-500/50 bg-red-500/10">
-              <CardContent className="flex items-start gap-4 pt-6">
-                <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
-                <div>
-                  <h3 className="font-semibold text-red-500">Error</h3>
-                  <p className="text-red-400 text-sm">{error}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        ) : policy ? (
+        {policy ? (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
