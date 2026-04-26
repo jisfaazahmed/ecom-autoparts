@@ -16,8 +16,13 @@ const productSchema = new mongoose.Schema({
     required: true
   },
 
-  // 3. The Link to "Tesla > Model S" (The Fitment Engine)
-  // This array lists EVERY car ID this part fits.
+  // 3. Compatible VehicleVariants
+  compatibleVehicleVariants: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'VehicleVariant'
+  }],
+
+  // Legacy compatibility field still used by existing routes/controllers.
   compatibleVehicles: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Vehicle'
@@ -39,6 +44,7 @@ const productSchema = new mongoose.Schema({
 
 // Index for fast searching by Category and Vehicle
 productSchema.index({ category: 1, compatibleVehicles: 1 });
+productSchema.index({ category: 1, compatibleVehicleVariants: 1 });
 
 // Text index for search functionality (name, description, partNumber)
 productSchema.index({ name: 'text', description: 'text', partNumber: 'text' });
