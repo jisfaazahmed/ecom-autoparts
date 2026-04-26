@@ -44,7 +44,8 @@ const Shop: React.FC = () => {
   
   const [search, setSearch] = useState(searchFromUrl);
   const [selectedCategory, setSelectedCategory] = useState(categoryFromUrl);
-  const [priceRange, setPriceRange] = useState([0, 500000]);
+  const maxPrice = 50000;
+  const [priceRange, setPriceRange] = useState([0, maxPrice]);
   const [sortBy, setSortBy] = useState('featured');
   const [showCompatibleOnly, setShowCompatibleOnly] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -245,10 +246,10 @@ const Shop: React.FC = () => {
           Price Range: LKR {priceRange[0].toLocaleString()} - LKR {priceRange[1].toLocaleString()}
         </Label>
         <Slider
-          value={priceRange}
-          onValueChange={setPriceRange}
+          defaultValue={priceRange}
+          onValueCommit={setPriceRange}
           min={0}
-          max={500000}
+          max={maxPrice}
           step={1000}
           className="py-4"
         />
@@ -260,7 +261,7 @@ const Shop: React.FC = () => {
         className="w-full"
         onClick={() => {
           setSelectedCategory('all');
-          setPriceRange([0, 500000]);
+          setPriceRange([0, maxPrice]);
           setSearch('');
         }}
       >
@@ -399,7 +400,7 @@ const Shop: React.FC = () => {
                   variant="outline"
                   onClick={() => {
                     setSelectedCategory('all');
-                    setPriceRange([0, 500000]);
+                    setPriceRange([0, maxPrice]);
                     setSearch('');
                     setShowCompatibleOnly(false);
                   }}
