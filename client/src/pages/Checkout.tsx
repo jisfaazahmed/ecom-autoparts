@@ -165,8 +165,7 @@ export default function Checkout() {
   const { user } = useAuth();
 
   const [step, setStep] = useState(1);
-  const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'cod'>('stripe');
-  const [cardFlow, setCardFlow] = useState<'inline' | 'redirect'>((stripePromise || useStripeMock) ? 'inline' : 'redirect');
+  const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'wallet' | 'cod'>('stripe');
   const [confirmInlineCard, setConfirmInlineCard] = useState<ConfirmInlineCardFn | null>(null);
   const [mockCard, setMockCard] = useState<MockCardInput>({
     cardNumber: '4242 4242 4242 4242',
@@ -183,6 +182,11 @@ export default function Checkout() {
   const [appliedCoupon, setAppliedCoupon] = useState<ApiCoupon | null>(null);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [walletOtp, setWalletOtp] = useState('');
+  const [walletPendingOrderId, setWalletPendingOrderId] = useState<string | null>(null);
+  const [walletMockOtpHint, setWalletMockOtpHint] = useState<string | null>(null);
   
   const [savedAddresses, setSavedAddresses] = useState<ApiAddress[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>('new');
@@ -258,6 +262,16 @@ export default function Checkout() {
       }).catch(console.error);
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!user || paymentMethod !== 'wallet') return;
+
+    setWalletLoading(true);
+    api.getWalletBalance()
+      .then((wallet) => setWalletBalance(Number(wallet.balance || 0)))
+      .catch(() => setWalletBalance(0))
+      .finally(() => setWalletLoading(false));
+  }, [user, paymentMethod]);
 
   const handleAddressSelect = (addrId: string) => {
     setSelectedAddressId(addrId);
@@ -413,57 +427,6 @@ export default function Checkout() {
     return true;
   };
 
-  const handleStripeCheckout = async () => {
-    if (stockIssues.length > 0) {
-      toast.error('Please resolve stock issues before checkout');
-      return;
-    }
-
-    if (!validateShippingForm()) {
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      const orderItems = validCart.map((item) => ({
-        productId: item.product.id || item.product._id || item.id,
-        quantity: item.quantity,
-      }));
-
-      // First create the order
-      const order = await api.createOrder({
-        items: orderItems,
-        shippingAddress: form.address,
-        shippingCity: form.city,
-        shippingPostalCode: form.postalCode,
-        fullName: form.fullName,
-        phone: form.phone,
-        shippingCountry: 'Sri Lanka',
-        paymentMethod: 'card',
-        shopId,
-        couponCode: appliedCoupon?.code,
-      });
-
-      // Then create checkout session with the orderId
-      const result = await api.createCheckoutSession({
-        orderId: order.id,
-      });
-
-      // Redirect to Stripe Checkout
-      if (result.url) {
-        window.location.href = result.url;
-      } else {
-        throw new Error('No checkout URL returned');
-      }
-    } catch (error) {
-      console.error('Checkout error:', error);
-      toast.error('Failed to create checkout session');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleInlineCardCheckout = async () => {
     if (stockIssues.length > 0) {
       toast.error('Please resolve stock issues before checkout');
@@ -608,13 +571,87 @@ export default function Checkout() {
     }
   };
 
+  const handleWalletCheckout = async () => {
+    if (stockIssues.length > 0) {
+      toast.error('Please resolve stock issues before checkout');
+      return;
+    }
+
+    if (!validateShippingForm()) {
+      return;
+    }
+
+    if (!user?.id) {
+      toast.error('Please sign in before paying with wallet');
+      navigate('/auth/customer', {
+        replace: true,
+        state: { message: 'Sign in to continue with wallet payment.' },
+      });
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      let orderId = walletPendingOrderId;
+
+      if (!orderId) {
+        const orderItems = validCart.map((item) => ({
+          productId: item.product.id || item.product._id || item.id,
+          quantity: item.quantity,
+        }));
+
+        const order = await api.createOrder({
+          items: orderItems,
+          shippingAddress: form.address,
+          shippingCity: form.city,
+          shippingPostalCode: form.postalCode,
+          fullName: form.fullName,
+          phone: form.phone,
+          shippingCountry: 'Sri Lanka',
+          paymentMethod: 'wallet',
+          shopId,
+          couponCode: appliedCoupon?.code,
+        });
+
+        orderId = order.id || order._id || null;
+        if (!orderId) {
+          throw new Error('Wallet order created but order ID was not returned');
+        }
+      }
+
+      const walletResult = await api.payWithWallet({
+        orderId,
+        otp: walletOtp.trim() || undefined,
+      });
+
+      if (walletResult.requiresOtp) {
+        setWalletPendingOrderId(orderId);
+        setWalletMockOtpHint(walletResult.mockOtp || null);
+        toast.info('OTP sent. Please enter OTP to confirm wallet payment.');
+        return;
+      }
+
+      setWalletBalance(Number(walletResult.balance || walletBalance));
+      setWalletPendingOrderId(null);
+      setWalletMockOtpHint(null);
+      setWalletOtp('');
+      clearCart();
+      toast.success('Wallet payment completed successfully!');
+      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&method=wallet`);
+    } catch (error) {
+      console.error('Wallet checkout error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to process wallet payment');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCheckout = () => {
     if (paymentMethod === 'stripe') {
-      if (cardFlow === 'inline') {
-        handleInlineCardCheckout();
-      } else {
-        handleStripeCheckout();
-      }
+      handleInlineCardCheckout();
+    } else if (paymentMethod === 'wallet') {
+      handleWalletCheckout();
     } else {
       handleCODCheckout();
     }
@@ -864,8 +901,8 @@ export default function Checkout() {
                     <RadioGroup
                       value={paymentMethod}
                       onValueChange={(value) => {
-                        if (value === 'stripe' || value === 'cod') {
-                          setPaymentMethod(value);
+                        if (value === 'stripe' || value === 'wallet' || value === 'cod') {
+                          setPaymentMethod(value as 'stripe' | 'wallet' | 'cod');
                         }
                       }}
                       className="space-y-4 mb-8"
@@ -908,6 +945,39 @@ export default function Checkout() {
                         )}
                       </motion.div>
 
+                      {/* Wallet Option */}
+                      <motion.div
+                        whileHover={{ scale: 1.01 }}
+                        whileTap={{ scale: 0.98 }}
+                        className={`
+                          relative p-6 rounded-xl border-2 cursor-pointer transition-all
+                          ${paymentMethod === 'wallet'
+                            ? 'border-primary bg-primary/5 shadow-lg shadow-primary/10'
+                            : 'border-border hover:border-muted-foreground/50 bg-background'}
+                        `}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-4 flex-1">
+                            <RadioGroupItem value="wallet" id="wallet" className="mt-1" />
+                            <Label htmlFor="wallet" className="flex-1 cursor-pointer">
+                              <span className="text-base font-semibold block">Wallet</span>
+                              <span className="text-sm text-muted-foreground mt-1 block">Use your wallet balance with OTP verification.</span>
+                            </Label>
+                          </div>
+                          <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-700 border-0">
+                            {walletLoading ? 'Loading...' : `Balance: ${formatLKR(walletBalance)}`}
+                          </Badge>
+                        </div>
+                        {paymentMethod === 'wallet' && (
+                          <motion.div
+                            layoutId="selected-indicator"
+                            className="absolute top-3 right-3 p-1.5 bg-primary rounded-full"
+                          >
+                            <Check className="h-4 w-4 text-white" />
+                          </motion.div>
+                        )}
+                      </motion.div>
+
                       {/* Cash on Delivery Option */}
                       <motion.div
                         whileHover={{ scale: 1.01 }}
@@ -940,39 +1010,23 @@ export default function Checkout() {
                     {paymentMethod === 'stripe' && (
                       <div className="mt-4 space-y-4 rounded-xl border border-primary/20 bg-gradient-to-br from-primary/10 via-background to-background p-5">
                         <div className="flex items-center justify-between">
-                          <p className="text-sm font-semibold">Card Processing Method</p>
+                          <p className="text-sm font-semibold">Card Processing</p>
                           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
                             <ShieldCheck className="h-3.5 w-3.5" />
-                            PCI-ready flow
+                            {useStripeMock ? 'Stripe mock API' : 'PCI-ready flow'}
                           </div>
                         </div>
-                        <RadioGroup
-                          value={cardFlow}
-                          onValueChange={(v) => setCardFlow(v as 'inline' | 'redirect')}
-                          className="space-y-3"
-                        >
-                          <div className="flex items-start space-x-3 rounded-lg border border-border/70 bg-background/70 p-4">
-                            <RadioGroupItem value="inline" id="inline-card" disabled={!stripePromise && !useStripeMock} />
-                            <Label htmlFor="inline-card" className="cursor-pointer">
-                              <div className="font-medium">Add card here (inline form)</div>
-                              <div className="text-xs text-muted-foreground">
-                                {useStripeMock
-                                  ? 'Mock card flow enabled for development with Stripe-like behavior.'
-                                  : 'Enter card in checkout and pay without redirect.'}
-                              </div>
-                            </Label>
+                        <div className="flex items-start space-x-3 rounded-lg border border-border/70 bg-background/70 p-4">
+                          <div className="mt-1 h-4 w-4 rounded-full border-2 border-primary bg-primary" />
+                          <div>
+                            <div className="font-medium">In-page card form</div>
+                            <div className="text-xs text-muted-foreground">
+                              {useStripeMock
+                                ? 'Mock card flow enabled for development with Stripe-like behavior.'
+                                : 'Enter card details directly in checkout without leaving your site.'}
+                            </div>
                           </div>
-
-                          <div className="flex items-start space-x-3 rounded-lg border border-border/70 bg-background/70 p-4">
-                            <RadioGroupItem value="redirect" id="redirect-card" />
-                            <Label htmlFor="redirect-card" className="cursor-pointer">
-                              <div className="font-medium">Stripe hosted checkout</div>
-                              <div className="text-xs text-muted-foreground">
-                                Redirect to Stripe page to add card and pay.
-                              </div>
-                            </Label>
-                          </div>
-                        </RadioGroup>
+                        </div>
 
                         {!stripePromise && !useStripeMock && (
                           <Alert>
@@ -990,6 +1044,30 @@ export default function Checkout() {
                               Mock mode is active. This simulates card processing via your Stripe mock backend.
                             </AlertDescription>
                           </Alert>
+                        )}
+                      </div>
+                    )}
+
+                    {paymentMethod === 'wallet' && (
+                      <div className="mt-4 space-y-3 rounded-xl border border-emerald-300/40 bg-emerald-50/40 p-5">
+                        <p className="text-sm font-medium">Wallet balance: {formatLKR(walletBalance)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          For higher-value payments, OTP confirmation is required.
+                        </p>
+                        {walletPendingOrderId && (
+                          <>
+                            <Label htmlFor="wallet-otp">Enter Wallet OTP</Label>
+                            <Input
+                              id="wallet-otp"
+                              value={walletOtp}
+                              onChange={(e) => setWalletOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                              placeholder="6-digit OTP"
+                              inputMode="numeric"
+                            />
+                            {walletMockOtpHint && (
+                              <p className="text-xs text-muted-foreground">Mock OTP: {walletMockOtpHint}</p>
+                            )}
+                          </>
                         )}
                       </div>
                     )}
@@ -1066,14 +1144,14 @@ export default function Checkout() {
                       <h4 className="font-medium mb-2">Payment Method</h4>
                       <p className="text-muted-foreground text-sm">
                         {paymentMethod === 'stripe'
-                          ? cardFlow === 'inline'
-                            ? 'Credit / Debit Card (Stripe inline)'
-                            : 'Credit / Debit Card (Stripe hosted checkout)'
+                          ? 'Credit / Debit Card (In-page)' 
+                          : paymentMethod === 'wallet'
+                            ? 'Wallet (OTP secured)'
                           : 'Cash on Delivery'}
                       </p>
                     </div>
 
-                    {paymentMethod === 'stripe' && cardFlow === 'inline' && stripePromise && (
+                    {paymentMethod === 'stripe' && stripePromise && (
                       <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-background p-5">
                         <Elements stripe={stripePromise}>
                           <InlineCardForm
@@ -1084,7 +1162,7 @@ export default function Checkout() {
                       </div>
                     )}
 
-                    {paymentMethod === 'stripe' && cardFlow === 'inline' && !stripePromise && useStripeMock && (
+                    {paymentMethod === 'stripe' && !stripePromise && useStripeMock && (
                       <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-background p-5 space-y-4">
                         <div className="flex items-center justify-between">
                           <p className="text-sm font-semibold">Mock Card Details</p>
@@ -1133,6 +1211,27 @@ export default function Checkout() {
                       </div>
                     )}
 
+                    {paymentMethod === 'wallet' && (
+                      <div className="rounded-xl border border-emerald-300/40 bg-emerald-50/40 p-5 space-y-3">
+                        <p className="text-sm font-medium">Wallet balance: {formatLKR(walletBalance)}</p>
+                        {walletPendingOrderId && (
+                          <>
+                            <Label htmlFor="wallet-otp-review">Wallet OTP</Label>
+                            <Input
+                              id="wallet-otp-review"
+                              value={walletOtp}
+                              onChange={(e) => setWalletOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                              placeholder="Enter OTP"
+                              inputMode="numeric"
+                            />
+                            {walletMockOtpHint && (
+                              <p className="text-xs text-muted-foreground">Mock OTP: {walletMockOtpHint}</p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex gap-3 mt-6">
                       <Button variant="outline" onClick={() => setStep(2)}>
                         Back
@@ -1148,7 +1247,9 @@ export default function Checkout() {
                             Processing...
                           </>
                         ) : paymentMethod === 'stripe' ? (
-                          cardFlow === 'inline' ? 'Pay Card Now' : 'Pay with Stripe'
+                          'Pay Card Now'
+                        ) : paymentMethod === 'wallet' ? (
+                          walletPendingOrderId ? 'Verify OTP & Pay' : 'Pay With Wallet'
                         ) : (
                           'Place Order'
                         )}

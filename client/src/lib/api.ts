@@ -1515,12 +1515,14 @@ class ApiClient {
     return response.data || response;
   }
 
-  async createPaymentIntent(data: { orderId: string }): Promise<{
+  async createPaymentIntent(data: { orderId: string; mockScenario?: 'requires_action' | 'fail_once' | 'always_fail' }): Promise<{
     paymentIntentId: string;
     clientSecret: string;
     amount: number;
     currency: string;
     mockMode?: boolean;
+    requiresAction?: boolean;
+    nextAction?: any;
   }> {
     const response = await this.request<{
       paymentIntentId: string;
@@ -1528,12 +1530,16 @@ class ApiClient {
       amount: number;
       currency: string;
       mockMode?: boolean;
+      requiresAction?: boolean;
+      nextAction?: any;
       data?: {
         paymentIntentId: string;
         clientSecret: string;
         amount: number;
         currency: string;
         mockMode?: boolean;
+        requiresAction?: boolean;
+        nextAction?: any;
       };
     }>('/payments/create-payment-intent', {
       method: 'POST',
@@ -1543,21 +1549,80 @@ class ApiClient {
     return response.data || response;
   }
 
-  async confirmPaymentIntent(data: { orderId: string; paymentIntentId: string }): Promise<{
+  async confirmPaymentIntent(data: { orderId: string; paymentIntentId: string; otp?: string }): Promise<{
     orderId: string;
     paymentIntentId: string;
     paymentStatus: string;
+    requiresAction?: boolean;
+    retryCount?: number;
+    retryEligible?: boolean;
+    nextAction?: any;
   }> {
     const response = await this.request<{
       orderId: string;
       paymentIntentId: string;
       paymentStatus: string;
+      requiresAction?: boolean;
+      retryCount?: number;
+      retryEligible?: boolean;
+      nextAction?: any;
       data?: {
         orderId: string;
         paymentIntentId: string;
         paymentStatus: string;
+        requiresAction?: boolean;
+        retryCount?: number;
+        retryEligible?: boolean;
+        nextAction?: any;
       };
     }>('/payments/confirm-payment-intent', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    return response.data || response;
+  }
+
+  async retryPaymentIntent(data: { orderId: string; paymentIntentId: string; otp?: string }): Promise<{
+    orderId: string;
+    paymentIntentId: string;
+    paymentStatus: string;
+    requiresAction?: boolean;
+    retryCount?: number;
+    retryEligible?: boolean;
+    nextAction?: any;
+  }> {
+    const response = await this.request<any>('/payments/retry-payment-intent', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    return response.data || response;
+  }
+
+  async getWalletBalance(): Promise<{ balance: number }> {
+    const response = await this.request<any>('/payments/wallet/balance');
+    return response.data || response;
+  }
+
+  async topupWalletMock(amount: number): Promise<{ balance: number }> {
+    const response = await this.request<any>('/payments/wallet/topup-mock', {
+      method: 'POST',
+      body: JSON.stringify({ amount }),
+    });
+    return response.data || response;
+  }
+
+  async payWithWallet(data: { orderId: string; otp?: string }): Promise<{
+    orderId?: string;
+    paymentId?: string;
+    paymentStatus?: string;
+    balance?: number;
+    requiresOtp?: boolean;
+    mockOtp?: string;
+    expiresAt?: string;
+  }> {
+    const response = await this.request<any>('/payments/wallet/pay', {
       method: 'POST',
       body: JSON.stringify(data),
     });
