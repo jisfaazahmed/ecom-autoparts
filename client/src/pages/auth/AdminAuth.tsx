@@ -55,7 +55,7 @@ const AdminAuth: React.FC = () => {
       });
       setShowForgotPassword(false);
       setResetEmail('');
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: 'Reset Failed',
         description: error.message || 'Failed to send reset email',

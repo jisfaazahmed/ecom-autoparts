@@ -1,49 +1,46 @@
 const User = require('../models/user')
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 
 exports.register = async (req, res) => {
   try {
-    // Accept both 'name' and 'fullName' from frontend
-    const { name, fullName, email, password, role, shopName, phone } = req.body;
-    const userName = name || fullName;
+    const { name, fullName, email, password, role, shopName } = req.body;
+    const displayName = name || fullName;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedRole = role || 'CUSTOMER';
 
-    if (!userName || !email || !password) {
-      return res.status(400).json({ message: 'Name, email and password are required.' });
-    }
-
-    if (role === 'SUPER_ADMIN') {
+    if (normalizedRole === 'SUPER_ADMIN') {
       return res.status(403).json({ message: 'Cannot register as Super Admin.' });
     }
 
-    let user = await User.findOne({ email });
+    if (!displayName || !normalizedEmail || !password) {
+      return res.status(400).json({ message: 'Name, email, and password are required' });
+    }
+
+    let user = await User.findOne({ email: normalizedEmail });
     if (user) return res.status(400).json({ message: 'User already exists' });
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
     user = new User({
-      name: userName,
-      email,
+      name: displayName,
+      email: normalizedEmail,
       password: hashedPassword,
-      phone: phone || undefined,
-      role: role || 'CUSTOMER',
-      shopName: role === 'ADMIN' ? shopName : undefined,
-      // Customers are auto-active; sellers need Super Admin approval
-      status: role === 'ADMIN' ? 'PENDING' : 'ACTIVE',
+      role: normalizedRole,
+      shopName: normalizedRole === 'ADMIN' ? shopName : undefined,
     });
 
     await user.save();
 
-    // Return token so the frontend can auto-login after registration
     const payload = { user: { id: user.id, role: user.role } };
-    const roleLower = (user.role || '').toLowerCase().replace('_', '');
-    const mappedRole = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
-
     jwt.sign(payload, process.env.JWT_SECRET || 'secret123', { expiresIn: '1d' }, (err, token) => {
       if (err) throw err;
+      const roleLower = (user.role || '').toLowerCase().replace('_', '');
+      const mappedRole = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
       res.status(201).json({
-        message: role === 'ADMIN'
+        message: normalizedRole === 'ADMIN'
           ? 'Registration successful! Wait for Super Admin approval.'
           : 'Registration successful!',
         accessToken: token,
@@ -53,6 +50,10 @@ exports.register = async (req, res) => {
           email: user.email,
           fullName: user.name,
           role: mappedRole,
+          status: user.status,
+          shopName: user.shopName,
+          commissionRate: user.commissionRate,
+          createdAt: user.createdAt,
         },
       });
     });
@@ -62,70 +63,16 @@ exports.register = async (req, res) => {
   }
 };
 
-/**
- * POST /auth/register/seller - seller signup (fullName, shopName, etc.)
- * Creates user with role ADMIN (status PENDING via pre-save hook).
- */
-exports.registerSeller = async (req, res) => {
-  try {
-    const { fullName, email, password, shopName, businessRegistration, shopDescription, phone, address } = req.body;
-
-    if (!fullName || !email || !password || !shopName) {
-      return res.status(400).json({ message: 'fullName, email, password and shopName are required' });
-    }
-
-    let user = await User.findOne({ email });
-    if (user) return res.status(400).json({ message: 'User already exists' });
-
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    user = new User({
-      name: fullName,
-      email,
-      password: hashedPassword,
-      role: 'ADMIN',
-      shopName,
-      phone: phone || undefined,
-      businessRegistration: businessRegistration || undefined,
-      shopDescription: shopDescription || undefined,
-      address: address || undefined,
-    });
-
-    await user.save();
-
-    // Return tokens so client can stay logged in (seller will see pending state)
-    const payload = { user: { id: user.id, role: user.role } };
-    jwt.sign(payload, process.env.JWT_SECRET || 'secret123', { expiresIn: '1d' }, (err, token) => {
-      if (err) {
-        console.error(err);
-        return res.status(500).json({ message: 'Server error' });
-      }
-      const roleLower = (user.role || '').toLowerCase().replace('_', '');
-      const mappedRole = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
-      res.status(201).json({
-        message: 'Registration successful! Wait for Super Admin approval.',
-        accessToken: token,
-        refreshToken: token,
-        user: {
-          id: user.id,
-          email: user.email,
-          fullName: user.name,
-          role: mappedRole,
-        },
-      });
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: err.message || 'Server error' });
-  }
-};
-
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
 
-    const user = await User.findOne({ email });
+    if (!normalizedEmail || !password) {
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) return res.status(400).json({ message: 'Invalid Credentials' });
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -149,6 +96,10 @@ exports.login = async (req, res) => {
           email: user.email,
           fullName: user.name,
           role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer',
+          status: user.status,
+          shopName: user.shopName,
+          commissionRate: user.commissionRate,
+          createdAt: user.createdAt,
         },
       });
     });
@@ -158,119 +109,163 @@ exports.login = async (req, res) => {
   }
 };
 
-// Map backend status to client-friendly (for getMe shop)
-const STATUS_TO_CLIENT = { ACTIVE: 'approved', PENDING: 'pending', REJECTED: 'rejected', SUSPENDED: 'suspended' };
-
-// GET /auth/me - return current user from JWT with profile and shop (for admins)
+// GET /auth/me - return current user from JWT
 exports.getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
     const roleLower = (user.role || '').toLowerCase().replace('_', '');
-    const role = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
-
-    const response = {
+    res.json({
       id: user.id,
       email: user.email,
       fullName: user.name,
-      role,
-      userRoles: [{ role }],
-      profile: {
-        id: user._id.toString(),
-        userId: user._id.toString(),
-        fullName: user.name,
-        email: user.email,
-        phone: user.phone || null,
-        address: user.address || null,
-        createdAt: user.createdAt && new Date(user.createdAt).toISOString(),
-        updatedAt: user.updatedAt && new Date(user.updatedAt).toISOString(),
-      },
-    };
-
-    if (user.role === 'ADMIN') {
-      response.shop = {
-        id: user._id.toString(),
-        name: user.shopName || user.name || '',
-        description: user.shopDescription || null,
-        logoUrl: user.logoUrl || null,
-        ownerId: user._id.toString(),
-        status: STATUS_TO_CLIENT[user.status] || user.status?.toLowerCase() || 'pending',
-        email: user.email || null,
-        phone: user.phone || null,
-        address: user.address || null,
-        businessRegistration: user.businessRegistration || null,
-        commissionRate: user.commissionRate != null ? user.commissionRate : 10,
-        createdAt: (user.createdAt && new Date(user.createdAt).toISOString()) || new Date().toISOString(),
-        updatedAt: (user.updatedAt && new Date(user.updatedAt).toISOString()) || new Date().toISOString(),
-      };
-    }
-
-    res.json(response);
-
+      role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer',
+      status: user.status,
+      shopName: user.shopName,
+      commissionRate: user.commissionRate,
+      createdAt: user.createdAt,
+      userRoles: [{ role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer' }],
+    });
   } catch (err) {
     console.error(err);
     res.status(500).send('Server error');
   }
 };
 
-// PUT /auth/profile - update current user profile
-exports.updateProfile = async (req, res) => {
+// POST /auth/forgot-password - Request password reset
+exports.forgotPassword = async (req, res) => {
   try {
-    const { fullName, phone, address, city, postalCode } = req.body;
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    const { email } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
 
-    if (fullName !== undefined) user.name = fullName.trim();
-    if (phone !== undefined) user.phone = phone || null;
-    if (address !== undefined) user.address = address || null;
-    if (city !== undefined) user.city = city || null;
-    if (postalCode !== undefined) user.postalCode = postalCode || null;
+    if (!normalizedEmail) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
 
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      // For security, don't reveal if email exists
+      return res.status(200).json({ 
+        message: 'If an account with this email exists, a password reset link will be sent.' 
+      });
+    }
+
+    // Generate reset token (valid for 1 hour)
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    user.resetToken = resetTokenHash;
+    user.resetTokenExpiry = resetTokenExpiry;
     await user.save();
 
-    const roleLower = (user.role || '').toLowerCase().replace('_', '');
-    const mappedRole = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
-    res.json({
-      id: user.id,
-      email: user.email,
-      fullName: user.name,
-      phone: user.phone || null,
-      address: user.address || null,
-      city: user.city || null,
-      postalCode: user.postalCode || null,
-      avatarUrl: user.avatarUrl || null,
-      role: mappedRole,
+    // TODO: Send email with reset link
+    // For now, return token for testing (in production, send via email)
+    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/reset-password?token=${resetToken}`;
+    
+    console.log(`Password reset link for ${normalizedEmail}: ${resetLink}`);
+
+    res.status(200).json({ 
+      message: 'Password reset link has been sent to your email',
+      // Only in development - remove in production
+      ...(process.env.NODE_ENV !== 'production' && { resetToken, resetLink })
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Failed to update profile' });
+    res.status(500).json({ message: 'Error processing password reset request' });
   }
 };
 
-// POST /auth/change-password
-exports.changePassword = async (req, res) => {
+// POST /auth/reset-password - Reset password with token
+exports.resetPassword = async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body;
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ message: 'Current and new password are required' });
-    }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ message: 'New password must be at least 6 characters' });
+    const { token, password, passwordConfirm } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ message: 'Token and password are required' });
     }
 
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (password !== passwordConfirm) {
+      return res.status(400).json({ message: 'Passwords do not match' });
+    }
 
-    const isMatch = await bcrypt.compare(currentPassword, user.password);
-    if (!isMatch) return res.status(400).json({ message: 'Current password is incorrect' });
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
 
+    // Hash the token to compare with stored hash
+    const resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Find user with matching reset token and non-expired token
+    const user = await User.findOne({
+      resetToken: resetTokenHash,
+      resetTokenExpiry: { $gt: new Date() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Reset token is invalid or has expired' });
+    }
+
+    // Hash new password
     const salt = await bcrypt.genSalt(10);
-    user.password = await bcrypt.hash(newPassword, salt);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Update password and clear reset token
+    user.password = hashedPassword;
+    user.resetToken = null;
+    user.resetTokenExpiry = null;
     await user.save();
 
-    res.json({ message: 'Password changed successfully' });
+    res.status(200).json({ message: 'Password has been reset successfully' });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Failed to change password' });
+    res.status(500).json({ message: 'Error resetting password' });
+  }
+};
+
+// POST /auth/change-password - Change password when logged in
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword, passwordConfirm } = req.body;
+    const userId = req.user?.id || req.user?._id;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current password and new password are required' });
+    }
+
+    if (newPassword !== passwordConfirm) {
+      return res.status(400).json({ message: 'New passwords do not match' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Verify current password
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Current password is incorrect' });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    user.password = hashedPassword;
+    await user.save();
+
+    res.status(200).json({ message: 'Password has been changed successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error changing password' });
   }
 };

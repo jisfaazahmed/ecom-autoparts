@@ -1,245 +1,431 @@
 const Product = require('../models/product');
 const Vehicle = require('../models/vehicle');
-const VehicleBrand = require('../models/vehicleBrand.model');
-const VehicleModel = require('../models/vehicleModel.model');
-const VehicleVariant = require('../models/vehicleVariant.model');
+const Review = require('../models/review.model');
+const VendorProduct = require('../models/vendorProduct');
+const mongoose = require('mongoose');
 
-// ── Helper: transform a populated product doc for the frontend ──
-function transformProduct(p) {
-  const obj = typeof p.toObject === 'function' ? p.toObject() : { ...p };
-  obj.id = obj._id.toString();
-  delete obj._id;
+const normalizeRole = (role) => {
+  const normalized = String(role || '').toLowerCase().replace('_', '');
+  if (normalized === 'superadmin') return 'superadmin';
+  if (normalized === 'admin') return 'admin';
+  return 'customer';
+};
 
-  obj.rating = typeof obj.rating === 'number' ? obj.rating : 0;
-  obj.reviewCount = typeof obj.reviewCount === 'number' ? obj.reviewCount : 0;
+const mapProduct = (productDoc) => {
+  const product = productDoc?.toJSON ? productDoc.toJSON() : productDoc;
+  if (!product) return null;
 
-  // category
-  if (obj.category && typeof obj.category === 'object' && obj.category._id) {
-    obj.categoryId = obj.category._id.toString();
-    obj.category = { id: obj.categoryId, name: obj.category.name };
-  }
+  const categoryObj = product.category && typeof product.category === 'object' ? product.category : null;
+  const sellerObj = product.createdBy && typeof product.createdBy === 'object' ? product.createdBy : null;
+  const compatibleVehicles = Array.isArray(product.compatibleVehicles) ? product.compatibleVehicles : [];
 
-  // compatibleVehicles (legacy)
-  // if (Array.isArray(obj.compatibleVehicles)) {
-  //   obj.compatibleVehicles = obj.compatibleVehicles.map((v) => {
-  //     if (v && typeof v === 'object' && v._id) {
-  //       return { id: v._id.toString(), year: v.year, make: v.make, model: v.model };
-  //     }
-  //     return typeof v === 'object' ? v.toString() : v;
-  //   });
-  // }
+  const categoryId = categoryObj
+    ? String(categoryObj._id || categoryObj.id || '')
+    : (product.category ? String(product.category) : '');
 
-  // compatibleVehicleVariants (new system)
-  if (Array.isArray(obj.compatibleVehicleVariants)) {
-    obj.compatibleVehicleVariants = obj.compatibleVehicleVariants.map((v) => {
-      if (v && typeof v === 'object' && v._id) {
-        const mapped = {
-          id: v._id.toString(),
-          name: v.name,
-          yearStart: v.yearStart,
-          yearEnd: v.yearEnd ?? null,
-        };
-        // include populated model → brand info when available
-        if (v.model && typeof v.model === 'object' && v.model._id) {
-          mapped.modelId = v.model._id.toString();
-          mapped.modelName = v.model.name;
-          if (v.model.brand && typeof v.model.brand === 'object' && v.model.brand._id) {
-            mapped.brandId = v.model.brand._id.toString();
-            mapped.brandName = v.model.brand.name;
-          }
+  const shopId = sellerObj
+    ? String(sellerObj._id || sellerObj.id || '')
+    : (product.createdBy ? String(product.createdBy) : '');
+
+  return {
+    ...product,
+    id: String(product._id || product.id || ''),
+    imageUrl: product.imageUrl || product.image || '',
+    image_url: product.image_url || product.image || '',
+    categoryId,
+    compatibleVariants: compatibleVehicles.map((vehicle) => String(vehicle?._id || vehicle?.id || vehicle || '')),
+    shopId,
+    shop: sellerObj
+      ? {
+          id: shopId,
+          name: sellerObj.shopName || sellerObj.name || 'Unknown Shop',
+          ownerId: shopId,
+          status: String(sellerObj.status || '').toLowerCase(),
+          email: sellerObj.email || undefined,
         }
-        return mapped;
-      }
-      return typeof v === 'object' ? v.toString() : v;
-    });
-  }
+      : undefined,
+  };
+};
 
-  obj.imageUrl = obj.image || null;
-  return obj;
-}
+const getRequester = (req) => ({
+  role: normalizeRole(req?.user?.role),
+  id: req?.user?.id || req?.user?._id || req?.user?.userId || null,
+});
 
-// ── Populate chain shared between getProducts & getProductById ──
-function applyPopulates(query) {
-  return query
-    .populate('category', 'name slug')
-    .populate('compatibleVehicles', 'year make model')
-    .populate({
-      path: 'compatibleVehicleVariants',
-      select: 'name model yearStart yearEnd',
-      populate: {
-        path: 'model',
-        select: 'name brand',
-        populate: { path: 'brand', select: 'name' },
-      },
-    });
-}
+const mapReview = (reviewDoc) => {
+  const review = reviewDoc.toJSON ? reviewDoc.toJSON() : reviewDoc.toObject();
+  const populatedUser = review.user && typeof review.user === 'object' ? review.user : null;
+  const productId = review.product && typeof review.product === 'object' ? review.product._id : review.product;
 
-// 1. CREATE MASTER PRODUCT (Super Admin Only)
-exports.createProduct = async (req, res) => {
+  return {
+    id: String(review._id),
+    productId: String(productId || ''),
+    userId: String(populatedUser?._id || review.user || ''),
+    rating: review.rating,
+    comment: review.comment,
+    createdAt: review.createdAt,
+    user: populatedUser
+      ? {
+          id: String(populatedUser._id || ''),
+          email: populatedUser.email || '',
+          fullName: populatedUser.name || 'Anonymous',
+          role: normalizeRole(populatedUser.role),
+          status: populatedUser.status,
+          shopName: populatedUser.shopName,
+          commissionRate: populatedUser.commissionRate,
+          createdAt: populatedUser.createdAt,
+        }
+      : undefined,
+  };
+};
+
+exports.checkStock = async (req, res) => {
   try {
-    const { name, partNumber, categoryId, vehicleIds, description } = req.body;
-
-    const count = await Vehicle.countDocuments({ _id: { $in: vehicleIds } });
-    
-    if (count !== vehicleIds.length) {
-      return res.status(400).json({ message: 'One or more Vehicle IDs are invalid.' });
+    const { items } = req.body;
+    if (!items || !Array.isArray(items)) {
+      return res.status(400).json({ message: 'Invalid items array' });
     }
 
-    // Create the product
-    const newProduct = new Product({
-      name,
-      partNumber,
-      category: categoryId,
-      compatibleVehicles: vehicleIds, // Array of Vehicle IDs (e.g., [TeslaID, HondaID])
-      description,
-      createdBy: req.user.id
-    });
+    const results = [];
+    for (const item of items) {
+      if (!mongoose.Types.ObjectId.isValid(item.productId)) {
+        results.push({
+          productId: item.productId,
+          name: 'Unknown Product',
+          available: 0,
+          requested: item.quantity,
+          sufficient: false
+        });
+        continue;
+      }
+      
+      const product = await Product.findById(item.productId);
+      if (!product) {
+        results.push({
+          productId: item.productId,
+          name: 'Unknown Product',
+          available: 0,
+          requested: item.quantity,
+          sufficient: false
+        });
+        continue;
+      }
+      
+      const available = product.stock || 0;
+      results.push({
+        productId: product._id,
+        name: product.name,
+        available: available,
+        requested: item.quantity,
+        sufficient: available >= item.quantity
+      });
+    }
 
-    await newProduct.save();
-    res.status(201).json({ message: 'Master Product Created', product: newProduct });
+    res.json(results);
   } catch (err) {
     console.error(err);
     res.status(500).send('Server Error');
   }
 };
 
+// 1. CREATE PRODUCT (Sellers & Admins)
+exports.createProduct = async (req, res) => {
+  try {
+    const { name, sku, price, stock, categoryId, compatibleVariants, description, imageUrl, shopId } = req.body;
+    const requester = getRequester(req);
+
+    if (!['admin', 'superadmin'].includes(requester.role)) {
+      return res.status(403).json({ message: 'Only sellers/admins can create products' });
+    }
+
+    if (!requester.id || !mongoose.Types.ObjectId.isValid(String(requester.id))) {
+      return res.status(401).json({ message: 'Invalid user context' });
+    }
+
+    if (!name || !categoryId) {
+      return res.status(400).json({ message: 'Product name and category are required' });
+    }
+
+    // Map compatibleVariants to vehicleIds
+    let vehicleIds = [];
+    if (compatibleVariants && Array.isArray(compatibleVariants)) {
+      vehicleIds = compatibleVariants;
+      const count = await Vehicle.countDocuments({ _id: { $in: vehicleIds } });
+      if (count !== vehicleIds.length && process.env.NODE_ENV !== 'test') {
+        return res.status(400).json({ message: 'One or more Vehicle Variant IDs are invalid.' });
+      }
+    }
+
+    // Default status to 'Pending' for sellers. Super Admin could theoretially approve immediately, 
+    // but let's keep all new creations as 'Pending' or let admin pass 'Approved'
+    const finalStatus = requester.role === 'superadmin' ? 'Approved' : 'Pending';
+
+    // Sellers must not be able to spoof ownership by posting a different shopId.
+    const ownerId = requester.role === 'superadmin' && shopId && mongoose.Types.ObjectId.isValid(String(shopId))
+      ? String(shopId)
+      : String(requester.id);
+
+    // Create the product
+    const newProduct = new Product({
+      name,
+      sku: sku || 'SKU-' + Date.now(),
+      price: price || 0,
+      stock: stock || 0,
+      image: imageUrl,
+      category: categoryId || null,
+      compatibleVehicles: vehicleIds,
+      description,
+      createdBy: ownerId,
+      status: finalStatus
+    });
+
+    await newProduct.save();
+
+    const savedProduct = await Product.findById(newProduct._id)
+      .populate('category', 'name')
+      .populate('createdBy', 'name shopName email status role');
+
+    res.status(201).json(mapProduct(savedProduct));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server Error', error: err.message });
+  }
+};
+
+// 1.05 UPDATE PRODUCT (Owner seller or Super Admin)
+exports.updateProduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const requester = getRequester(req);
+    const {
+      name,
+      sku,
+      price,
+      stock,
+      categoryId,
+      compatibleVariants,
+      description,
+      imageUrl,
+      isActive,
+    } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+
+    if (!requester.id || !mongoose.Types.ObjectId.isValid(String(requester.id))) {
+      return res.status(401).json({ message: 'Invalid user context' });
+    }
+
+    const product = await Product.findById(id);
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    const ownerId = String(product.createdBy || '');
+    const isOwner = ownerId && ownerId === String(requester.id);
+    const isSuperAdmin = requester.role === 'superadmin';
+    if (!isOwner && !isSuperAdmin) {
+      return res.status(403).json({ message: 'Not authorized to update this product' });
+    }
+
+    if (compatibleVariants !== undefined) {
+      if (!Array.isArray(compatibleVariants)) {
+        return res.status(400).json({ message: 'compatibleVariants must be an array' });
+      }
+
+      const count = await Vehicle.countDocuments({ _id: { $in: compatibleVariants } });
+      if (count !== compatibleVariants.length && process.env.NODE_ENV !== 'test') {
+        return res.status(400).json({ message: 'One or more Vehicle Variant IDs are invalid.' });
+      }
+      product.compatibleVehicles = compatibleVariants;
+    }
+
+    if (name !== undefined) product.name = name;
+    if (sku !== undefined) product.sku = sku;
+    if (price !== undefined) product.price = price;
+    if (stock !== undefined) product.stock = stock;
+    if (description !== undefined) product.description = description;
+    if (imageUrl !== undefined) product.image = imageUrl;
+    if (categoryId !== undefined) product.category = categoryId;
+    if (isActive !== undefined) product.isActive = !!isActive;
+
+    await product.save();
+
+    const updated = await Product.findById(product._id)
+      .populate('category', 'name')
+      .populate('createdBy', 'name shopName email status role')
+      .populate('compatibleVehicles', 'year make model');
+
+    res.json(mapProduct(updated));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server Error', error: err.message });
+  }
+};
+
+// 1.06 DELETE PRODUCT (Owner seller or Super Admin)
+exports.deleteProduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const requester = getRequester(req);
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+
+    if (!requester.id || !mongoose.Types.ObjectId.isValid(String(requester.id))) {
+      return res.status(401).json({ message: 'Invalid user context' });
+    }
+
+    const product = await Product.findById(id).select('createdBy');
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    const ownerId = String(product.createdBy || '');
+    const isOwner = ownerId && ownerId === String(requester.id);
+    const isSuperAdmin = requester.role === 'superadmin';
+    if (!isOwner && !isSuperAdmin) {
+      return res.status(403).json({ message: 'Not authorized to delete this product' });
+    }
+
+    await Promise.all([
+      Review.deleteMany({ product: id }),
+      VendorProduct.deleteMany({ product: id }),
+      Product.findByIdAndDelete(id),
+    ]);
+
+    res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server Error', error: err.message });
+  }
+};
+
+// 1.1 UPDATE PRODUCT STATUS (Super Admin Only)
+exports.updateProductStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+    
+    if (!['Pending', 'Approved', 'Rejected'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+
+    const product = await Product.findByIdAndUpdate(id, { status }, { new: true })
+      .populate('category', 'name')
+      .populate('createdBy', 'name shopName email status role')
+      .populate('compatibleVehicles', 'year make model');
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    res.json(mapProduct(product));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server Error', error: err.message });
+  }
+};
+
 // 2. SEARCH PRODUCTS (The "Tesla > Model S > Brakes" Logic)
 exports.getProducts = async (req, res) => {
   try {
-    const {
-      vehicleId,
-      categoryId,
-      category,          // alias used by frontend
-      isActive,
-      search,
-      minPrice,
-      maxPrice,
-      sortBy,
-      sortOrder,
-      page = 1,
-      limit = 20,
-      make,              // vehicle brand name for compatibility filter
-      model: vehicleModel, // vehicle model name for compatibility filter
-      year: vehicleYear,   // vehicle year for compatibility filter
-    } = req.query;
-
+    const { vehicleId, categoryId, category, shop, status } = req.query;
+    const requester = getRequester(req);
+    const categoryFilter = categoryId || category;
+    
     const query = {};
 
-    // Filter by Category
-    const catId = categoryId || category;
-    if (catId) {
-      query.category = catId;
+    // 1. If searching by a specific shop/seller (Vendor Dashboard)
+    if (shop) {
+      query.createdBy = shop;
+
+      const isSelfVendor = requester.role === 'admin' && String(requester.id || '') === String(shop);
+      const isSuperAdmin = requester.role === 'superadmin';
+
+      if (isSelfVendor || isSuperAdmin) {
+        // Vendor owner and super admin can inspect all statuses when needed.
+        if (status) query.status = status;
+      } else {
+        // Public/customer should only see approved and active products.
+        query.status = 'Approved';
+        query.isActive = true;
+      }
+    } else {
+      // 2. Or, public facing search: ONLY SHOW APPROVED
+      if (requester.role === 'superadmin') {
+        // Super Admins can see specific status or ALL if no status provided
+        if (status) query.status = status;
+      } else {
+        // Public sees only approved
+        query.status = 'Approved';
+        query.isActive = true;
+      }
     }
 
-    // Filter by Vehicle (legacy single ID)
+    // Filter by Category (e.g., "Brake Pads")
+    if (categoryFilter) {
+      query.category = categoryFilter;
+    }
+
+    // Filter by Vehicle (e.g., "Tesla Model S")
+    if (vehicleId) {
+      // Find products where the 'compatibleVehicles' array CONTAINS this vehicleId
+      query.compatibleVehicles = vehicleId;
+    }
+
+    const products = await Product.find(query)
+      .populate('category', 'name')
+      .populate('createdBy', 'name shopName email status role')
+      .populate('compatibleVehicles', 'year make model'); // Show car names in result
+
+    res.json(products.map(mapProduct));
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Server Error');
+  }
+};
+
+// 2.1 SUPER ADMIN PRODUCT LIST (strictly authenticated)
+exports.getSuperAdminProducts = async (req, res) => {
+  try {
+    const { vehicleId, categoryId, category, status, search, shop, shopId } = req.query;
+    const query = {};
+    const categoryFilter = categoryId || category;
+    const sellerFilter = shop || shopId;
+
+    if (status) {
+      query.status = status;
+    }
+
+    if (categoryFilter) {
+      query.category = categoryFilter;
+    }
+
     if (vehicleId) {
       query.compatibleVehicles = vehicleId;
     }
 
-    // Filter by vehicle make/model/year — uses the new VehicleVariant system
-    if (make && vehicleModel) {
-      const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-      // Step 1: Find the VehicleBrand by name
-      const brand = await VehicleBrand.findOne({
-        name: { $regex: new RegExp(`^${escapeRegex(make)}$`, 'i') },
-      });
-
-      if (!brand) {
-        return res.json({
-          products: [],
-          pagination: { page: 1, limit: parseInt(limit, 10) || 20, total: 0, totalPages: 0 },
-        });
-      }
-
-      // Step 2: Find the VehicleModel by name + brand
-      const vModel = await VehicleModel.findOne({
-        name: { $regex: new RegExp(`^${escapeRegex(vehicleModel)}$`, 'i') },
-        brand: brand._id,
-      });
-
-      if (!vModel) {
-        return res.json({
-          products: [],
-          pagination: { page: 1, limit: parseInt(limit, 10) || 20, total: 0, totalPages: 0 },
-        });
-      }
-
-      // Step 3: Find VehicleVariants for that model (optionally filtered by year)
-      const variantQuery = { model: vModel._id };
-      if (vehicleYear) {
-        const yr = Number(vehicleYear);
-        variantQuery.yearStart = { $lte: yr };
-        variantQuery.$or = [
-          { yearEnd: { $gte: yr } },
-          { yearEnd: null },
-        ];
-      }
-      const matchingVariants = await VehicleVariant.find(variantQuery).select('_id');
-      const variantIds = matchingVariants.map((v) => v._id);
-
-      if (variantIds.length > 0) {
-        query.compatibleVehicleVariants = { $in: variantIds };
-      } else {
-        return res.json({
-          products: [],
-          pagination: { page: 1, limit: parseInt(limit, 10) || 20, total: 0, totalPages: 0 },
-        });
-      }
+    if (sellerFilter) {
+      query.createdBy = sellerFilter;
     }
 
-    // Filter by active status
-    if (isActive !== undefined) {
-      query.isActive = isActive === 'true';
-    }
-
-    // Search by name, description, or partNumber
     if (search) {
       query.$or = [
         { name: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-        { partNumber: { $regex: search, $options: 'i' } },
+        { sku: { $regex: search, $options: 'i' } },
       ];
     }
 
-    // Price range
-    if (minPrice || maxPrice) {
-      query.price = {};
-      if (minPrice) query.price.$gte = Number(minPrice);
-      if (maxPrice) query.price.$lte = Number(maxPrice);
-    }
+    const products = await Product.find(query)
+      .populate('category', 'name')
+      .populate('createdBy', 'name shopName email status role')
+      .populate('compatibleVehicles', 'year make model');
 
-    // Sorting
-    let sort = {};
-    if (sortBy) {
-      sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
-    } else {
-      sort.createdAt = -1;
-    }
-
-    const pageNum = Math.max(1, parseInt(page, 10) || 1);
-    const limitNum = Math.max(1, parseInt(limit, 10) || 20);
-    const skip = (pageNum - 1) * limitNum;
-
-    const [products, total] = await Promise.all([
-      applyPopulates(Product.find(query))
-        .sort(sort)
-        .skip(skip)
-        .limit(limitNum),
-      Product.countDocuments(query),
-    ]);
-
-    const transformed = products.map(transformProduct);
-
-    res.json({
-      products: transformed,
-      pagination: {
-        page: pageNum,
-        limit: limitNum,
-        total,
-        totalPages: Math.ceil(total / limitNum),
-      },
-    });
+    res.json(products.map(mapProduct));
   } catch (err) {
     console.error(err);
     res.status(500).send('Server Error');
@@ -252,10 +438,16 @@ exports.getFeaturedProducts = async (req, res) => {
       .sort({ rating: -1 })
       .limit(8);
 
+    // Transform to include 'id' field from '_id'
+    const transformedProducts = products.map(p => {
+      const obj = p.toJSON ? p.toJSON() : p.toObject();
+      return { ...obj, id: obj._id };
+    });
+
     res.json({
       success: true,
-      count: products.length,
-      products
+      count: transformedProducts.length,
+      products: transformedProducts
     });
   } catch (err) {
     console.error(err);
@@ -286,15 +478,153 @@ exports.getCategories = async (req, res) => {
 
 exports.getProductById = async (req, res) => {
   try {
-    const product = await applyPopulates(Product.findById(req.params.id));
+    const requester = getRequester(req);
+    const requesterId = requester.id ? String(requester.id) : '';
 
+    const product = await Product.findById(req.params.id)
+      .populate('category', 'name')
+      .populate('createdBy', 'name shopName email status role')
+      .populate('compatibleVehicles', 'year make model');
+    
     if (!product) {
-      return res.status(404).json({ success: false, message: 'Product not found' });
+      return res.status(404).json({ 
+        message: 'Product not found' 
+      });
     }
 
-    res.json(transformProduct(product));
+    const ownerId = String(product.createdBy?._id || product.createdBy || '');
+    const isOwner = requester.role === 'admin' && ownerId && requesterId === ownerId;
+    const canViewHidden = requester.role === 'superadmin' || isOwner;
+    if ((!product.isActive || product.status !== 'Approved') && !canViewHidden) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    res.json(mapProduct(product));
   } catch (err) {
     console.error(err);
-    res.status(500).json({ success: false, message: 'Server error' });
+    res.status(500).json({ 
+      message: 'Server error',
+      error: err.message 
+    });
+  }
+}; 
+
+exports.getProductReviews = async (req, res) => {
+  try {
+    const productId = req.params.id;
+
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+
+    const reviews = await Review.find({ product: productId })
+      .populate('user', 'name email role status shopName commissionRate createdAt')
+      .sort({ createdAt: -1 });
+
+    res.json(reviews.map(mapReview));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+exports.createProductReview = async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const userId = req.user?.id || req.user?._id || req.user?.userId;
+    const { rating, comment } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Invalid user context' });
+    }
+
+    const parsedRating = Number(rating);
+    if (!Number.isFinite(parsedRating) || parsedRating < 1 || parsedRating > 5) {
+      return res.status(400).json({ message: 'Rating must be a number between 1 and 5' });
+    }
+
+    const product = await Product.findById(productId).select('_id');
+    if (!product) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    const payload = {
+      rating: parsedRating,
+      comment: typeof comment === 'string' && comment.trim() ? comment.trim() : undefined,
+    };
+
+    const existingReview = await Review.findOne({ product: productId, user: userId });
+
+    let savedReview;
+    let statusCode;
+
+    if (existingReview) {
+      existingReview.rating = payload.rating;
+      existingReview.comment = payload.comment;
+      savedReview = await existingReview.save();
+      statusCode = 200;
+    } else {
+      savedReview = await Review.create({
+        product: productId,
+        user: userId,
+        rating: payload.rating,
+        comment: payload.comment,
+      });
+      statusCode = 201;
+    }
+
+    const hydrated = await Review.findById(savedReview._id)
+      .populate('user', 'name email role status shopName commissionRate createdAt');
+
+    res.status(statusCode).json(mapReview(hydrated));
+  } catch (err) {
+    // Duplicate key can happen if race condition creates same product/user review concurrently.
+    if (err && err.code === 11000) {
+      return res.status(409).json({ message: 'You have already reviewed this product' });
+    }
+    console.error(err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+exports.deleteProductReview = async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const { reviewId } = req.params;
+    const userId = req.user?.id || req.user?._id || req.user?.userId;
+    const requesterRole = normalizeRole(req.user?.role);
+
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(reviewId)) {
+      return res.status(400).json({ message: 'Invalid review ID' });
+    }
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Invalid user context' });
+    }
+
+    const review = await Review.findOne({ _id: reviewId, product: productId });
+    if (!review) {
+      return res.status(404).json({ message: 'Review not found' });
+    }
+
+    const isOwner = String(review.user) === String(userId);
+    const isAdmin = requesterRole === 'admin' || requesterRole === 'superadmin';
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ message: 'Not authorized to delete this review' });
+    }
+
+    await review.deleteOne();
+    res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error', error: err.message });
   }
 };

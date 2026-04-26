@@ -79,11 +79,19 @@ const SellerAuth: React.FC = () => {
     }
 
     setLoading(true);
-    const { error } = await signIn(loginForm.email, loginForm.password);
-    
-    if (!error) {
-      // Redirect will happen via useEffect when role updates
+    const { error } = await signIn(loginForm.email.trim(), loginForm.password);
+
+    if (error) {
+      toast({
+        title: 'Login Failed',
+        description: error.message || 'Invalid credentials',
+        variant: 'destructive',
+      });
+      setLoading(false);
+      return;
     }
+
+    // Redirect will happen via useEffect when role updates
     setLoading(false);
   };
 
@@ -107,7 +115,7 @@ const SellerAuth: React.FC = () => {
     setLoading(true);
     
     const { error } = await signUpSeller({
-      email: signupForm.email,
+      email: signupForm.email.trim(),
       password: signupForm.password,
       fullName: signupForm.fullName,
       shopName: signupForm.shopName,
@@ -117,13 +125,21 @@ const SellerAuth: React.FC = () => {
       address: signupForm.shopAddress || undefined,
     });
 
-    if (!error) {
+    if (error) {
       toast({
-        title: 'Application Submitted',
-        description: 'Your seller application is pending approval.',
+        title: 'Registration Failed',
+        description: error.message || 'Unable to register seller account.',
+        variant: 'destructive',
       });
-      navigate('/admin');
+      setLoading(false);
+      return;
     }
+
+    toast({
+      title: 'Application Submitted',
+      description: 'Your seller application is pending approval.',
+    });
+    navigate('/admin');
 
     setLoading(false);
   };
@@ -208,7 +224,7 @@ const SellerAuth: React.FC = () => {
 
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Sign In to Dashboard
+                  Sign In 
                 </Button>
               </form>
             </TabsContent>

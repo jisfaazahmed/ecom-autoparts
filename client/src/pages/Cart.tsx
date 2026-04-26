@@ -65,9 +65,11 @@ const Cart: React.FC = () => {
           <div className="grid lg:grid-cols-3 gap-8">
             {/* Cart Items */}
             <div className="lg:col-span-2 space-y-4">
-              {cart.map((item, i) => (
+              {cart.map((item, i) => {
+                if (!item.product) return null; // Defensive check for malformed cached cart items
+                return (
                 <motion.div
-                  key={item.product.id}
+                  key={item.product.id || i}
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.1 }}
@@ -137,7 +139,7 @@ const Cart: React.FC = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => removeFromCart(item.product.id)}
+                          onClick={() => removeFromCart(item.id || item.product.id)}
                           className="text-muted-foreground hover:text-destructive"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -146,7 +148,8 @@ const Cart: React.FC = () => {
                     </div>
                   </div>
                 </motion.div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Order Summary */}

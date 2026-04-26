@@ -1,12 +1,11 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Star, ShoppingCart, Check, AlertCircle } from 'lucide-react';
 import { Product } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useStore } from '@/store/useStore';
-import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { formatLKR } from '@/lib/currency';
 
@@ -17,21 +16,11 @@ interface ProductCardProps {
 
 const ProductCard: React.FC<ProductCardProps> = ({ product, isCompatible = true }) => {
   const { addToCart } = useStore();
-  const { user } = useAuth();
-  const navigate = useNavigate();
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
-    // Check if user is authenticated
-    if (!user) {
-      toast.error('Please login to add items to cart');
-      navigate('/auth/customer');
-      return;
-    }
-    
-    addToCart(product);
+    addToCart({ id: product.id, product, quantity: 1 });
     toast.success(`${product.name} added to cart`);
   };
 
@@ -86,7 +75,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, isCompatible = true 
         <img
           src={product.image}
           alt={product.name}
-          className="w-full h-full transition-transform duration-500 group-hover:scale-110"
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
       </div>

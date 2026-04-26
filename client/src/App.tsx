@@ -4,7 +4,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
-import { AuthProvider } from "@/hooks/useAuth";
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
 import Index from "./pages/Index";
 import Shop from "./pages/Shop";
@@ -16,8 +15,10 @@ import Checkout from "./pages/Checkout";
 import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentCancel from "./pages/PaymentCancel";
 import Orders from "./pages/Orders";
+import ReturnsRefunds from "./pages/ReturnsRefunds";
 import MyVehicle from "./pages/MyVehicle";
 import Profile from "./pages/Profile";
+import TrackOrder from "./pages/TrackOrder";
 import CustomerAuth from "./pages/auth/CustomerAuth";
 import SellerAuth from "./pages/auth/SellerAuth";
 import AdminAuth from "./pages/auth/AdminAuth";
@@ -25,25 +26,33 @@ import ResetPassword from "./pages/auth/ResetPassword";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminProducts from "./pages/admin/Products";
 import AdminOrders from "./pages/admin/Orders";
+import AdminRefunds from "./pages/admin/Refunds";
 import AdminSettings from "./pages/admin/Settings";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import SuperAdminVendors from "./pages/superadmin/Vendors";
 import SuperAdminAnalytics from "./pages/superadmin/Analytics";
+import SuperAdminProducts from "./pages/superadmin/Products";
 import SuperAdminVehicles from "./pages/superadmin/Vehicles";
 import SuperAdminCategories from "./pages/superadmin/Categories";
 import SuperAdminCoupons from "./pages/superadmin/Coupons";
+import SuperAdminPolicies from "./pages/superadmin/Policies";
+import ReturnPolicy from "./pages/ReturnPolicy";
+import ShippingPolicy from "./pages/ShippingPolicy";
+import CancellationPolicy from "./pages/CancellationPolicy";
+import TermsConditions from "./pages/TermsConditions";
 import NotFound from "./pages/NotFound";
+import NotificationToast from "@/components/notifications/NotificationToast";
 
 const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-      <AuthProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <NotificationToast />
+        <BrowserRouter>
           <Routes>
             {/* Public routes */}
             <Route path="/" element={<Index />} />
@@ -57,19 +66,16 @@ const App = () => (
             <Route path="/auth/reset-password" element={<ResetPassword />} />
             
             {/* Protected customer routes */}
-            <Route path="/cart" element={
-              <ProtectedRoute>
-                <Cart />
-              </ProtectedRoute>
-            } />
-            <Route path="/checkout" element={
-              <ProtectedRoute>
-                <Checkout />
-              </ProtectedRoute>
-            } />
+            <Route path="/cart" element={<Cart />} />
+            <Route path="/checkout" element={<Checkout />} />
             <Route path="/orders" element={
               <ProtectedRoute>
                 <Orders />
+              </ProtectedRoute>
+            } />
+            <Route path="/returns" element={
+              <ProtectedRoute>
+                <ReturnsRefunds />
               </ProtectedRoute>
             } />
             <Route path="/my-vehicle" element={
@@ -92,6 +98,13 @@ const App = () => (
                 <PaymentCancel />
               </ProtectedRoute>
             } />
+            <Route path="/track-order" element={<TrackOrder />} />
+            
+            {/* Policy pages */}
+            <Route path="/policy/return" element={<ReturnPolicy />} />
+            <Route path="/policy/shipping" element={<ShippingPolicy />} />
+            <Route path="/policy/cancellation" element={<CancellationPolicy />} />
+            <Route path="/policy/terms" element={<TermsConditions />} />
             
             {/* Admin routes */}
             <Route path="/admin" element={
@@ -107,6 +120,11 @@ const App = () => (
             <Route path="/admin/orders" element={
               <ProtectedRoute requiredRole="admin" requireApprovedShop>
                 <AdminOrders />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/refunds" element={
+              <ProtectedRoute requiredRole="admin" requireApprovedShop>
+                <AdminRefunds />
               </ProtectedRoute>
             } />
             <Route path="/admin/settings" element={
@@ -131,6 +149,11 @@ const App = () => (
                 <SuperAdminAnalytics />
               </ProtectedRoute>
             } />
+            <Route path="/superadmin/products" element={
+              <ProtectedRoute requiredRole="superadmin">
+                <SuperAdminProducts />
+              </ProtectedRoute>
+            } />
             <Route path="/superadmin/vehicles" element={
               <ProtectedRoute requiredRole="superadmin">
                 <SuperAdminVehicles />
@@ -146,12 +169,21 @@ const App = () => (
                 <SuperAdminCoupons />
               </ProtectedRoute>
             } />
+            <Route path="/superadmin/policies" element={
+              <ProtectedRoute requiredRole="superadmin">
+                <SuperAdminPolicies />
+              </ProtectedRoute>
+            } />
+            <Route path="/superadmin/refunds" element={
+              <ProtectedRoute requiredRole="superadmin">
+                <AdminRefunds />
+              </ProtectedRoute>
+            } />
             
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
       </TooltipProvider>
-    </AuthProvider>
     </ThemeProvider>
   </QueryClientProvider>
 );

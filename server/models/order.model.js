@@ -9,11 +9,35 @@ const orderSchema = new mongoose.Schema({
     user: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        required: false
     },
     items: [{
         type: mongoose.Schema.Types.ObjectId,
         ref: 'OrderItem'
+    }],
+
+    subOrders: [{
+        vendor: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            required: true
+        },
+        items: [{
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'OrderItem'
+        }],
+        status: {
+            type: String,
+            enum: ['pending', 'confirmed', 'processing', 'ready_to_ship', 'shipped', 'out_for_delivery', 'delivered', 'cancelled', 'return_requested', 'returned', 'refunded'],
+            default: 'pending'
+        },
+        subtotal: {
+            type: Number,
+            default: 0
+        },
+        trackingNumber: String,
+        courierPartner: String,
+        updatedAt: Date
     }],
 
     shippingAddress: {
@@ -69,6 +93,15 @@ const orderSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    couponCode: {
+        type: String,
+        default: null,
+    },
+    couponId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Coupon',
+        default: null,
+    },
     totalAmount: {
         type: Number,
         required: true
@@ -90,15 +123,21 @@ const orderSchema = new mongoose.Schema({
         ref: 'Payment'
     },
     transectionId: String,
+    transactionId: String, // Stripe/payment gateway transaction ID
+    stripeSessionId: String, // Stripe checkout session ID
     paidAmount: {
         type: Number,
         default: 0
+    },
+    currency: {
+        type: String,
+        default: 'LKR'
     },
 
     //Status
     overallStatus: {
         type: String,
-        enum: ['pending', 'confirmed', 'processing', 'partially_shipped', 'shipped', 'partially_delivered', 'delivered', 'cancelled', 'refunded'],
+        enum: ['pending', 'confirmed', 'processing', 'ready_to_ship', 'partially_shipped', 'shipped', 'out_for_delivery', 'partially_delivered', 'delivered', 'cancelled', 'refunded'],
         default: 'pending'
     },
 
@@ -155,28 +194,36 @@ const orderSchema = new mongoose.Schema({
     },
 
     
-});
+}, { timestamps: true });
 
-orderSchema.pre('save', async function (next){
-    if (this.isNew){
-        const date = new Date();
-        const year = date.getFullYear().toString().slice(-2);
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2,'0');
+orderSchema.pre('validate', async function (next) {
+    if (this.orderNumber) return next();
 
-        const count = await mongoose.model('order').countDocuments({
-            createAt: {
-                $gte: new Date(date.setHours(0,0,0,0)),
-                $lt: new Date(date.setHours(23,59,59,999))
+    try {
+        const now = new Date();
+        const startOfDay = new Date(now);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(now);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const count = await this.constructor.countDocuments({
+            createdAt: {
+                $gte: startOfDay,
+                $lt: endOfDay
             }
         });
 
-        this.orderNumber =`ORD${year}${month}${day},${String(count+1).padStart(5,'0')}`;
+        const year = now.getFullYear().toString().slice(-2);
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+
+        this.orderNumber = `ORD${year}${month}${day}-${String(count + 1).padStart(5, '0')}`;
+        next();
+    } catch (err) {
+        next(err);
     }
-    next();
 });
 
-orderSchema.index({orderNumber : 1});
 orderSchema.index({ user: 1, createdAt: -1 });
 orderSchema.index({ 'items.vendor': 1, createdAt: -1 });
 orderSchema.index({ overallStatus: 1 });

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Package, ShoppingBag, DollarSign, TrendingUp, Plus, Search, MoreVertical, Eye, Loader2 } from 'lucide-react';
+import { Package, ShoppingBag, DollarSign, TrendingUp, Plus, Search, MoreVertical, Eye, Loader2, RotateCcw, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -24,6 +24,7 @@ const AdminDashboard: React.FC = () => {
   
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [orders, setOrders] = useState<ApiOrder[]>([]);
+  const [refunds, setRefunds] = useState<any[]>([]);
   const [categories, setCategories] = useState<ApiCategory[]>([]);
   const [variants, setVariants] = useState<ApiVehicleVariant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -38,14 +39,18 @@ const AdminDashboard: React.FC = () => {
     if (!shop?.id) return;
     setLoading(true);
     try {
-      const [productsRes, ordersRes, categoriesRes] = await Promise.all([
+      const [productsRes, ordersRes, categoriesRes, refundsRes] = await Promise.all([
         api.getProducts({ shop: shop.id }),
-        api.getOrders({ limit: 10 }),
+        api.getVendorOrders({ limit: 10 }),
         api.getCategories(),
+        profile?.role === 'admin' || profile?.role === 'superadmin' 
+          ? api.getAdminRefunds({ limit: 200 }) 
+          : api.getVendorRefunds({ limit: 200 }),
       ]);
       setProducts(productsRes.data || []);
       setOrders(ordersRes.data || []);
       setCategories(categoriesRes || []);
+      setRefunds(refundsRes.refunds || []);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     }
@@ -61,20 +66,20 @@ const AdminDashboard: React.FC = () => {
     try {
       await api.createProduct({
         name: newProduct.name,
-        description: newProduct.description || null,
+        description: newProduct.description || undefined,
         price: parseFloat(newProduct.price),
         stock: parseInt(newProduct.stock) || 0,
-        sku: newProduct.sku || null,
+        sku: newProduct.sku || undefined,
         shopId: shop.id,
         isActive: true,
-        categoryId: newProduct.category_id || null,
+        categoryId: newProduct.category_id || undefined,
         compatibleVariants: newProduct.compatible_variants.length > 0 ? newProduct.compatible_variants : undefined,
-      });
+      } as any);
       toast({ title: 'Success', description: 'Product added successfully' });
       setAddProductOpen(false);
       setNewProduct({ name: '', description: '', price: '', stock: '', sku: '', category_id: '', compatible_variants: [] });
       fetchData();
-    } catch (error) {
+    } catch (error: any) {
       toast({ title: 'Error', description: error.message || 'Failed to add product', variant: 'destructive' });
     }
     setSaving(false);
@@ -89,25 +94,33 @@ const AdminDashboard: React.FC = () => {
       await api.updateOrderStatus(orderId, status);
       setOrders(orders.map(o => o.id === orderId ? { ...o, status } : o));
       toast({ title: 'Order Updated', description: `Order marked as ${status}` });
-    } catch (error) {
+    } catch (error: any) {
       toast({ title: 'Error', description: error.message || 'Failed to update order', variant: 'destructive' });
     }
   };
 
-  const parentCategories = categories.filter(c => !c.parentId);
-  const getSubcategories = (parentId: string) => categories.filter(c => c.parentId === parentId);
-
   const totalRevenue = orders.reduce((sum, o) => sum + o.totalAmount, 0);
   const avgOrderValue = orders.length ? totalRevenue / orders.length : 0;
+  const pendingRefunds = refunds.filter((refund) => String(refund.status || '').toLowerCase() === 'requested').length;
+  const processingReturns = refunds.filter((refund) => {
+    const returnStatus = String(refund.returnStatus || '').toLowerCase();
+    return ['pending', 'picked'].includes(returnStatus) && String(refund.status || '').toLowerCase() === 'approved';
+  }).length;
 
   const stats = [
     { label: 'Total Products', value: products.length, icon: Package, change: '+12%' },
     { label: 'Total Orders', value: orders.length, icon: ShoppingBag, change: '+8%' },
     { label: 'Revenue', value: formatLKR(totalRevenue), icon: DollarSign, change: '+23%' },
     { label: 'Avg Order Value', value: formatLKR(avgOrderValue), icon: TrendingUp, change: '+5%' },
+    { label: 'Pending Refund Reviews', value: pendingRefunds, icon: AlertCircle, change: pendingRefunds > 0 ? 'Needs action' : 'Clear' },
+    { label: 'Returns In Progress', value: processingReturns, icon: RotateCcw, change: processingReturns > 0 ? 'Active' : 'Idle' },
   ];
 
-  const getStatusBadge = (status: string) => {
+  const parentCategories = categories.filter(c => !c.parentId);
+  const getSubcategories = (parentId: string) => categories.filter(c => c.parentId === parentId);
+
+  const getStatusBadge = (status: string | undefined | null) => {
+    if (!status) return <Badge variant="outline">Unknown</Badge>;
     const styles: Record<string, string> = { pending: 'bg-warning/20 text-warning border-warning/30', processing: 'bg-primary/20 text-primary border-primary/30', shipped: 'bg-purple-500/20 text-purple-400 border-purple-500/30', delivered: 'bg-success/20 text-success border-success/30', cancelled: 'bg-destructive/20 text-destructive border-destructive/30' };
     return <Badge variant="outline" className={styles[status] || ''}>{status.charAt(0).toUpperCase() + status.slice(1)}</Badge>;
   };
@@ -178,7 +191,7 @@ const AdminDashboard: React.FC = () => {
           </Dialog>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 mb-8">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 mb-8">
           {stats.map((stat, i) => (
             <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }} className="glass-card p-4 lg:p-6">
               <div className="flex items-center justify-between mb-4">
@@ -209,31 +222,42 @@ const AdminDashboard: React.FC = () => {
                   <TableHead className="hidden sm:table-cell">Customer</TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead className="hidden lg:table-cell">Delivery Address</TableHead>
                   <TableHead className="hidden md:table-cell">Date</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {orders.map((order) => (
-                  <TableRow key={order.id} className="border-border/50">
-                    <TableCell className="font-mono text-sm">#{order.id.slice(0, 8)}</TableCell>
-                    <TableCell className="hidden sm:table-cell">Customer</TableCell>
-                    <TableCell className="font-medium">{formatLKR(order.totalAmount)}</TableCell>
-                    <TableCell>{getStatusBadge(order.status)}</TableCell>
-                    <TableCell className="text-muted-foreground hidden md:table-cell">{new Date(order.createdAt).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="glass-card">
-                          <DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View Details</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => updateOrderStatus(order.id, 'processing')}>Mark as Processing</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => updateOrderStatus(order.id, 'shipped')}>Mark as Shipped</DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => updateOrderStatus(order.id, 'delivered')}>Mark as Delivered</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {orders.map((order) => {
+                  const address = order.shippingAddress;
+                  const addressStr = typeof address === 'string' 
+                    ? address 
+                    : (address && typeof address === 'object' && 'addressLine1' in address 
+                      ? address.addressLine1 
+                      : 'N/A');
+                  const addressDisplay = addressStr.length > 25 ? addressStr.substring(0, 22) + '...' : addressStr;
+                  return (
+                    <TableRow key={order.id} className="border-border/50">
+                      <TableCell className="font-mono text-sm">#{order.id.slice(0, 8)}</TableCell>
+                      <TableCell className="hidden sm:table-cell">Customer</TableCell>
+                      <TableCell className="font-medium">{formatLKR(order.totalAmount)}</TableCell>
+                      <TableCell>{getStatusBadge(order.status)}</TableCell>
+                      <TableCell className="hidden lg:table-cell text-xs text-muted-foreground" title={addressStr}>{addressDisplay}</TableCell>
+                      <TableCell className="text-muted-foreground hidden md:table-cell">{new Date(order.createdAt).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-right">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="glass-card">
+                            <DropdownMenuItem><Eye className="h-4 w-4 mr-2" />View Details</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateOrderStatus(order.id, 'processing')}>Mark as Processing</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateOrderStatus(order.id, 'shipped')}>Mark as Shipped</DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => updateOrderStatus(order.id, 'delivered')}>Mark as Delivered</DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
