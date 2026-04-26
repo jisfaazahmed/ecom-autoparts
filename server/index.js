@@ -1,9 +1,9 @@
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const {
-  MONGO_DB,
+  MONGO_DB, 
   MONGO_USER,
   MONGO_PASSWORD,
   MONGO_IP,
@@ -23,17 +23,13 @@ const shopRoutes = require('./routes/shop.routes');
 const userRoutes = require('./routes/user.routes');
 const swaggerUI = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
-const garageRoutes = require('./routes/garageRoutes');
-const wishlistRoutes = require('./routes/wishlistRoutes');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 //MongoDB connection
-mongoose.connect(`mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_IP}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`).then(() => {
-  console.log('Connected to MongoDB');
-}).catch((err) => {
+mongoose.connect(`mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_IP}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`).catch((err) => {
   console.error('Error connecting to MongoDB:', err);
 });
 
@@ -51,13 +47,10 @@ app.use('/api/products', productRoutes);
 app.use('/api/offers', vendorProductRoutes);
 app.use('/api/orders', OrderRoutes);  // Order Management
 app.use('/api/cart', cartRoutes);
-app.use('/api/garage', garageRoutes);  // My Garage
-app.use('/api/wishlist', wishlistRoutes);  // Wishlist
 app.use('/api/shops', shopRoutes);   // Shops (vendor list, status, commission)
 app.use('/api/users', userRoutes);   // User profile (for vendor details)
 
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpecs));
-console.log("📄 Documentation available at http://localhost:5000/api-docs");
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT);

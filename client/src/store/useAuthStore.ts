@@ -134,7 +134,7 @@ export const useAuthStore = create<AuthState>()((set, get) => {
           model: active.model?.name ?? '',
           variant: active.variant?.name ?? '',
           year: active.year,
-          vin: active.vin,
+          registrationNumber: active.registrationNumber,
         });
       }
     } catch {

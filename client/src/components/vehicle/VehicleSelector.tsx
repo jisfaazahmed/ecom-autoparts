@@ -23,7 +23,7 @@ import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
 import { Vehicle } from '@/types';
 import { toast } from 'sonner';
-import { api, ApiVehicleBrand, ApiVehicleModel, ApiVehicleVariant, ApiVinDecoded } from '@/lib/api';
+import { api, ApiVehicleBrand, ApiVehicleModel, ApiVehicleVariant, ApiRegCheckVehicle } from '@/lib/api';
 
 interface VehicleSelectorProps {
   trigger?: React.ReactNode;
@@ -34,7 +34,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
   const { setUserVehicle, userVehicle, triggerVehicleRefresh } = useStore();
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<'vin' | 'manual'>('manual');
+  const [tab, setTab] = useState<'reg' | 'manual'>('manual');
   
   // Loading states
   const [loading, setLoading] = useState(false);
@@ -44,11 +44,12 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
   const [models, setModels] = useState<ApiVehicleModel[]>([]);
   const [variants, setVariants] = useState<ApiVehicleVariant[]>([]);
   
-  // VIN state
-  const [vin, setVin] = useState('');
-  const [vinLoading, setVinLoading] = useState(false);
-  const [vinDecoded, setVinDecoded] = useState<ApiVinDecoded | null>(null);
-  const [vinSaving, setVinSaving] = useState(false);
+  // Registration lookup state
+  const [regNumber, setRegNumber] = useState('');
+  const [regLoading, setRegLoading] = useState(false);
+  const [regVehicle, setRegVehicle] = useState<ApiRegCheckVehicle | null>(null);
+  const [regNotFound, setRegNotFound] = useState<string | null>(null);
+  const [regSaving, setRegSaving] = useState(false);
   
   // Manual selection state
   const [selectedBrand, setSelectedBrand] = useState('');
@@ -124,46 +125,73 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
     return years;
   };
 
+  // Validate registration number format:
+  // 2-3 letters followed by exactly 4 digits, no other characters.
+  const validateRegNumber = (value: string): string | null => {
+    // Strip spaces and dashes for validation
+    const cleaned = value.replace(/[\s-]/g, '');
+    if (cleaned.length === 0) return 'Please enter a registration number';
+    if (/[^A-Za-z0-9]/.test(cleaned)) return 'Only letters and digits are allowed';
+    const match = cleaned.match(/^([A-Za-z]+)(\d+)$/);
+    if (!match) return 'Format: 2-3 letters followed by 4 digits (e.g., CAB-1234)';
+    const [, letters, digits] = match;
+    if (letters.length < 2 || letters.length > 3) return 'Must start with 2 or 3 letters';
+    if (digits.length !== 4) return 'Must end with exactly 4 digits';
+    return null; // valid
+  };
+
+  const [regError, setRegError] = useState<string | null>(null);
+
   const resetSelections = () => {
     setSelectedBrand('');
     setSelectedModel('');
     setSelectedVariant('');
     setSelectedYear('');
-    setVin('');
-    setVinDecoded(null);
+    setRegNumber('');
+    setRegVehicle(null);
+    setRegNotFound(null);
+    setRegError(null);
   };
 
-  const handleVinLookup = async () => {
-    if (vin.length !== 17) {
-      toast.error('VIN must be exactly 17 characters');
+  const handleRegLookup = async () => {
+    const error = validateRegNumber(regNumber);
+    if (error) {
+      setRegError(error);
+      toast.error(error);
       return;
     }
+    setRegError(null);
 
-    setVinLoading(true);
-    setVinDecoded(null);
+    setRegLoading(true);
+    setRegVehicle(null);
+    setRegNotFound(null);
 
     try {
-      const result = await api.decodeVin(vin);
-      setVinDecoded(result.decoded);
+      const result = await api.lookupRegistration(regNumber.trim());
 
-      if (!result.decoded.make || !result.decoded.model || !result.decoded.modelYear) {
-        toast.error('Failed to decode VIN');
-      } else {
+      if (result.found && result.vehicle) {
+        setRegVehicle(result.vehicle);
         toast.success(
-          `Found: ${result.decoded.modelYear} ${result.decoded.make} ${result.decoded.model}${result.decoded.trim ? ` ${result.decoded.trim}` : ''}`
+          `Found: ${result.vehicle.year ? result.vehicle.year + ' ' : ''}${result.vehicle.brand.name} ${result.vehicle.model.name}`
         );
+      } else {
+        const message = 'message' in result ? (result as { message: string }).message : 'Vehicle not found in our system.';
+        setRegNotFound(message);
+        toast.error(message);
       }
     } catch (error: unknown) {
       toast.error(
-        'Failed to decode VIN'
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to look up registration number'
       );
     }
 
-    setVinLoading(false);
+    setRegLoading(false);
   };
 
-  const handleVinSave = async () => {
-    if (!vinDecoded || !vinDecoded.make || !vinDecoded.model || !vinDecoded.modelYear) {
+  const handleRegSave = async () => {
+    if (!regVehicle) {
       toast.error('No valid vehicle data to save');
       return;
     }
@@ -173,20 +201,24 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
       return;
     }
 
-    setVinSaving(true);
+    setRegSaving(true);
 
     try {
-      const saved = await api.addUserVehicleByVin({
-        vin,
+      const saved = await api.addUserVehicleByReg({
+        registrationNumber: regVehicle.registrationNumber,
+        brandId: regVehicle.brand.id,
+        modelId: regVehicle.model.id,
+        variantId: regVehicle.variant?.id,
+        year: regVehicle.year ?? undefined,
       });
 
       const vehicle: Vehicle = {
         id: saved.id,
-        brand: saved.brand?.name || vinDecoded.make,
-        model: saved.model?.name || vinDecoded.model,
-        variant: saved.variant?.name || vinDecoded.trim || 'Base',
+        brand: saved.brand?.name || regVehicle.brand.name,
+        model: saved.model?.name || regVehicle.model.name,
+        variant: saved.variant?.name || regVehicle.variant?.name || 'Base',
         year: saved.year,
-        vin,
+        registrationNumber: regVehicle.registrationNumber,
       };
 
       setUserVehicle(vehicle);
@@ -203,7 +235,14 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
       );
     }
 
-    setVinSaving(false);
+    setRegSaving(false);
+  };
+
+  const handleRegDecline = () => {
+    setRegVehicle(null);
+    setRegNotFound(null);
+    setRegNumber('');
+    toast.info('Vehicle declined. You can try another registration number.');
   };
 
   const handleManualSave = async () => {
@@ -272,11 +311,11 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as 'vin' | 'manual')}>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as 'reg' | 'manual')}>
           <TabsList className="grid w-full grid-cols-2 bg-secondary/50">
-            <TabsTrigger value="vin" className="gap-2">
+            <TabsTrigger value="reg" className="gap-2">
               <Search className="h-4 w-4" />
-              VIN Lookup
+              Reg. Number
             </TabsTrigger>
             <TabsTrigger value="manual" className="gap-2">
               <Car className="h-4 w-4" />
@@ -284,30 +323,35 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="vin" className="space-y-4 mt-4">
+          <TabsContent value="reg" className="space-y-4 mt-4">
             <div className="space-y-2">
-              <Label htmlFor="vin">Enter VIN Number</Label>
+              <Label htmlFor="reg-number">Enter Registration Number</Label>
               <Input
-                id="vin"
-                placeholder="e.g., 1HGBH41JXMN109186"
-                value={vin}
+                id="reg-number"
+                placeholder="e.g., CAB-1234"
+                value={regNumber}
                 onChange={(e) => {
-                  setVin(e.target.value.toUpperCase());
-                  setVinDecoded(null);
+                  setRegNumber(e.target.value.toUpperCase());
+                  setRegVehicle(null);
+                  setRegNotFound(null);
+                  setRegError(null);
                 }}
-                maxLength={17}
-                className="font-mono tracking-wider bg-secondary/50"
+                className={`font-mono tracking-wider bg-secondary/50 ${regError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
               />
-              <p className="text-xs text-muted-foreground">
-                Your 17-character Vehicle Identification Number can be found on your dashboard or door jamb
-              </p>
+              {regError ? (
+                <p className="text-xs text-destructive">{regError}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  2–3 letters followed by 4 digits (e.g., CAB-1234)
+                </p>
+              )}
             </div>
             <Button
-              onClick={handleVinLookup}
-              disabled={vin.length !== 17 || vinLoading}
+              onClick={handleRegLookup}
+              disabled={!regNumber.trim() || regLoading}
               className="w-full neon-button"
             >
-              {vinLoading ? (
+              {regLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <>
@@ -317,9 +361,9 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
               )}
             </Button>
 
-            {/* Decoded VIN results */}
+            {/* Vehicle found in DB — show DB names with Accept / Decline */}
             <AnimatePresence>
-              {vinDecoded && vinDecoded.make && vinDecoded.model && vinDecoded.modelYear && (
+              {regVehicle && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -332,67 +376,72 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
                       <span className="text-sm font-semibold text-primary">Vehicle Found</span>
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                      <span className="text-muted-foreground">Year</span>
-                      <span className="font-medium">{vinDecoded.modelYear}</span>
-                      <span className="text-muted-foreground">Make</span>
-                      <span className="font-medium">{vinDecoded.make}</span>
+                      <span className="text-muted-foreground">Brand</span>
+                      <span className="font-medium">{regVehicle.brand.name}</span>
                       <span className="text-muted-foreground">Model</span>
-                      <span className="font-medium">{vinDecoded.model}</span>
-                      {vinDecoded.trim && (
+                      <span className="font-medium">{regVehicle.model.name}</span>
+                      {regVehicle.variant && (
                         <>
-                          <span className="text-muted-foreground">Trim</span>
-                          <span className="font-medium">{vinDecoded.trim}</span>
+                          <span className="text-muted-foreground">Variant</span>
+                          <span className="font-medium">{regVehicle.variant.name}</span>
                         </>
                       )}
-                      {vinDecoded.bodyClass && (
+                      {regVehicle.year && (
                         <>
-                          <span className="text-muted-foreground">Body</span>
-                          <span className="font-medium">{vinDecoded.bodyClass}</span>
-                        </>
-                      )}
-                      {vinDecoded.driveType && (
-                        <>
-                          <span className="text-muted-foreground">Drive</span>
-                          <span className="font-medium">{vinDecoded.driveType}</span>
-                        </>
-                      )}
-                      {vinDecoded.engineCylinders && vinDecoded.engineDisplacement && (
-                        <>
-                          <span className="text-muted-foreground">Engine</span>
-                          <span className="font-medium">
-                            {vinDecoded.engineCylinders}cyl {vinDecoded.engineDisplacement}L
-                          </span>
-                        </>
-                      )}
-                      {vinDecoded.transmissionStyle && (
-                        <>
-                          <span className="text-muted-foreground">Transmission</span>
-                          <span className="font-medium">{vinDecoded.transmissionStyle}</span>
-                        </>
-                      )}
-                      {vinDecoded.fuelType && (
-                        <>
-                          <span className="text-muted-foreground">Fuel</span>
-                          <span className="font-medium">{vinDecoded.fuelType}</span>
+                          <span className="text-muted-foreground">Year</span>
+                          <span className="font-medium">{regVehicle.year}</span>
                         </>
                       )}
                     </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Is this your vehicle? Accept to save it or decline to cancel.
+                    </p>
                   </div>
 
-                  <Button
-                    onClick={handleVinSave}
-                    disabled={vinSaving}
-                    className="w-full neon-button"
-                  >
-                    {vinSaving ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Check className="h-4 w-4 mr-2" />
-                        Save {vinDecoded.modelYear} {vinDecoded.make} {vinDecoded.model}
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleRegSave}
+                      disabled={regSaving}
+                      className="flex-1 neon-button"
+                    >
+                      {regSaving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Check className="h-4 w-4 mr-2" />
+                          Accept
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      onClick={handleRegDecline}
+                      variant="outline"
+                      disabled={regSaving}
+                      className="flex-1 border-destructive/50 text-destructive hover:bg-destructive/10"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Decline
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Vehicle NOT found in DB */}
+            <AnimatePresence>
+              {regNotFound && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                >
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+                    <div className="flex items-center gap-2">
+                      <X className="h-4 w-4 text-destructive" />
+                      <span className="text-sm font-semibold text-destructive">Not Available</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">{regNotFound}</p>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>

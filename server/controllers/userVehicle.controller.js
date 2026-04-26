@@ -21,7 +21,7 @@ function mapUserVehicle(doc) {
     modelId: doc.model && (doc.model._id ? doc.model._id.toString() : doc.model.toString()),
     variantId: doc.variant && (doc.variant._id ? doc.variant._id.toString() : doc.variant.toString()),
     year: doc.year,
-    vin: doc.vin ?? undefined,
+    registrationNumber: doc.registrationNumber ?? undefined,
     isActive: !!doc.isActive,
     ...(brand && { brand }),
     ...(model && { model }),
@@ -49,7 +49,7 @@ exports.getUserVehicles = async (req, res) => {
 exports.addUserVehicle = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { brandId, modelId, variantId, year, vin } = req.body;
+    const { brandId, modelId, variantId, year, registrationNumber } = req.body;
 
     if (!brandId || !modelId || !variantId || year == null) {
       return res.status(400).json({
@@ -80,7 +80,7 @@ exports.addUserVehicle = async (req, res) => {
       model: modelId,
       variant: variantId,
       year: yearNum,
-      vin: vin || null,
+      registrationNumber: registrationNumber || null,
       isActive,
     });
 

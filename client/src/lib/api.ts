@@ -89,6 +89,7 @@ export interface ApiCompatibleVariant {
 }
 
 export interface ApiProduct {
+  _id?: string;
   id: string;
   name: string;
   description?: string;
@@ -226,7 +227,7 @@ export interface ApiUserVehicle {
   modelId: string;
   variantId?: string;
   year: number;
-  vin?: string;
+  registrationNumber?: string;
   isActive: boolean;
   brand?: ApiVehicleBrand;
   model?: ApiVehicleModel;
@@ -234,32 +235,17 @@ export interface ApiUserVehicle {
   createdAt?: string;
 }
 
-export interface ApiVinDecoded {
-  vin: string;
-  make: string;
-  model: string;
-  modelYear: number | null;
-  trim: string;
-  bodyClass: string;
-  driveType: string;
-  fuelType: string;
-  engineCylinders: string;
-  engineDisplacement: string;
-  transmissionStyle: string;
-  plantCountry: string;
-  vehicleType: string;
-  errorCode: string;
-  errorText: string;
+export interface ApiRegCheckVehicle {
+  registrationNumber: string;
+  brand: ApiVehicleBrand;
+  model: { id: string; name: string };
+  variant: { id: string; name: string; yearStart: number; yearEnd: number | null } | null;
+  year: number | null;
 }
 
-export interface ApiVinDecodeResult {
-  decoded: ApiVinDecoded;
-  matched: {
-    brand: ApiVehicleBrand | null;
-    model: { id: string; name: string } | null;
-    variant: { id: string; name: string; yearStart: number; yearEnd: number | null } | null;
-  };
-}
+export type ApiRegCheckResult =
+  | { found: true; vehicle: ApiRegCheckVehicle }
+  | { found: false; message: string };
 
 export interface ApiReview {
   id: string;
@@ -977,16 +963,20 @@ class ApiClient {
     });
   }
 
-  // ============ VIN DECODE ============
+  // ============ REGISTRATION LOOKUP ============
 
-  async decodeVin(vin: string): Promise<ApiVinDecodeResult> {
-    return this.request<ApiVinDecodeResult>(`/vehicles/decode-vin/${encodeURIComponent(vin)}`);
+  async lookupRegistration(registrationNumber: string): Promise<ApiRegCheckResult> {
+    return this.request<ApiRegCheckResult>(`/vehicles/lookup/${encodeURIComponent(registrationNumber)}`);
   }
 
-  async addUserVehicleByVin(data: {
-    vin: string;
+  async addUserVehicleByReg(data: {
+    registrationNumber: string;
+    brandId: string;
+    modelId: string;
+    variantId?: string;
+    year?: number;
   }): Promise<ApiUserVehicle> {
-    return this.request<ApiUserVehicle>('/vehicles/user/vin', {
+    return this.request<ApiUserVehicle>('/vehicles/user/reg', {
       method: 'POST',
       body: JSON.stringify(data),
     });
@@ -1003,7 +993,7 @@ class ApiClient {
     modelId: string;
     variantId?: string;
     year: number;
-    vin?: string;
+    registrationNumber?: string;
   }): Promise<ApiUserVehicle> {
     return this.request<ApiUserVehicle>('/vehicles/user', {
       method: 'POST',

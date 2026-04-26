@@ -26,7 +26,7 @@ const userVehicleSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
-    vin: {
+    registrationNumber: {
       type: String,
       default: null,
       trim: true,

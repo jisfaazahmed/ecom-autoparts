@@ -44,7 +44,7 @@ const MyVehicle: React.FC = () => {
           model: active.model?.name ?? '',
           variant: active.variant?.name ?? '',
           year: active.year,
-          vin: active.vin,
+          registrationNumber: active.registrationNumber,
         });
       } else {
         setUserVehicle(null);
@@ -76,7 +76,7 @@ const MyVehicle: React.FC = () => {
           model: v.model?.name ?? '',
           variant: v.variant?.name ?? '',
           year: v.year,
-          vin: v.vin,
+          registrationNumber: v.registrationNumber,
         });
       }
       toast({
@@ -217,10 +217,10 @@ const MyVehicle: React.FC = () => {
                           <span>Year:</span>
                           <span className="text-foreground font-medium">{vehicle.year}</span>
                         </div>
-                        {vehicle.vin && (
+                        {vehicle.registrationNumber && (
                           <div className="flex justify-between">
-                            <span>VIN:</span>
-                            <span className="text-foreground font-mono text-xs">{vehicle.vin}</span>
+                            <span>Reg. No:</span>
+                            <span className="text-foreground font-mono text-xs">{vehicle.registrationNumber}</span>
                           </div>
                         )}
                       </div>

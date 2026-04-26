@@ -66,7 +66,7 @@ const Navbar: React.FC = () => {
         model: vehicle.model?.name ?? '',
         variant: vehicle.variant?.name ?? '',
         year: vehicle.year,
-        vin: vehicle.vin,
+        registrationNumber: vehicle.registrationNumber,
       });
       setSavedVehicles((prev) =>
         prev.map((v) => ({ ...v, isActive: v.id === vehicle.id }))
