@@ -46,6 +46,7 @@ const { verifyToken } = require('../middleware/authMiddleware');
  * description: User already exists
  */
 router.post('/register', authController.register);
+router.post('/register/seller', authController.registerSeller);
 
 /**
  * @swagger
@@ -76,6 +77,8 @@ router.post('/register', authController.register);
 router.post('/login', authController.login);
 
 router.get('/me', verifyToken, authController.getMe);
+router.put('/profile', verifyToken, authController.updateProfile);
+router.post('/change-password', verifyToken, authController.changePassword);
 
 // ========== PASSWORD RESET ENDPOINTS ==========
 /**

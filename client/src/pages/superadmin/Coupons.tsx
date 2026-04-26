@@ -79,8 +79,8 @@ const SuperAdminCoupons: React.FC = () => {
       const data = await api.getCoupons();
       // Filter to only platform-wide coupons (no shopId)
       setCoupons(data.data.filter((c: Coupon) => !c.shopId));
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to fetch coupons', variant: 'destructive' });
     }
     setLoading(false);
   };
@@ -135,8 +135,8 @@ const SuperAdminCoupons: React.FC = () => {
       }
       setDialogOpen(false);
       fetchCoupons();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to save coupon', variant: 'destructive' });
     }
     setSaving(false);
   };
@@ -150,8 +150,8 @@ const SuperAdminCoupons: React.FC = () => {
       setDeleteDialogOpen(false);
       setCouponToDelete(null);
       fetchCoupons();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to delete coupon', variant: 'destructive' });
     }
     setSaving(false);
   };
@@ -161,8 +161,8 @@ const SuperAdminCoupons: React.FC = () => {
       await api.updateCoupon(coupon.id, { isActive: !coupon.isActive });
       setCoupons(coupons.map(c => c.id === coupon.id ? { ...c, isActive: !c.isActive } : c));
       toast({ title: coupon.isActive ? 'Deactivated' : 'Activated' });
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to toggle coupon status', variant: 'destructive' });
     }
   };
 

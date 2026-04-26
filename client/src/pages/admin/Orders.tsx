@@ -113,8 +113,8 @@ const AdminOrders: React.FC = () => {
     try {
       const response = await api.getVendorOrders();
       setOrders(response.data || []);
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to fetch orders', variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to fetch orders', variant: 'destructive' });
     }
     setLoading(false);
   };
@@ -168,8 +168,8 @@ const AdminOrders: React.FC = () => {
         setSelectedOrder({ ...selectedOrder, items: updatedItems });
       }
       toast({ title: 'Updated', description: `Order marked as ${status}` });
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to update order', variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to update order', variant: 'destructive' });
     }
     setUpdatingStatus(null);
   };
@@ -181,8 +181,8 @@ const AdminOrders: React.FC = () => {
       await api.updateOrderTracking(selectedOrderId, trackingNumber);
       setOrders(orders.map(o => String(o.id || o._id) === selectedOrderId ? { ...o, trackingNumber: trackingNumber || undefined } : o));
       toast({ title: 'Saved', description: 'Order details updated' });
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to update order', variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to update order', variant: 'destructive' });
     }
   };
 

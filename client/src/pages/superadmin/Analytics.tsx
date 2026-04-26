@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { BarChart3, DollarSign, TrendingUp, ShoppingBag, Users, Package, Loader2, Calendar, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AdminLayout from '@/components/layout/AdminLayout';
-import { api } from '@/lib/api';
+import { api, ApiOrder, ApiShop, ApiProduct } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatLKR, formatLKRCompact } from '@/lib/currency';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend } from 'recharts';
@@ -22,9 +22,7 @@ const SuperAdminAnalytics: React.FC = () => {
   const [salesByMonth, setSalesByMonth] = useState<{ month: string; sales: number; commission: number; orders: number }[]>([]);
   const [topCategories, setTopCategories] = useState<{ name: string; value: number }[]>([]);
 
-  useEffect(() => { fetchAnalytics(); }, [timeRange]);
-
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     try {
       const [orders, shops, products, categories] = await Promise.all([
@@ -36,12 +34,12 @@ const SuperAdminAnalytics: React.FC = () => {
 
       if (orders?.data) {
         const ordersArray = orders.data;
-        setTotalSales(ordersArray.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0));
-        setTotalCommission(ordersArray.reduce((sum: number, o: any) => sum + (o.commissionAmount || 0), 0));
+        setTotalSales(ordersArray.reduce((sum: number, o: ApiOrder) => sum + (o.totalAmount || 0), 0));
+        setTotalCommission(ordersArray.reduce((sum: number, o: ApiOrder) => sum + (o.commissionAmount || 0), 0));
         setTotalOrders(ordersArray.length);
 
         const statusCounts: Record<string, number> = {};
-        ordersArray.forEach((o: any) => { statusCounts[o.status] = (statusCounts[o.status] || 0) + 1; });
+        ordersArray.forEach((o: ApiOrder) => { statusCounts[o.status] = (statusCounts[o.status] || 0) + 1; });
         setOrdersByStatus([
           { name: 'Pending', value: statusCounts['pending'] || 0, color: 'hsl(38, 92%, 50%)' },
           { name: 'Processing', value: statusCounts['processing'] || 0, color: 'hsl(190, 100%, 50%)' },
@@ -56,28 +54,30 @@ const SuperAdminAnalytics: React.FC = () => {
           const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
           monthlyData[d.toLocaleString('default', { month: 'short' })] = { sales: 0, commission: 0, orders: 0 };
         }
-        ordersArray.forEach((o: any) => {
+        ordersArray.forEach((o: ApiOrder) => {
           const key = new Date(o.createdAt).toLocaleString('default', { month: 'short' });
           if (monthlyData[key]) { monthlyData[key].sales += o.totalAmount || 0; monthlyData[key].commission += o.commissionAmount || 0; monthlyData[key].orders += 1; }
         });
         setSalesByMonth(Object.entries(monthlyData).map(([month, data]) => ({ month, ...data })));
       }
 
-      if (shops?.data) setTotalVendors(shops.data.filter((s: any) => s.status === 'approved').length);
+      if (shops?.data) setTotalVendors(shops.data.filter((s: ApiShop) => s.status === 'approved').length);
 
       if (products?.data && categories) {
         const categoryCounts: Record<string, number> = {};
-        products.data.forEach((p: any) => {
+        products.data.forEach((p: ApiProduct) => {
           const catName = p.category?.name || 'Uncategorized'; 
           categoryCounts[catName] = (categoryCounts[catName] || 0) + 1; 
         });
         setTopCategories(Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, value]) => ({ name, value })));
       }
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
     }
     setLoading(false);
-  };
+  }, [toast]);
+
+  useEffect(() => { fetchAnalytics(); }, [fetchAnalytics, timeRange]);
 
   const stats = [
     { label: 'Total Sales', value: formatLKRCompact(totalSales), icon: DollarSign, change: '+18%', positive: true, color: 'text-primary' },
