@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { api, ApiUser, ApiProfile, ApiShop } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { useStore } from '@/store/useStore';
 
 type AppRole = 'customer' | 'admin' | 'superadmin';
 
@@ -117,6 +118,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [shop, setShop] = useState<Shop | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+  const { setUserVehicle } = useStore();
+
+  // Fetch and hydrate the user's active vehicle into the store
+  const hydrateActiveVehicle = async () => {
+    try {
+      const vehicles = await api.getUserVehicles();
+      const active = (vehicles || []).find((v) => v.isActive);
+      if (active) {
+        setUserVehicle({
+          id: active.id,
+          brand: active.brand?.name ?? '',
+          model: active.model?.name ?? '',
+          variant: active.variant?.name ?? '',
+          year: active.year,
+          vin: active.vin,
+        });
+      }
+    } catch {
+      // Silently fail — vehicles are not critical for auth
+    }
+  };
 
   const fetchUserData = async () => {
     try {
@@ -180,6 +202,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const token = api.getToken();
       if (token) {
         await fetchUserData();
+        await hydrateActiveVehicle();
+        // Load the user's cart from backend
+        await useStore.getState().syncCartFromApi();
       }
       setLoading(false);
     };
@@ -226,6 +251,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     businessRegistration?: string;
     shopDescription?: string;
     phone?: string;
+    address?: string;
+
   }) => {
     try {
       await api.registerSeller({
@@ -261,6 +288,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       await api.login(email, password);
       await fetchUserData();
+      await hydrateActiveVehicle();
+      // Load this user's cart from backend
+      await useStore.getState().syncCartFromApi();
 
       toast({
         title: 'Welcome Back',
@@ -290,6 +320,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setProfile(null);
     setRole(null);
     setShop(null);
+    setUserVehicle(null);
+    useStore.getState().clearCart();
     
     toast({
       title: 'Signed Out',

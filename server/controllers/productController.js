@@ -1,5 +1,78 @@
 const Product = require('../models/product');
 const Vehicle = require('../models/vehicle');
+const VehicleBrand = require('../models/vehicleBrand.model');
+const VehicleModel = require('../models/vehicleModel.model');
+const VehicleVariant = require('../models/vehicleVariant.model');
+
+// ── Helper: transform a populated product doc for the frontend ──
+function transformProduct(p) {
+  const obj = typeof p.toObject === 'function' ? p.toObject() : { ...p };
+  obj.id = obj._id.toString();
+  delete obj._id;
+
+  obj.rating = typeof obj.rating === 'number' ? obj.rating : 0;
+  obj.reviewCount = typeof obj.reviewCount === 'number' ? obj.reviewCount : 0;
+
+  // category
+  if (obj.category && typeof obj.category === 'object' && obj.category._id) {
+    obj.categoryId = obj.category._id.toString();
+    obj.category = { id: obj.categoryId, name: obj.category.name };
+  }
+
+  // compatibleVehicles (legacy)
+  // if (Array.isArray(obj.compatibleVehicles)) {
+  //   obj.compatibleVehicles = obj.compatibleVehicles.map((v) => {
+  //     if (v && typeof v === 'object' && v._id) {
+  //       return { id: v._id.toString(), year: v.year, make: v.make, model: v.model };
+  //     }
+  //     return typeof v === 'object' ? v.toString() : v;
+  //   });
+  // }
+
+  // compatibleVehicleVariants (new system)
+  if (Array.isArray(obj.compatibleVehicleVariants)) {
+    obj.compatibleVehicleVariants = obj.compatibleVehicleVariants.map((v) => {
+      if (v && typeof v === 'object' && v._id) {
+        const mapped = {
+          id: v._id.toString(),
+          name: v.name,
+          yearStart: v.yearStart,
+          yearEnd: v.yearEnd ?? null,
+        };
+        // include populated model → brand info when available
+        if (v.model && typeof v.model === 'object' && v.model._id) {
+          mapped.modelId = v.model._id.toString();
+          mapped.modelName = v.model.name;
+          if (v.model.brand && typeof v.model.brand === 'object' && v.model.brand._id) {
+            mapped.brandId = v.model.brand._id.toString();
+            mapped.brandName = v.model.brand.name;
+          }
+        }
+        return mapped;
+      }
+      return typeof v === 'object' ? v.toString() : v;
+    });
+  }
+
+  obj.imageUrl = obj.image || null;
+  return obj;
+}
+
+// ── Populate chain shared between getProducts & getProductById ──
+function applyPopulates(query) {
+  return query
+    .populate('category', 'name slug')
+    .populate('compatibleVehicles', 'year make model')
+    .populate({
+      path: 'compatibleVehicleVariants',
+      select: 'name model yearStart yearEnd',
+      populate: {
+        path: 'model',
+        select: 'name brand',
+        populate: { path: 'brand', select: 'name' },
+      },
+    });
+}
 
 // 1. CREATE MASTER PRODUCT (Super Admin Only)
 exports.createProduct = async (req, res) => {
@@ -33,26 +106,140 @@ exports.createProduct = async (req, res) => {
 // 2. SEARCH PRODUCTS (The "Tesla > Model S > Brakes" Logic)
 exports.getProducts = async (req, res) => {
   try {
-    const { vehicleId, categoryId } = req.query;
-    
+    const {
+      vehicleId,
+      categoryId,
+      category,          // alias used by frontend
+      isActive,
+      search,
+      minPrice,
+      maxPrice,
+      sortBy,
+      sortOrder,
+      page = 1,
+      limit = 20,
+      make,              // vehicle brand name for compatibility filter
+      model: vehicleModel, // vehicle model name for compatibility filter
+      year: vehicleYear,   // vehicle year for compatibility filter
+    } = req.query;
+
     const query = {};
 
-    // Filter by Category (e.g., "Brake Pads")
-    if (categoryId) {
-      query.category = categoryId;
+    // Filter by Category
+    const catId = categoryId || category;
+    if (catId) {
+      query.category = catId;
     }
 
-    // Filter by Vehicle (e.g., "Tesla Model S")
+    // Filter by Vehicle (legacy single ID)
     if (vehicleId) {
-      // Find products where the 'compatibleVehicles' array CONTAINS this vehicleId
       query.compatibleVehicles = vehicleId;
     }
 
-    const products = await Product.find(query)
-      .populate('category', 'name')
-      .populate('compatibleVehicles', 'year make model'); // Show car names in result
+    // Filter by vehicle make/model/year — uses the new VehicleVariant system
+    if (make && vehicleModel) {
+      const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-    res.json(products);
+      // Step 1: Find the VehicleBrand by name
+      const brand = await VehicleBrand.findOne({
+        name: { $regex: new RegExp(`^${escapeRegex(make)}$`, 'i') },
+      });
+
+      if (!brand) {
+        return res.json({
+          products: [],
+          pagination: { page: 1, limit: parseInt(limit, 10) || 20, total: 0, totalPages: 0 },
+        });
+      }
+
+      // Step 2: Find the VehicleModel by name + brand
+      const vModel = await VehicleModel.findOne({
+        name: { $regex: new RegExp(`^${escapeRegex(vehicleModel)}$`, 'i') },
+        brand: brand._id,
+      });
+
+      if (!vModel) {
+        return res.json({
+          products: [],
+          pagination: { page: 1, limit: parseInt(limit, 10) || 20, total: 0, totalPages: 0 },
+        });
+      }
+
+      // Step 3: Find VehicleVariants for that model (optionally filtered by year)
+      const variantQuery = { model: vModel._id };
+      if (vehicleYear) {
+        const yr = Number(vehicleYear);
+        variantQuery.yearStart = { $lte: yr };
+        variantQuery.$or = [
+          { yearEnd: { $gte: yr } },
+          { yearEnd: null },
+        ];
+      }
+      const matchingVariants = await VehicleVariant.find(variantQuery).select('_id');
+      const variantIds = matchingVariants.map((v) => v._id);
+
+      if (variantIds.length > 0) {
+        query.compatibleVehicleVariants = { $in: variantIds };
+      } else {
+        return res.json({
+          products: [],
+          pagination: { page: 1, limit: parseInt(limit, 10) || 20, total: 0, totalPages: 0 },
+        });
+      }
+    }
+
+    // Filter by active status
+    if (isActive !== undefined) {
+      query.isActive = isActive === 'true';
+    }
+
+    // Search by name, description, or partNumber
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } },
+        { partNumber: { $regex: search, $options: 'i' } },
+      ];
+    }
+
+    // Price range
+    if (minPrice || maxPrice) {
+      query.price = {};
+      if (minPrice) query.price.$gte = Number(minPrice);
+      if (maxPrice) query.price.$lte = Number(maxPrice);
+    }
+
+    // Sorting
+    let sort = {};
+    if (sortBy) {
+      sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    } else {
+      sort.createdAt = -1;
+    }
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, parseInt(limit, 10) || 20);
+    const skip = (pageNum - 1) * limitNum;
+
+    const [products, total] = await Promise.all([
+      applyPopulates(Product.find(query))
+        .sort(sort)
+        .skip(skip)
+        .limit(limitNum),
+      Product.countDocuments(query),
+    ]);
+
+    const transformed = products.map(transformProduct);
+
+    res.json({
+      products: transformed,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    });
   } catch (err) {
     console.error(err);
     res.status(500).send('Server Error');
@@ -99,24 +286,15 @@ exports.getCategories = async (req, res) => {
 
 exports.getProductById = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
-    
+    const product = await applyPopulates(Product.findById(req.params.id));
+
     if (!product) {
-      return res.status(404).json({ 
-        success: false,
-        message: 'Product not found' 
-      });
+      return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
-    res.json({
-      success: true,
-      product
-    });
+    res.json(transformProduct(product));
   } catch (err) {
     console.error(err);
-    res.status(500).json({ 
-      success: false,
-      message: 'Server error' 
-    });
+    res.status(500).json({ success: false, message: 'Server error' });
   }
-}; 
+};
