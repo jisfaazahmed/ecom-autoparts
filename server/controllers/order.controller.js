@@ -8,9 +8,9 @@ const OrderItem = require('../models/orderItem.model');
 module.exports.createOrder = async (req, res) => {
     try {
         const paymentMethod = String(req.body?.paymentMethod || '').toLowerCase();
-        if (paymentMethod === 'card' && !req.user) {
+        if ((paymentMethod === 'card' || paymentMethod === 'wallet') && !req.user) {
             return res.status(401).json({
-                message: 'Authentication is required for card payment',
+                message: `Authentication is required for ${paymentMethod} payment`,
             });
         }
 

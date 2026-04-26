@@ -45,6 +45,31 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  wallet: {
+    balance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    otp: {
+      code: {
+        type: String,
+        default: null,
+      },
+      expiresAt: {
+        type: Date,
+        default: null,
+      },
+      attempts: {
+        type: Number,
+        default: 0,
+      },
+      lastSentAt: {
+        type: Date,
+        default: null,
+      },
+    },
+  },
   createdAt: {
     type: Date,
     default: Date.now,
