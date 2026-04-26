@@ -108,7 +108,7 @@ module.exports.getProductReservations = async (req, res) => {
 
         const { productId } = req.params;
 
-        const reservations = await InventoryReservationService.getOrderReservations(productId);
+        const reservations = await InventoryReservationService.getProductReservations(productId);
 
         res.status(200).json({
             success: true,

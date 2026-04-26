@@ -39,6 +39,41 @@ const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as stri
 const useStripeMock = (import.meta.env.VITE_USE_STRIPE_MOCK as string | undefined) === 'true';
 const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
 
+const ZONE_1_CITIES = ['colombo'];
+const ZONE_2_CITIES = ['gampaha', 'kaluthara'];
+const ZONE_3_CITIES = [
+  'kurunegala',
+  'kandy',
+  'matale',
+  'nuwara eliya',
+  'galle',
+  'matara',
+  'hambantota',
+  'puttalam',
+  'anuradhapura',
+  'polonnaruwa',
+  'badulla',
+  'monaragala',
+  'ratnapura',
+  'kegalle',
+  'trincomalee',
+  'batticaloa',
+  'ampara',
+  'jaffna',
+  'vavuniya',
+  'mannar',
+  'kilinochchi',
+  'mullaitivu',
+];
+
+function getZoneMultiplier(city: string) {
+  const normalizedCity = String(city || '').trim().toLowerCase();
+  if (ZONE_1_CITIES.includes(normalizedCity)) return 100;
+  if (ZONE_2_CITIES.includes(normalizedCity)) return 200;
+  if (ZONE_3_CITIES.includes(normalizedCity)) return 300;
+  return 0;
+}
+
 type ConfirmInlineCardFn = (
   clientSecret: string,
   billing: { name: string; email: string; phone: string }
@@ -300,7 +335,8 @@ export default function Checkout() {
   };
 
   const cartTotal = getCartTotal();
-  const finalTotal = cartTotal + shippingCost - discountAmount;
+  const taxAmount = Math.round(cartTotal * 0.18);
+  const finalTotal = cartTotal + shippingCost + taxAmount - discountAmount;
   const validCart = cart.filter(item => item && item.product);
 
   // Get unique shop IDs from cart
@@ -314,43 +350,22 @@ export default function Checkout() {
       return;
     }
 
-    const district = form.city.trim();
-    if (!district) {
-      setShippingCost(DEFAULT_SHIPPING_COST);
-      setShippingError(null);
-      return;
-    }
-
-    // Shipping calculation endpoint is authenticated in backend. For guests we use a fallback estimate.
-    if (!api.getToken()) {
-      setShippingCost(DEFAULT_SHIPPING_COST);
-      setShippingError('Sign in to get exact shipping cost for your address.');
-      return;
-    }
-
     setShippingLoading(true);
     try {
-      const quote = await api.calculateShipping({
-        items: validCart.map((item) => ({
-          product: {
-            price: item.product.price,
-            weight: item.product.weight || 0,
-          },
-          quantity: item.quantity,
-        })),
-        deliveryAddress: {
-          district,
-          city: form.city.trim(),
-        },
-        shippingMethod: 'standard',
-      });
+      const totalWeight = validCart.reduce((sum, item) => {
+        const weight = item.product.weight || 0.5;
+        return sum + (weight * item.quantity);
+      }, 0);
 
-      setShippingCost(typeof quote.totalCharge === 'number' ? quote.totalCharge : DEFAULT_SHIPPING_COST);
-      setShippingError(null);
-    } catch (error) {
-      console.error('Shipping calculation failed:', error);
-      setShippingCost(DEFAULT_SHIPPING_COST);
-      setShippingError('Using estimated shipping cost. Exact charge will apply at fulfillment.');
+      const zoneMultiplier = getZoneMultiplier(form.city);
+      const computedShipping = Math.round(300 + (totalWeight * 50) + zoneMultiplier + 300);
+
+      setShippingCost(Number.isFinite(computedShipping) ? computedShipping : DEFAULT_SHIPPING_COST);
+      setShippingError(
+        form.city.trim()
+          ? null
+          : 'Enter your city to include zone-based shipping charge.'
+      );
     } finally {
       setShippingLoading(false);
     }
@@ -1358,6 +1373,10 @@ export default function Checkout() {
                       ) : (
                         <span className="font-medium">{formatLKR(shippingCost)}</span>
                       )}
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Tax (18%)</span>
+                      <span className="font-medium">{formatLKR(taxAmount)}</span>
                     </div>
                     {shippingError && (
                       <p className="text-xs text-amber-500 col-span-2">{shippingError}</p>
