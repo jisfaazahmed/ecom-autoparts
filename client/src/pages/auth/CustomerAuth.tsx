@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Car, Mail, Lock, User, Phone, MapPin, Eye, EyeOff, Loader2 } from 'lucide-react';
@@ -20,8 +20,6 @@ const signupSchema = z.object({
   fullName: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  phone: z.string().optional(),
-  address: z.string().optional(),
 });
 
 const CustomerAuth: React.FC = () => {
@@ -43,7 +41,7 @@ const CustomerAuth: React.FC = () => {
   });
 
   // Redirect if already logged in
-  React.useEffect(() => {
+  useEffect(() => {
     if (user && role) {
       const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
       if (role === 'superadmin') {
@@ -192,11 +190,11 @@ const CustomerAuth: React.FC = () => {
                   {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
                 </div>
 
-                <div className="text-right">
+                {/* <div className="text-right">
                   <Link to="/auth/reset-password" className="text-sm text-primary hover:underline">
                     Forgot password?
                   </Link>
-                </div>
+                </div> */}
 
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
