@@ -80,7 +80,7 @@ const SuperAdminCoupons: React.FC = () => {
     setLoading(true);
     try {
       const response = await api.getCoupons().catch(() => ({ data: [] }));
-      const apiCoupons = (response as any).data?.filter((c: Coupon) => !c.shopId) || [];
+      const apiCoupons = (response as { data?: Coupon[] }).data?.filter((c: Coupon) => !c.shopId) || [];
 
       if (apiCoupons.length > 0) {
         setCoupons(apiCoupons);
@@ -140,7 +140,7 @@ const SuperAdminCoupons: React.FC = () => {
       if (editingCoupon) {
         if (editingCoupon.id.startsWith('coup') || editingCoupon.id.startsWith('mock')) {
           // Simulate update for mock data
-          setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? { ...c, ...couponData, discountValue: couponData.discountValue || 0 } : c as any));
+          setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? { ...c, ...couponData, discountValue: couponData.discountValue || 0 } : c));
           toast({ title: 'Updated (Demo)', description: 'Mock coupon updated for demonstration' });
         } else {
           await api.updateCoupon(editingCoupon.id, couponData);

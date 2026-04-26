@@ -132,7 +132,8 @@ const Orders: React.FC = () => {
       
       // Refresh orders
       await fetchOrders();
-    } catch (error: any) {
+    } catch (err) {
+      const error = err as Error;
       toast({
         title: 'Cancellation Failed',
         description: error.message || 'Failed to cancel order. Please try again.',
@@ -154,7 +155,8 @@ const Orders: React.FC = () => {
       
       // Navigate to cart
       navigate('/cart');
-    } catch (error: any) {
+    } catch (err) {
+      const error = err as Error;
       toast({
         title: 'Reorder Failed',
         description: error.message || 'Failed to add items to cart. Please try again.',
