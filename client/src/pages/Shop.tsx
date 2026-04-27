@@ -72,7 +72,7 @@ const Shop: React.FC = () => {
     : null;
 
   const mapToProductCard = (p: ApiProduct) => ({
-    id: p.id,
+    id: p.id || p._id || '',
     name: p.name,
     description: p.description || '',
     price: p.price,
@@ -379,7 +379,7 @@ const Shop: React.FC = () => {
               >
                 {paginatedProducts.map((product, i) => (
                   <motion.div
-                    key={product.id}
+                    key={product.id || product._id || i}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.05 }}

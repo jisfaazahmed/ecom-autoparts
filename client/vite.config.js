@@ -8,8 +8,11 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     resolve: {
+      dedupe: ['react', 'react-dom'],
       alias: {
         '@': path.resolve(__dirname, './src'),
+        react: path.resolve(__dirname, './node_modules/react'),
+        'react-dom': path.resolve(__dirname, './node_modules/react-dom'),
       },
     },
     optimizeDeps: {
@@ -18,6 +21,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 3000,
+      strictPort: true,
       host: true,
       watch: {
         usePolling: true,

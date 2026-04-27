@@ -31,20 +31,37 @@ const ProductDetail: React.FC = () => {
 
   useEffect(() => {
     const fetchProduct = async () => {
-      if (!id) return;
-      
-      try {
-        const [productData, reviewsData] = await Promise.all([
-          api.getProduct(id),
-          api.getProductReviews(id)
-        ]);
-        
-        setProduct(productData);
-        setReviews(reviewsData || []);
-      } catch (error) {
-        console.error('Failed to fetch product:', error);
+      if (!id) {
+        setLoading(false);
+        return;
       }
-      
+
+      const isObjectId = /^[a-fA-F0-9]{24}$/.test(id);
+      if (!isObjectId) {
+        setProduct(null);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const productData = await api.getProduct(id);
+        setProduct(productData);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error('Failed to fetch product:', message);
+        setProduct(null);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const reviewsData = await api.getProductReviews(id);
+        setReviews(reviewsData || []);
+      } catch {
+        // Reviews endpoints are optional in current backend; do not block product details.
+        setReviews([]);
+      }
+
       setLoading(false);
     };
 
@@ -55,20 +72,24 @@ const ProductDetail: React.FC = () => {
     if (!product) return;
     
     addToCart({
-      id: product.id,
-      name: product.name,
-      description: product.description || '',
-      price: product.price,
-      image: product.imageUrl || '/placeholder.svg',
-      category: product.category?.name || 'Uncategorized',
-      brand: '',
-      shopId: product.shopId,
-      shopName: product.shop?.name || 'Unknown Shop',
-      stock: product.stock,
-      compatibleVehicles: product.compatibleVariants || [],
-      rating: 0,
-      reviewCount: 0,
-      sku: product.sku || '',
+      id: product.id || product._id || '',
+      product: {
+        id: product.id || product._id || '',
+        name: product.name,
+        description: product.description || '',
+        price: product.price,
+        image: product.imageUrl || '/placeholder.svg',
+        category: product.category?.name || 'Uncategorized',
+        brand: '',
+        shopId: product.shopId,
+        shopName: product.shop?.name || 'Unknown Shop',
+        stock: product.stock,
+        compatibleVehicles: product.compatibleVariants || [],
+        rating: 0,
+        reviewCount: 0,
+        sku: product.sku || '',
+      },
+      quantity: 1
     });
     
     toast({
@@ -90,7 +111,8 @@ const ProductDetail: React.FC = () => {
     setSubmittingReview(true);
     
     try {
-      await api.createProductReview(product.id, {
+      const productId = product.id || product._id || '';
+      await api.createProductReview(productId, {
         rating: newRating,
         comment: newComment || undefined,
       });
@@ -101,15 +123,16 @@ const ProductDetail: React.FC = () => {
       });
       
       // Refresh reviews
-      const reviewsData = await api.getProductReviews(product.id);
+      const reviewsData = await api.getProductReviews(productId);
       setReviews(reviewsData || []);
       
       setNewComment('');
       setNewRating(5);
     } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to submit review';
       toast({
         title: 'Error',
-        description: error instanceof Error && error.message ? error.message : 'Failed to submit review',
+        description: message,
         variant: 'destructive',
       });
     }

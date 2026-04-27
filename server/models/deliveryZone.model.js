@@ -67,7 +67,6 @@ const deliveryZoneSchema = new mongoose.Schema({
     timestamps: true
 });
 
-deliveryZoneSchema.index({ zoneCode: 1 });
 deliveryZoneSchema.index({ 'coverage.postalCodes': 1 });
 deliveryZoneSchema.index({ 'coverage.cities': 1 });
 

@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/select';
 import Navbar from '@/components/layout/Navbar';
 import { useAuth } from '@/hooks/useAuth';
-import { api, ApiOrder } from '@/lib/api';
+import { api, ApiOrder, ApiOrderTimelineEvent } from '@/lib/api';
 import { formatLKR } from '@/lib/currency';
 import OrderDetailsDialog from '@/components/orders/OrderDetailsDialog';
 import CancelOrderDialog from '@/components/orders/CancelOrderDialog';
@@ -47,15 +47,55 @@ const statusConfig: Record<string, { icon: React.ReactNode; color: string; label
     color: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
     label: 'Processing',
   },
+  ready_to_ship: {
+    icon: <Package className="h-4 w-4" />,
+    color: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+    label: 'Ready to Ship',
+  },
   shipped: {
     icon: <Truck className="h-4 w-4" />,
     color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
     label: 'Shipped',
   },
+  out_for_delivery: {
+    icon: <Truck className="h-4 w-4" />,
+    color: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+    label: 'Out for Delivery',
+  },
   delivered: {
     icon: <CheckCircle className="h-4 w-4" />,
     color: 'bg-green-500/20 text-green-500 border-green-500/30',
     label: 'Delivered',
+  },
+  confirmed: {
+    icon: <CheckCircle className="h-4 w-4" />,
+    color: 'bg-emerald-500/20 text-emerald-500 border-emerald-500/30',
+    label: 'Confirmed',
+  },
+  partially_shipped: {
+    icon: <Truck className="h-4 w-4" />,
+    color: 'bg-purple-500/20 text-purple-500 border-purple-500/30',
+    label: 'Partially Shipped',
+  },
+  partially_delivered: {
+    icon: <Truck className="h-4 w-4" />,
+    color: 'bg-blue-500/20 text-blue-500 border-blue-500/30',
+    label: 'Partially Delivered',
+  },
+  refunded: {
+    icon: <XCircle className="h-4 w-4" />,
+    color: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+    label: 'Refunded',
+  },
+  return_requested: {
+    icon: <XCircle className="h-4 w-4" />,
+    color: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    label: 'Return Requested',
+  },
+  returned: {
+    icon: <XCircle className="h-4 w-4" />,
+    color: 'bg-slate-500/20 text-slate-400 border-slate-500/30',
+    label: 'Returned',
   },
   cancelled: {
     icon: <XCircle className="h-4 w-4" />,
@@ -63,6 +103,9 @@ const statusConfig: Record<string, { icon: React.ReactNode; color: string; label
     label: 'Cancelled',
   },
 };
+
+const getOrderStatus = (order: ApiOrder) =>
+  order.overallStatus || order.status || 'pending';
 
 const Orders: React.FC = () => {
   const { user } = useAuth();
@@ -73,6 +116,7 @@ const Orders: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedOrder, setSelectedOrder] = useState<ApiOrder | null>(null);
+  const [selectedOrderTimeline, setSelectedOrderTimeline] = useState<ApiOrderTimelineEvent[]>([]);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<string | null>(null);
@@ -83,6 +127,47 @@ const Orders: React.FC = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [totalOrders, setTotalOrders] = useState(0);
   const ordersPerPage = 10;
+
+  const parseShippingAddress = (shippingAddress: unknown) => {
+    if (!shippingAddress || typeof shippingAddress !== 'object') return null;
+    const address = shippingAddress as Record<string, unknown>;
+    const getString = (value: unknown) =>
+      typeof value === 'string' ? value.trim() : '';
+
+    return {
+      fullName: getString(address.fullName) || undefined,
+      phone: getString(address.phone) || undefined,
+      addressLine1: getString(address.addressLine1) || undefined,
+      city: getString(address.city) || undefined,
+      postalCode: getString(address.postalCode) || undefined,
+      country: getString(address.country) || undefined,
+      addressType: getString(address.addressType) || undefined,
+    };
+  };
+
+  const formatShippingAddress = (
+    shippingAddress: unknown,
+    shippingCity?: string,
+    shippingPostalCode?: string
+  ) => {
+    if (typeof shippingAddress === 'string') {
+      return [shippingAddress, shippingCity, shippingPostalCode]
+        .filter(Boolean)
+        .join(', ');
+    }
+
+    const parsed = parseShippingAddress(shippingAddress);
+    if (!parsed) return '';
+
+    return [
+      parsed.addressLine1,
+      parsed.city || shippingCity,
+      parsed.postalCode || shippingPostalCode,
+      parsed.country,
+    ]
+      .filter(Boolean)
+      .join(', ');
+  };
 
   useEffect(() => {
     fetchOrders();
@@ -114,9 +199,30 @@ const Orders: React.FC = () => {
     }
   };
 
-  const handleViewDetails = (order: ApiOrder) => {
-    setSelectedOrder(order);
-    setShowDetailsDialog(true);
+  const handleViewDetails = async (order: ApiOrder) => {
+    setLoading(true);
+    try {
+      const orderId = order.id || order._id;
+      if (!orderId) {
+        setSelectedOrder(order);
+        setSelectedOrderTimeline([]);
+      } else {
+        const details = await api.getOrderWithTimeline(orderId);
+        setSelectedOrder(details.order);
+        setSelectedOrderTimeline(details.timeline || []);
+      }
+      setShowDetailsDialog(true);
+    } catch (error) {
+      setSelectedOrder(order);
+      setSelectedOrderTimeline([]);
+      setShowDetailsDialog(true);
+      toast({
+        title: 'Partial Data',
+        description: 'Loaded cached order info. Full order timeline is unavailable right now.',
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCancelOrder = async (reason: string) => {
@@ -132,11 +238,10 @@ const Orders: React.FC = () => {
       
       // Refresh orders
       await fetchOrders();
-    } catch (err) {
-      const error = err as Error;
+    } catch (error) {
       toast({
         title: 'Cancellation Failed',
-        description: error.message || 'Failed to cancel order. Please try again.',
+        description:  'Failed to cancel order. Please try again.',
         variant: 'destructive',
       });
       throw error;
@@ -155,11 +260,10 @@ const Orders: React.FC = () => {
       
       // Navigate to cart
       navigate('/cart');
-    } catch (err) {
-      const error = err as Error;
+    } catch (error) {
       toast({
         title: 'Reorder Failed',
-        description: error.message || 'Failed to add items to cart. Please try again.',
+        description: 'Failed to add items to cart. Please try again.',
         variant: 'destructive',
       });
     } finally {
@@ -174,17 +278,41 @@ const Orders: React.FC = () => {
   };
 
   const filteredOrders = orders.filter((order) => {
+    const normalizedQuery = searchQuery.trim().toLowerCase();
+    if (!normalizedQuery) return true;
+
+    const normalize = (value: unknown) => {
+      if (value === null || value === undefined) return '';
+      return String(value).toLowerCase();
+    };
+
     const matchesSearch =
-      order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.shippingAddress?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.trackingNumber?.toLowerCase().includes(searchQuery.toLowerCase());
+      normalize(order.id || order._id || order.orderNumber).includes(normalizedQuery) ||
+      normalize(
+        formatShippingAddress(
+          order.shippingAddress,
+          order.shippingCity,
+          order.shippingPostalCode
+        )
+      ).includes(normalizedQuery) ||
+      normalize(order.trackingNumber).includes(normalizedQuery);
 
     return matchesSearch;
   });
 
   const canCancelOrder = (order: ApiOrder) => {
-    return order.status === 'pending' || order.status === 'processing';
+    const status = getOrderStatus(order);
+    return status === 'pending' || status === 'processing' || status === 'confirmed';
   };
+
+    const canRequestReturn = (order: ApiOrder) => {
+      const orderStatus = String(getOrderStatus(order) || '').toLowerCase();
+      if (orderStatus === 'delivered' || orderStatus === 'partially_delivered') {
+        return true;
+      }
+
+      return (order.items || []).some((item) => String(item.status || '').toLowerCase() === 'delivered');
+    };
 
   if (loading && currentPage === 1) {
     return (
@@ -274,11 +402,18 @@ const Orders: React.FC = () => {
           <div className="space-y-4">
             <AnimatePresence mode="popLayout">
               {filteredOrders.map((order, index) => {
-                const status = statusConfig[order.status] || statusConfig.pending;
+                const displayStatus = getOrderStatus(order);
+                const status = statusConfig[displayStatus] || statusConfig.pending;
+                const orderId = order.id || order._id || order.orderNumber || '';
+                const shippingSummary = formatShippingAddress(
+                  order.shippingAddress,
+                  order.shippingCity,
+                  order.shippingPostalCode
+                );
 
                 return (
                   <motion.div
-                    key={order.id}
+                    key={orderId || `${order.customerId}-${order.createdAt}-${index}`}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -20 }}
@@ -290,7 +425,9 @@ const Orders: React.FC = () => {
                       <div>
                         <div className="flex items-center gap-3 mb-2">
                           <h3 className="font-semibold text-lg">
-                            Order #{order.id.slice(0, 8).toUpperCase()}
+                            {orderId
+                              ? `Order #${orderId.slice(0, 8).toUpperCase()}`
+                              : 'Order'}
                           </h3>
                           <Badge className={status.color}>
                             {status.icon}
@@ -319,8 +456,11 @@ const Orders: React.FC = () => {
                     {/* Order Items Preview */}
                     <div className="border-t border-border/50 pt-4 mt-4">
                       <div className="space-y-2">
-                        {(order.items || []).slice(0, 2).map((item) => (
-                          <div key={item.id} className="flex justify-between text-sm">
+                        {(order.items || []).slice(0, 2).map((item, itemIndex) => (
+                          <div
+                            key={item.id || item.productId || item.product?._id || `${orderId}-item-${itemIndex}`}
+                            className="flex justify-between text-sm"
+                          >
                             <span className="text-muted-foreground">
                               {item.productName} × {item.quantity}
                             </span>
@@ -340,8 +480,7 @@ const Orders: React.FC = () => {
                       <div className="flex items-start gap-2 mb-2">
                         <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
                         <p className="text-sm text-muted-foreground">
-                          {order.shippingAddress}
-                          {order.shippingCity && `, ${order.shippingCity}`}
+                          {shippingSummary || 'Shipping address unavailable'}
                         </p>
                       </div>
                       {order.trackingNumber && (
@@ -382,10 +521,10 @@ const Orders: React.FC = () => {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => handleReorder(order.id)}
-                        disabled={reorderLoading === order.id}
+                        onClick={() => orderId && handleReorder(orderId)}
+                        disabled={!orderId || reorderLoading === orderId}
                       >
-                        {reorderLoading === order.id ? (
+                        {reorderLoading === orderId ? (
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                         ) : (
                           <RotateCcw className="h-4 w-4 mr-2" />
@@ -393,13 +532,22 @@ const Orders: React.FC = () => {
                         Reorder
                       </Button>
 
-                      {canCancelOrder(order) && (
+                      {orderId && canRequestReturn(order) && (
+                        <Link to={`/returns?orderId=${orderId}`}>
+                          <Button variant="outline" size="sm">
+                            <RotateCcw className="h-4 w-4 mr-2" />
+                            Return / Refund
+                          </Button>
+                        </Link>
+                      )}
+
+                      {orderId && canCancelOrder(order) && (
                         <Button
                           variant="outline"
                           size="sm"
                           className="text-red-500 hover:text-red-600"
                           onClick={() => {
-                            setOrderToCancel(order.id);
+                            setOrderToCancel(orderId);
                             setShowCancelDialog(true);
                           }}
                         >
@@ -472,10 +620,12 @@ const Orders: React.FC = () => {
       {/* Dialogs */}
       <OrderDetailsDialog
         order={selectedOrder}
+        timeline={selectedOrderTimeline}
         open={showDetailsDialog}
         onClose={() => {
           setShowDetailsDialog(false);
           setSelectedOrder(null);
+          setSelectedOrderTimeline([]);
         }}
       />
 

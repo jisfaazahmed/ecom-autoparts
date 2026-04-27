@@ -75,7 +75,7 @@ const AdminSettings: React.FC = () => {
       });
       toast({ title: 'Saved', description: 'Shop settings updated successfully' });
     } catch (error) {
-      toast({ title: 'Error', description: error.message || 'Failed to save settings', variant: 'destructive' });
+      toast({ title: 'Error', description: (error as Error).message || 'Failed to save settings', variant: 'destructive' });
     }
     setSaving(false);
   };

@@ -16,12 +16,6 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  phone: { type: String },
-  address: { type: String },
-  city: { type: String },
-  postalCode: { type: String },
-  avatarUrl: { type: String },
-
   role: {
     type: String,
     enum: ['SUPER_ADMIN', 'ADMIN', 'CUSTOMER'],
@@ -36,41 +30,57 @@ const userSchema = new mongoose.Schema({
   shopName: {
     type: String, // Only for Vendors
   },
-
-  // Vendor/shop extra fields (for role ADMIN)
-  phone: { type: String },
-  businessRegistration: { type: String },
-  shopDescription: { type: String },
-  address: { type: String },
-  logoUrl: { type: String },
-  commissionRate: { type: Number, default: 10 },
-  rejectionReason: { type: String },
-  updatedAt: {
+  commissionRate: {
+    type: Number,
+    default: 10,
+    min: 0,
+    max: 100,
+  },
+  // Password reset fields
+  resetToken: {
+    type: String,
+    default: null
+  },
+  resetTokenExpiry: {
     type: Date,
-    default: Date.now,
+    default: null
+  },
+  wallet: {
+    balance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    otp: {
+      code: {
+        type: String,
+        default: null,
+      },
+      expiresAt: {
+        type: Date,
+        default: null,
+      },
+      attempts: {
+        type: Number,
+        default: 0,
+      },
+      lastSentAt: {
+        type: Date,
+        default: null,
+      },
+    },
   },
   createdAt: {
     type: Date,
     default: Date.now,
   },
-  // Saved vehicles for "My Garage"
-  savedVehicles: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Vehicle'
-  }],
-  // Wishlist - saved products
-  wishlist: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Product'
-  }],
-}, { timestamps: true });
+});
 
 // MIDDLEWARE: Force PENDING status for new Admins (Vendors)
 userSchema.pre('save', function(next) {
   if (this.isModified('role') && this.role === 'ADMIN' && this.isNew) {
     this.status = 'PENDING';
   }
-  this.updatedAt = new Date();
   next();
 });
 

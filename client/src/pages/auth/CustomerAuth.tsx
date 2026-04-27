@@ -27,7 +27,9 @@ const signupSchema = z.object({
 const CustomerAuth: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signIn, signUp, user, role, signOut } = useAuth();
+    const { signIn, signUp, user, logout: signOut } = useAuth();
+  
+  const role = user?.role;
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -45,7 +47,7 @@ const CustomerAuth: React.FC = () => {
   // Redirect if already logged in
   React.useEffect(() => {
     if (user && role) {
-      const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
+      const from = (location.state)?.from?.pathname || '/';
       if (role === 'superadmin') {
         navigate('/superadmin');
       } else if (role === 'admin') {
@@ -75,13 +77,21 @@ const CustomerAuth: React.FC = () => {
 
     setLoading(true);
     const { error } = await signIn(loginForm.email, loginForm.password);
-    
-    if (!error) {
-      // The useAuth hook will update the role, check it after sign in
-      // This is handled by the useEffect above after state updates
-      const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
-      navigate(from);
+    if (error) {
+      console.error(error);
+      toast({
+        title: "Login Failed",
+        description: error.message || "Invalid credentials",
+        variant: "destructive"
+      });
+      setLoading(false);
+      return;
     }
+
+    // The useAuth hook will update the role, check it after sign in
+    // This is handled by the useEffect above after state updates
+    const from = (location.state)?.from?.pathname || '/shop';
+    navigate(from);
     setLoading(false);
   };
 
@@ -103,14 +113,16 @@ const CustomerAuth: React.FC = () => {
     }
 
     setLoading(true);
-    const { error } = await signUp(signupForm.email, signupForm.password, {
-      full_name: signupForm.fullName,
+    const { error } = await signUp({
+      email: signupForm.email,
+      password: signupForm.password,
+      fullName: signupForm.fullName,
       phone: signupForm.phone,
     });
     setLoading(false);
     
     if (!error) {
-      navigate('/');
+      navigate('/shop');
     }
   };
 
@@ -260,6 +272,36 @@ const CustomerAuth: React.FC = () => {
                     </button>
                   </div>
                   {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="signup-phone">Phone Number</Label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="signup-phone"
+                      type="tel"
+                      placeholder="+94 XX XXX XXXX"
+                      className="pl-10"
+                      value={signupForm.phone}
+                      onChange={(e) => setSignupForm({ ...signupForm, phone: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="signup-address">Default Address</Label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="signup-address"
+                      type="text"
+                      placeholder="123 Main Street, Colombo"
+                      className="pl-10"
+                      value={signupForm.address}
+                      onChange={(e) => setSignupForm({ ...signupForm, address: e.target.value })}
+                    />
+                  </div>
                 </div>
 
                 <Button type="submit" className="w-full" disabled={loading}>

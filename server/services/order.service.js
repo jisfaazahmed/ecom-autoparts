@@ -1,74 +1,252 @@
 const Order = require('../models/order.model');
 const OrderItem = require('../models/orderItem.model');
+const SubOrder = require('../models/subOrder.model');
 const Product = require('../models/product');
-const OrderTimeLine = require('../models/timeline.model')
-const Cart = require('../models/Cart');
+const VendorProduct = require('../models/vendorProduct');
+const Coupon = require('../models/coupon.model');
+const User = require('../models/user');
+const OrderTimeLine = require('../models/timeline.model');
+const NotificationService = require('./notification.service');
+const InventoryReservationService = require('./inventoryReservation.service');
 
 class OrderService {
 
+    normalizeStatus(status) {
+        const value = String(status || '').toLowerCase();
+        const aliases = {
+            accepted: 'confirmed',
+            packed: 'processing',
+            readytoship: 'ready_to_ship',
+            ready_to_ship: 'ready_to_ship',
+            out_for_delivery: 'out_for_delivery',
+        };
+        return aliases[value] || value;
+    }
+
+    buildSubOrders(orderItemDocs, enrichedItems) {
+        const grouped = new Map();
+
+        orderItemDocs.forEach((itemDoc, index) => {
+            const source = enrichedItems[index];
+            const vendorId = String(
+                itemDoc.vendor ||
+                source?.product?.vendor ||
+                source?.product?.createdBy ||
+                source?.product?.shopId ||
+                source?.product?.owner ||
+                source?.product?.seller ||
+                ''
+            ).trim();
+
+            if (!vendorId) {
+                return;
+            }
+
+            if (!grouped.has(vendorId)) {
+                grouped.set(vendorId, { vendor: vendorId, items: [], status: 'pending', subtotal: 0 });
+            }
+
+            const group = grouped.get(vendorId);
+            group.items.push(itemDoc._id);
+            group.subtotal += itemDoc.finalPrice || 0;
+        });
+
+        return Array.from(grouped.values()).map(group => ({
+            vendor: group.vendor,
+            items: group.items,
+            status: group.status,
+            subtotal: group.subtotal,
+            updatedAt: new Date()
+        }));
+    }
+
+    buildSubOrderPayload(mainOrder, groupedSubOrder) {
+        const subtotal = Number(groupedSubOrder.subtotal || 0);
+        const orderSubtotal = Number(mainOrder.itemsTotal || 0);
+        const ratio = orderSubtotal > 0 ? subtotal / orderSubtotal : 0;
+
+        const shippingCharge = Math.round(Number(mainOrder.shippingCharges || 0) * ratio);
+        const taxAmount = Math.round(Number(mainOrder.taxAmount || 0) * ratio);
+        const discountAmount = Math.round(Number(mainOrder.discountAmount || 0) * ratio);
+
+        return {
+            order: mainOrder._id,
+            seller: groupedSubOrder.vendor,
+            customer: mainOrder.user || null,
+            items: groupedSubOrder.items,
+            status: groupedSubOrder.status || 'pending',
+            paymentStatus: mainOrder.paymentStatus || 'pending',
+            subtotal,
+            shippingCharge,
+            taxAmount,
+            discountAmount,
+            totalAmount: subtotal + shippingCharge + taxAmount - discountAmount,
+            shippingAddress: mainOrder.shippingAddress,
+            shippingMethod: mainOrder.shippingMethod || 'standard',
+            estimatedDeliveryDate: mainOrder.estimatedDeliveryDate,
+            courierPartner: groupedSubOrder.courierPartner || mainOrder.courierPartner,
+            trackingNumber: groupedSubOrder.trackingNumber,
+        };
+    }
+
+    async persistSubOrders(mainOrder, groupedSubOrders = []) {
+        if (!Array.isArray(groupedSubOrders) || groupedSubOrders.length === 0) {
+            return [];
+        }
+
+        const operations = groupedSubOrders.map((groupedSubOrder) => ({
+            updateOne: {
+                filter: {
+                    order: mainOrder._id,
+                    seller: groupedSubOrder.vendor,
+                },
+                update: {
+                    $set: this.buildSubOrderPayload(mainOrder, groupedSubOrder),
+                },
+                upsert: true,
+            }
+        }));
+
+        await SubOrder.bulkWrite(operations);
+        return SubOrder.find({ order: mainOrder._id });
+    }
+
+    async resolveVendorForOrderItem(product, item = {}) {
+        const ownerVendor = String(
+            product.createdBy ||
+            product.vendor ||
+            product.createdby ||
+            product.shopId ||
+            product.owner ||
+            product.seller ||
+            ''
+        ).trim();
+
+        if (!ownerVendor) {
+            return null;
+        }
+
+        if (!/^[a-fA-F0-9]{24}$/.test(ownerVendor)) {
+            return null;
+        }
+
+        const selectedVendor = String(
+            item.vendorId ||
+            item.vendor ||
+            ''
+        ).trim();
+
+        // Customer must buy from the product owner only.
+        if (selectedVendor && selectedVendor !== ownerVendor) {
+            throw new Error(`Selected seller does not own product ${product.name}`);
+        }
+
+        // Prefer explicit owner offer if present, but do not block checkout when owner offers
+        // table hasn't been backfilled yet.
+        const ownerOffer = await VendorProduct.findOne({
+            product: product._id,
+            vendor: ownerVendor,
+            isActive: true,
+        }).select('_id');
+
+        if (ownerOffer) {
+            return ownerVendor;
+        }
+
+        return ownerVendor;
+    }
+
     // Create Order
     async createOrder(userId, orderData) {
-        const session = await Order.startSession();
-        session.startTransaction();
+            const { shippingAddress, shippingCity, shippingPostalCode, fullName, phone, shippingCountry = 'Sri Lanka', paymentMethod = 'cod', deliveryInstructions, couponCode, items = [] } = orderData;
 
-        try {
-            const { shippingAddress, paymentMethod, deliveryInstructions, couponCode } = orderData;
-
-            const cart = await Cart.findOne({ user: userId }).populate('item.product');
-
-            if (!cart || cart.items.length === 0) {
-                throw new Error('Cart is empty ');
-            }
-
-            // stock availablity
-            for (const item of cart.items) {
-                const product = await Product.findById(item.product._id);
-                if (product.stock < item.quantity) {
-                    throw new Error(`${product.name} stock not available`);
+            const normalizedShippingAddress = typeof shippingAddress === 'string'
+                ? {
+                    fullName: fullName || 'Guest Customer',
+                    phone: phone || 'N/A',
+                    addressLine1: shippingAddress,
+                    city: shippingCity || '',
+                    postalCode: shippingPostalCode || '',
+                    country: shippingCountry || 'Sri Lanka'
                 }
+                : shippingAddress;
+
+            if (!normalizedShippingAddress?.addressLine1 || !normalizedShippingAddress?.city || !normalizedShippingAddress?.postalCode) {
+                throw new Error('Shipping address is incomplete');
             }
 
-            const itemTotal = cart.items.reduce((sum, item) => {
-                return sum + (item.product.price * item.quantity);
-            }, 0);
+            if (!items || !Array.isArray(items) || items.length === 0) {
+                throw new Error('No items provided for order');
+            }
 
-            const shippingCharge = this.calculateShipping(cart.items, shippingAddress);
-            const texAmount = this.calculateTax(itemTotal);
-            const discountAmount = couponCode ? await this.applyCoupon(couponCode, itemTotal) : 0;
+            // Load products, resolve vendor ownership, and check stock with inventory service
+            const enrichedItems = [];
+            for (const item of items) {
+                const product = await Product.findById(item.productId || item.product);
+                if (!product) {
+                    throw new Error('Product not found');
+                }
 
-            const totalAmount = itemTotal + shippingCharge + texAmount - discountAmount;
+                if (!product.isActive || String(product.status || '') !== 'Approved') {
+                    throw new Error(`${product.name} is currently unavailable for purchase`);
+                }
 
-            // Create OrderItem documents
+                // Check available stock using inventory reservation service
+                const availableStock = await InventoryReservationService.getAvailableStock(product._id);
+                if (availableStock < item.quantity) {
+                    throw new Error(`${product.name} stock not available. Available: ${availableStock}, Requested: ${item.quantity}`);
+                }
+
+                const resolvedVendorId = await this.resolveVendorForOrderItem(product, item);
+                if (!resolvedVendorId) {
+                    throw new Error(`Product ${product.name} is not assigned to a vendor. Please choose a seller before checkout.`);
+                }
+
+                enrichedItems.push({ product, quantity: item.quantity, resolvedVendorId });
+            }
+
+            const itemTotal = enrichedItems.reduce((sum, { product, quantity }) => sum + (product.price * quantity), 0);
+            const shippingCharge = this.calculateShipping(enrichedItems.map(({ product, quantity }) => ({ product, quantity })), { city: normalizedShippingAddress.city || '' });
+            const taxAmount = this.calculateTax(itemTotal);
+            const couponResult = couponCode
+                ? await this.applyCoupon(couponCode, itemTotal, orderData?.shopId)
+                : { discountAmount: 0, coupon: null };
+            const discountAmount = couponResult.discountAmount;
+            const totalAmount = itemTotal + shippingCharge + taxAmount - discountAmount;
+
             const orderItemDocs = await OrderItem.create(
-                cart.items.map(item => ({
-                    product: item.product._id,
-                    vendor: item.product.vendor || item.product.createdBy,
-                    name: item.product.name,
-                    image: item.product.images?.[0] || '',
-                    quantity: item.quantity,
-                    price: item.product.price,
-                    discount: item.product.discount || 0,
-                    finalPrice: item.product.price * item.quantity,
+                enrichedItems.map(({ product, quantity, resolvedVendorId }) => ({
+                    product: product._id,
+                    vendor: resolvedVendorId,
+                    name: product.name,
+                    image: product.images?.[0] || '',
+                    quantity,
+                    price: product.price,
+                    discount: product.discount || 0,
+                    finalPrice: product.price * quantity,
                     status: 'pending',
                     statusHistory: [{
                         status: 'pending',
                         timestamp: new Date(),
                         note: 'Order placed'
                     }]
-                })),
-                { session }
+                }))
             );
 
-            //Create Order
+            const subOrders = this.buildSubOrders(orderItemDocs, enrichedItems);
+
             const order = new Order({
                 user: userId,
                 items: orderItemDocs.map(item => item._id),
-                shippingAddress,
-                itemTotal,
-                shippingCharge,
-                texAmount,
+                subOrders,
+                shippingAddress: normalizedShippingAddress,
+                itemsTotal: itemTotal,
+                shippingCharges: shippingCharge,
+                taxAmount: taxAmount,
                 discountAmount,
                 couponDiscount: discountAmount,
+                couponCode: couponResult?.coupon?.code || null,
+                couponId: couponResult?.coupon?._id || null,
                 totalAmount,
                 paymentMethod,
                 paymentStatus: paymentMethod === 'cod' ? 'pending' : 'processing',
@@ -80,14 +258,27 @@ class OrderService {
                 userAgent: orderData.userAgent
             });
 
-            await order.save({ session });
+            await order.save();
 
-            //stock update
-            for (const item of cart.items) {
+            await this.persistSubOrders(order, subOrders);
+
+            // Create inventory reservations and deduct stock
+            for (const { product, quantity } of enrichedItems) {
+                // Create reservation
+                try {
+                    await InventoryReservationService.reserveStock(
+                        product._id,
+                        userId,
+                        quantity
+                    );
+                } catch (error) {
+                    console.warn(`Warning: Could not create reservation for ${product.name}:`, error.message);
+                }
+
+                // Deduct stock
                 await Product.findByIdAndUpdate(
-                    item.product._id,
-                    { $inc: { stock: -item.quantity, soldCount: item.quantity } },
-                    { session }
+                    product._id,
+                    { $inc: { stock: -quantity, soldCount: quantity } }
                 );
             }
 
@@ -97,31 +288,17 @@ class OrderService {
                 event: 'order_placed',
                 title: 'Order Placed',
                 description: `Order ${order.orderNumber} has been placed successfully`,
-                actor: userId,
-                actorType: 'customer',
+                actor: userId || null,
+                actorType: userId ? 'customer' : 'guest',
                 metadata: { totalAmount, itemCount: orderItemDocs.length }
-            }], { session });
+            }]);
 
-            await Cart.findOneAndUpdate(
-                { user: userId },
-                { $set: { items: [] } },
-                { session }
-            )
-
-            await session.commitTransaction();
-
-            //Notification
-            this.sendOrderNotification(order, 'order Placed');
+            // Send notification
+            await this.sendOrderNotification(order, 'order_placed');
 
             return order;
-        }
-        catch (error) {
-            await session.abortTransaction();
-            throw error;
-        }
-        finally {
-            session.endSession();
-        }
+        
+    
     }
 
     //multi venodr
@@ -140,49 +317,55 @@ class OrderService {
     //calculate shipping
 
     getZoneMultiplier(city) {
+        if (!city) return 0;
+
+        const normalizedCity = city.toString().trim().toLowerCase();
         const zone1 = ['colombo'];
         const zone2 = ['gampaha', 'kaluthara'];
         const zone3 = [
             'kurunegala',
-            'Kandy',
-            'Matale',
-            'Nuwara Eliya',
-            'Galle',
-            'Matara',
-            'Hambantota',
-            'Puttalam',
-            'Anuradhapura',
-            'Polonnaruwa',
-            'Badulla',
-            'Monaragala',
-            'Ratnapura',
-            'Kegalle',
-            'Trincomalee',
-            'Batticaloa',
-            'Ampara',
-            'Jaffna',
-            'Vavuniya',
-            'Mannar',
-            'Kilinochchi',
-            'Mullaitivu'];
+            'kandy',
+            'matale',
+            'nuwara eliya',
+            'galle',
+            'matara',
+            'hambantota',
+            'puttalam',
+            'anuradhapura',
+            'polonnaruwa',
+            'badulla',
+            'monaragala',
+            'ratnapura',
+            'kegalle',
+            'trincomalee',
+            'batticaloa',
+            'ampara',
+            'jaffna',
+            'vavuniya',
+            'mannar',
+            'kilinochchi',
+            'mullaitivu'
+        ];
 
-        if (zone1.includes(city)) return 100;
-        if (zone2.includes(city)) return 200;
-        if (zone3.includes(city)) return 300;
+        if (zone1.includes(normalizedCity)) return 100;
+        if (zone2.includes(normalizedCity)) return 200;
+        if (zone3.includes(normalizedCity)) return 300;
+        return 0;
     }
 
 
     calculateShipping(items, address) {
         const totalWeight = items.reduce((sum, item) => {
             return sum + (item.product.weight || 0.5) * item.quantity;
-        });
+        }, 0);
 
         const baserate = 300;
         const weightRate = totalWeight * 50;
         const zoneMultiplier = this.getZoneMultiplier(address.city);
         const handlefee = 300;
 
-        return Math.round(baserate + weightRate + zoneMultiplier + handlefee);
+        const shipping = baserate + weightRate + zoneMultiplier + handlefee;
+        return Number.isFinite(shipping) ? Math.round(shipping) : 0;
     }
 
     calculateTax(amount) {
@@ -202,11 +385,64 @@ class OrderService {
         return deliveryDate;
     }
 
+    async adminUpdateOrderStatus(orderId, status, userId, trackingNumber) {
+        const order = await Order.findById(orderId).populate('items');
+        if (!order) {
+            throw new Error('Order not found');
+        }
+
+        const normalizedStatus = this.normalizeStatus(status);
+
+        for (const item of order.items) {
+            item.status = normalizedStatus;
+            item.statusHistory.push({
+                status: normalizedStatus,
+                timestamp: new Date(),
+                note: `Admin updated order status to ${normalizedStatus}`,
+                updatedBy: userId
+            });
+            if (trackingNumber && normalizedStatus === 'shipped') {
+                item.trackingNumber = trackingNumber;
+            }
+            await item.save();
+
+            await OrderTimeLine.create({
+                order: orderId,
+                orderItem: item._id,
+                event: this.mapStatusToEvent(normalizedStatus),
+                title: this.getStatusTitle(normalizedStatus),
+                description: `Admin updated order status to ${normalizedStatus}`,
+                actor: userId,
+                actorType: 'admin'
+            });
+        }
+
+        const allItems = await OrderItem.find({ _id: { $in: order.items } });
+        order.overallStatus = this.calculateOverallStatus(allItems);
+
+        if (order.subOrders) {
+            order.subOrders = order.subOrders.map(subOrder => {
+                const sub = subOrder.toObject ? subOrder.toObject() : subOrder;
+                return {
+                    ...sub,
+                    status: normalizedStatus,
+                    trackingNumber: trackingNumber || sub.trackingNumber,
+                    updatedAt: new Date()
+                };
+            });
+        }
+
+        await order.save();
+        return order;
+    }
+
     async updateItemStatus(orderId, itemId, status, userId, note) {
         const order = await Order.findById(orderId).populate('items');
         if (!order) {
             throw new Error('Order not found');
         }
+
+        const normalizedStatus = this.normalizeStatus(status);
 
         const item = await OrderItem.findById(itemId);
         if (!item) {
@@ -217,13 +453,17 @@ class OrderService {
             throw new Error('Order item does not belong to this order');
         }
 
-        if (!this.isValidStatusTransition(item.status, status)) {
-            throw new Error(`Invalid status transition from ${item.status} to ${status}`);
+        if (String(item.vendor || '') !== String(userId || '')) {
+            throw new Error('Unauthorized: you can only update your own order items');
         }
 
-        item.status = status;
+        if (!this.isValidStatusTransition(item.status, normalizedStatus)) {
+            throw new Error(`Invalid status transition from ${item.status} to ${normalizedStatus}`);
+        }
+
+        item.status = normalizedStatus;
         item.statusHistory.push({
-            status,
+            status: normalizedStatus,
             timestamp: new Date(),
             note,
             updatedBy: userId
@@ -240,19 +480,36 @@ class OrderService {
         await OrderTimeLine.create({
             order: orderId,
             orderItem: itemId,
-            event: this.mapStatusToEvent(status),
-            title: this.getStatusTitle(status),
-            description: note || `Item status updated to ${status}`,
+            event: this.mapStatusToEvent(normalizedStatus),
+            title: this.getStatusTitle(normalizedStatus),
+            description: note || `Item status updated to ${normalizedStatus}`,
             actor: userId,
             actorType: 'vendor'
         });
 
-        this.sendOrderNotifications(order, this.mapStatusToEvent(status));
+        const itemVendorId = String(item.vendor || '');
+        order.subOrders = (order.subOrders || []).map(subOrder => {
+            const sub = subOrder.toObject ? subOrder.toObject() : subOrder;
+            if (String(sub.vendor) !== itemVendorId) return sub;
+            const subOrderItems = order.items.filter(orderItem => sub.items.some(subItem => String(subItem) === String(orderItem._id)));
+            const nextStatus = this.calculateOverallStatus(subOrderItems);
+            return {
+                ...sub,
+                status: nextStatus,
+                updatedAt: new Date()
+            };
+        });
+
+        await order.save();
+
+        this.sendOrderNotifications(order, this.mapStatusToEvent(normalizedStatus));
         return order;
     }
 
     // All validate status
     isValidStatusTransition(currentStatus, newStatus) {
+        const normalizedCurrent = this.normalizeStatus(currentStatus);
+        const normalizedNew = this.normalizeStatus(newStatus);
         const validTransitions = {
             'pending': ['confirmed', 'cancelled'],
             'confirmed': ['processing', 'cancelled'],
@@ -265,11 +522,12 @@ class OrderService {
             'returned': ['refunded']
         };
 
-        return validTransitions[currentStatus]?.includes(newStatus) || false;
+        return validTransitions[normalizedCurrent]?.includes(normalizedNew) || false;
     }
 
     //Calculate overall order status
     mapStatusToEvent(status) {
+        const normalized = this.normalizeStatus(status);
         const mapping = {
             'confirmed': 'order_confirmed',
             'processing': 'processing_started',
@@ -282,10 +540,11 @@ class OrderService {
             'returned': 'return_received',
             'refunded': 'refund_completed'
         };
-        return mapping[status] || status;
+        return mapping[normalized] || normalized;
     }
 
     getStatusTitle(status) {
+        const normalized = this.normalizeStatus(status);
         const titles = {
             'confirmed': 'Order Confirmed',
             'processing': 'Processing Started',
@@ -298,14 +557,15 @@ class OrderService {
             'returned': 'Return Received',
             'refunded': 'Refund Completed'
         };
-        return titles[status] || status;
+        return titles[normalized] || normalized;
     }
 
     calculateOverallStatus(items) {
-        const statuses = items.map(item => item.status);
+        const statuses = items.map(item => this.normalizeStatus(item.status));
 
         if (statuses.every(s => s === 'delivered')) return 'delivered';
         if (statuses.every(s => s === 'cancelled')) return 'cancelled';
+        if (statuses.every(s => s === 'refunded')) return 'refunded';
         if (statuses.some(s => s === 'delivered') && statuses.some(s => s !== 'delivered')) {
             return 'partially_delivered';
         }
@@ -313,6 +573,12 @@ class OrderService {
             return 'partially_shipped';
         }
         if (statuses.every(s => s === 'confirmed')) return 'confirmed';
+        if (statuses.every(s => s === 'processing')) return 'processing';
+        if (statuses.every(s => s === 'ready_to_ship')) return 'ready_to_ship';
+        if (statuses.every(s => s === 'shipped')) return 'shipped';
+        if (statuses.every(s => s === 'out_for_delivery')) return 'out_for_delivery';
+        if (statuses.every(s => s === 'return_requested')) return 'return_requested';
+        if (statuses.every(s => s === 'returned')) return 'returned';
         if (statuses.some(s => s === 'processing' || s === 'ready_to_ship')) return 'processing';
 
         return 'pending';
@@ -336,25 +602,10 @@ class OrderService {
             order.transactionId = transactionId;
         }
 
-        // Auto-update order status when payment is completed
+        // Payment completion should only mark the order as paid.
+        // Vendor approval still controls item/sub-order confirmation.
         if (paymentStatus === 'completed') {
             order.paidAmount = order.totalAmount;
-            
-            // Update all order items to confirmed
-            const orderItems = await OrderItem.find({ _id: { $in: order.items } });
-            for (const item of orderItems) {
-                if (item.status === 'pending') {
-                    item.status = 'confirmed';
-                    item.statusHistory.push({
-                        status: 'confirmed',
-                        timestamp: new Date(),
-                        note: 'Payment received, order confirmed'
-                    });
-                    await item.save();
-                }
-            }
-
-            order.overallStatus = 'confirmed';
 
             await OrderTimeLine.create({
                 order: orderId,
@@ -367,6 +618,10 @@ class OrderService {
         }
 
         await order.save();
+        await SubOrder.updateMany(
+            { order: order._id },
+            { $set: { paymentStatus: order.paymentStatus } }
+        );
         return order;
     }
 
@@ -384,7 +639,7 @@ class OrderService {
     }
 
     //attempts
-    async verfyCOD(orderId, verifiedBy, status, notes) {
+    async verifyCOD(orderId, verifiedBy, status, notes) {
         const order = await Order.findById(orderId);
 
         const lastAttempt = order.codVerificationAttempts[order.codVerificationAttempts.length - 1];
@@ -421,11 +676,10 @@ class OrderService {
 
     // Cancelling
     async cancelOrder(orderId, userId, reason, cancelledBy = 'customer') {
-        const session = await Order.startSession();
-        session.startTransaction();
-
-        try {
-            const order = await Order.findById(orderId).session(session);
+        const runCancellation = async (session = null) => {
+            const orderQuery = Order.findById(orderId);
+            if (session) orderQuery.session(session);
+            const order = await orderQuery;
 
             if (!order) {
                 throw new Error('order noy found');
@@ -436,7 +690,6 @@ class OrderService {
                 throw new Error(`Order cannot be cancelled in ${order.overallStatus} status`);
             }
 
-            //update order
             order.overallStatus = 'cancelled';
             order.cancellationRequest = {
                 requestedBy: userId,
@@ -447,9 +700,10 @@ class OrderService {
                 approvedAt: new Date()
             };
 
-            // Cancel all order items
-            const orderItems = await OrderItem.find({ _id: { $in: order.items } }).session(session);
-            
+            const orderItemsQuery = OrderItem.find({ _id: { $in: order.items } });
+            if (session) orderItemsQuery.session(session);
+            const orderItems = await orderItemsQuery;
+
             for (const item of orderItems) {
                 item.status = 'cancelled';
                 item.cancellationReason = reason;
@@ -459,21 +713,31 @@ class OrderService {
                     note: reason,
                     updatedBy: userId
                 });
-                await item.save({ session });
+                await item.save(session ? { session } : undefined);
             }
 
-            await order.save({ session });
+            await order.save(session ? { session } : undefined);
 
-            //restore stock
+            await SubOrder.updateMany(
+                { order: order._id },
+                {
+                    $set: {
+                        status: 'cancelled',
+                        paymentStatus: order.paymentStatus,
+                        actualDeliveryDate: null,
+                        notes: reason
+                    }
+                }
+            );
+
             for (const item of orderItems) {
                 await Product.findByIdAndUpdate(
                     item.product,
                     { $inc: { stock: item.quantity, soldCount: -item.quantity } },
-                    { session }
+                    session ? { session } : undefined
                 );
             }
 
-            // Create timeline event
             await OrderTimeLine.create([{
                 order: orderId,
                 event: cancelledBy === 'customer' ? 'cancelled_by_customer' : 'cancelled_by_vendor',
@@ -481,23 +745,35 @@ class OrderService {
                 description: reason,
                 actor: userId,
                 actorType: cancelledBy
-            }], { session });
-
-            await session.commitTransaction();
+            }], session ? { session } : undefined);
 
             if (order.paymentStatus === 'completed') {
-                this.processRefund(orderId, order.totalAmount, 'order_cancelled');
-
+                await this.processRefund(orderId, order.totalAmount, 'order_cancelled');
             }
 
             return order;
-        }
-        catch (error) {
-            await session.abortTransaction();
+        };
+
+        let session;
+        try {
+            session = await Order.startSession();
+            session.startTransaction();
+            const order = await runCancellation(session);
+            await session.commitTransaction();
+            return order;
+        } catch (error) {
+            if (session?.inTransaction()) {
+                await session.abortTransaction();
+            }
+
+            const transactionUnsupported = String(error?.message || '').includes('Transaction numbers are only allowed on a replica set member or mongos');
+            if (transactionUnsupported) {
+                return runCancellation(null);
+            }
+
             throw error;
-        }
-        finally {
-            session.endSession();
+        } finally {
+            session?.endSession();
         }
     }
 
@@ -524,17 +800,26 @@ class OrderService {
     async getOrderDetails(orderId, userId) {
         const order = await Order.findById(orderId)
             .populate('user', 'name email')
-            .populate('items.product')
-            .populate('items.vendor', 'name email storeName');
+            .populate({
+                path: 'items',
+                populate: [
+                    { path: 'product' },
+                    { path: 'vendor', select: 'name email storeName role' }
+                ]
+            });
 
         if (!order) {
             throw new Error('ordernot found');
         }
 
-        const user = await Order.findById(userId);
-        const isVendor = order.items.some(item => item.vendor._id.toString() === userId);
-        const isCustomer = order.user._id.toString() === userId;
-        const isAdmin = user.role === 'admin';
+        const user = await User.findById(userId).select('role');
+        if (!user) {
+            throw new Error('Unauthorized access');
+        }
+
+        const isVendor = (order.items || []).some(item => String(item?.vendor?._id || item?.vendor) === String(userId));
+        const isCustomer = String(order?.user?._id || order?.user) === String(userId);
+        const isAdmin = ['admin', 'superadmin'].includes(String(user.role || '').toLowerCase());
 
         if (!isCustomer && !isVendor && !isAdmin) {
             throw new Error('Unauthorized access');
@@ -545,6 +830,159 @@ class OrderService {
             .populate('actor', 'name');
 
         return { order, timeline };
+    }
+
+    async getSellerSubOrders(sellerId, { status, page = 1, limit = 10 } = {}) {
+        const query = { seller: sellerId };
+        if (status) {
+            query.status = this.normalizeStatus(status);
+        }
+
+        const safePage = Math.max(parseInt(page, 10) || 1, 1);
+        const safeLimit = Math.max(parseInt(limit, 10) || 10, 1);
+
+        const [subOrders, total] = await Promise.all([
+            SubOrder.find(query)
+                .sort({ createdAt: -1 })
+                .skip((safePage - 1) * safeLimit)
+                .limit(safeLimit)
+                .populate('customer', 'name email phone')
+                .populate('order', 'orderNumber overallStatus paymentStatus createdAt totalAmount shippingAddress')
+                .populate({
+                    path: 'items',
+                    populate: { path: 'product', select: 'name images price' }
+                }),
+            SubOrder.countDocuments(query)
+        ]);
+
+        return {
+            subOrders,
+            pagination: {
+                page: safePage,
+                limit: safeLimit,
+                total,
+                pages: Math.ceil(total / safeLimit)
+            }
+        };
+    }
+
+    async syncSubOrderStatusByItem(orderId, vendorId) {
+        const subOrder = await SubOrder.findOne({ order: orderId, seller: vendorId }).populate('items');
+        if (!subOrder) return null;
+
+        const nextStatus = this.calculateOverallStatus(subOrder.items || []);
+        subOrder.status = nextStatus;
+        await subOrder.save();
+        return subOrder;
+    }
+
+    // Notification methods
+    async sendOrderNotification(order, event) {
+        try {
+            if (!order.user) return;
+
+            if (event === 'order_placed' || event === 'order Placed') {
+                await NotificationService.notifyOrderCreated(order);
+            } else if (event === 'order_confirmed') {
+                await NotificationService.notifyOrderConfirmed(order);
+            } else if (event === 'order_shipped') {
+                await NotificationService.notifyOrderShipped(order, order.trackingNumber, order.courierPartner);
+            } else if (event === 'order_delivered') {
+                await NotificationService.notifyOrderDelivered(order);
+            } else if (event === 'payment_failed') {
+                await NotificationService.notifyPaymentFailed(order);
+            } else if (event === 'payment_success') {
+                await NotificationService.notifyPaymentSuccess(order, order.totalAmount);
+            }
+
+            console.log(`✓ Order notification sent: ${event} for order ${order.orderNumber}`);
+        } catch (error) {
+            console.error(`✗ Error sending notification: ${event}`, error);
+        }
+    }
+
+    async sendOrderNotifications(order, event) {
+        try {
+            await this.sendOrderNotification(order, event);
+        } catch (error) {
+            console.error(`✗ Error sending order notifications: ${event}`, error);
+        }
+    }
+
+    // Coupon methods
+    async applyCoupon(couponCode, itemTotal, shopId) {
+        const normalizedCode = String(couponCode || '').trim().toUpperCase();
+        if (!normalizedCode) {
+            return { discountAmount: 0, coupon: null };
+        }
+
+        const now = new Date();
+        const query = {
+            code: normalizedCode,
+            isActive: true,
+            validFrom: { $lte: now },
+            $or: [
+                { validUntil: null },
+                { validUntil: { $gte: now } }
+            ],
+        };
+
+        if (shopId) {
+            query.$and = [{
+                $or: [
+                    { shopId: null },
+                    { shopId }
+                ]
+            }];
+        }
+
+        let coupon = await Coupon.findOne(query);
+        if (!coupon) {
+            throw new Error('Invalid or expired coupon code');
+        }
+
+        if (coupon.minimumOrderAmount && Number(itemTotal) < Number(coupon.minimumOrderAmount)) {
+            throw new Error(`Minimum order amount is ${coupon.minimumOrderAmount}`);
+        }
+
+        if (coupon.maxUses && coupon.usedCount >= coupon.maxUses) {
+            throw new Error('Coupon usage limit reached');
+        }
+
+        if (coupon.maxUses) {
+            const reserved = await Coupon.findOneAndUpdate(
+                {
+                    _id: coupon._id,
+                    usedCount: { $lt: coupon.maxUses },
+                    isActive: true,
+                },
+                { $inc: { usedCount: 1 } },
+                { new: true }
+            );
+
+            if (!reserved) {
+                throw new Error('Coupon usage limit reached');
+            }
+
+            coupon = reserved;
+        } else {
+            coupon.usedCount = Number(coupon.usedCount || 0) + 1;
+            await coupon.save();
+        }
+
+        const type = String(coupon.discountType || '').toLowerCase();
+        const value = Number(coupon.discountValue || 0);
+
+        let discountAmount = 0;
+        if (type === 'percentage') {
+            discountAmount = Math.round((Number(itemTotal) * value) / 100);
+        } else {
+            discountAmount = Math.round(value);
+        }
+
+        discountAmount = Math.max(0, Math.min(Number(itemTotal), discountAmount));
+
+        return { discountAmount, coupon };
     }
 }
 
