@@ -130,7 +130,7 @@ const Index: React.FC = () => {
                   trigger={
                     <Button size="lg" className="neon-button text-base px-8">
                       <Car className="mr-2 h-5 w-5" />
-                      {userVehicle ? 'Change Vehicle' : 'Add My Vehicle'}
+                      {userVehicle ? 'Add another vehicle' : 'Add My Vehicle'}
                     </Button>
                   }
                 />
