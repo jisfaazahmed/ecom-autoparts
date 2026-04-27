@@ -30,6 +30,7 @@ interface ShippingForm {
   email: string;
   phone: string;
   address: string;
+  district: string;
   city: string;
   postalCode: string;
 }
@@ -196,6 +197,7 @@ export default function Checkout() {
     email: user?.email || '',
     phone: '',
     address: '',
+    district: '',
     city: '',
     postalCode: '',
   });
@@ -255,6 +257,7 @@ export default function Checkout() {
              fullName: addr.fullName,
              phone: addr.phone,
              address: addr.addressLine1,
+             district: addr.state || addr.city || '',
              city: addr.city,
              postalCode: addr.postalCode,
            }));
@@ -281,6 +284,7 @@ export default function Checkout() {
             fullName: '',
             phone: '',
             address: '',
+            district: '',
             city: '',
             postalCode: '',
         }));
@@ -292,6 +296,7 @@ export default function Checkout() {
                  fullName: addr.fullName,
                  phone: addr.phone,
                  address: addr.addressLine1,
+                 district: addr.state || addr.city || '',
                  city: addr.city,
                  postalCode: addr.postalCode,
             }));
@@ -300,7 +305,8 @@ export default function Checkout() {
   };
 
   const cartTotal = getCartTotal();
-  const finalTotal = cartTotal + shippingCost - discountAmount;
+  const estimatedVat = Math.round(cartTotal * 0.18);
+  const finalTotal = cartTotal + shippingCost + estimatedVat - discountAmount;
   const validCart = cart.filter(item => item && item.product);
 
   // Get unique shop IDs from cart
@@ -314,10 +320,10 @@ export default function Checkout() {
       return;
     }
 
-    const district = form.city.trim();
+    const district = form.district.trim();
     if (!district) {
       setShippingCost(DEFAULT_SHIPPING_COST);
-      setShippingError(null);
+      setShippingError('Select delivery district to get district-wise shipping charge.');
       return;
     }
 
@@ -354,7 +360,7 @@ export default function Checkout() {
     } finally {
       setShippingLoading(false);
     }
-  }, [form.city, validCart]);
+  }, [form.city, form.district, validCart]);
 
   useEffect(() => {
     void recalculateShipping();
@@ -409,7 +415,7 @@ export default function Checkout() {
   };
 
   const validateShippingForm = (): boolean => {
-    const required: (keyof ShippingForm)[] = ['fullName', 'email', 'phone', 'address', 'city', 'postalCode'];
+    const required: (keyof ShippingForm)[] = ['fullName', 'email', 'phone', 'address', 'district', 'city', 'postalCode'];
     for (const field of required) {
       if (!form[field]?.trim()) {
         toast.error(`Please fill in ${field.replace(/([A-Z])/g, ' $1').toLowerCase()}`);
@@ -846,6 +852,14 @@ export default function Checkout() {
 
                         <div className="grid sm:grid-cols-2 gap-4">
                           <div>
+                            <Label>District *</Label>
+                            <Input
+                              value={form.district}
+                              onChange={(e) => handleInputChange('district', e.target.value)}
+                              placeholder="Colombo"
+                            />
+                          </div>
+                          <div>
                             <Label>City *</Label>
                             <Input
                               value={form.city}
@@ -1131,7 +1145,7 @@ export default function Checkout() {
                         <br />
                         {form.address}
                         <br />
-                        {form.city}, {form.postalCode}
+                        {form.city}, {form.district}, {form.postalCode}
                         <br />
                         {form.phone}
                       </p>
@@ -1348,11 +1362,11 @@ export default function Checkout() {
                   {/* Pricing Breakdown */}
                   <div className="space-y-3 pt-2 border-t border-border/50">
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Subtotal</span>
+                      <span className="text-sm text-muted-foreground">Items</span>
                       <span className="font-medium">{formatLKR(cartTotal)}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Shipping</span>
+                      <span className="text-sm text-muted-foreground">Shipping ({form.district?.trim() || 'district'})</span>
                       {shippingLoading ? (
                         <Loader2 className="h-3 w-3 animate-spin" />
                       ) : (
@@ -1372,6 +1386,10 @@ export default function Checkout() {
                         <span className="font-semibold text-green-600">-{formatLKR(discountAmount)}</span>
                       </motion.div>
                     )}
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">VAT (18%)</span>
+                      <span className="font-medium">{formatLKR(estimatedVat)}</span>
+                    </div>
                   </div>
 
                   {/* Total */}

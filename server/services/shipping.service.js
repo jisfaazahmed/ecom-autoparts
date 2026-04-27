@@ -187,9 +187,9 @@ class ShippingService {
                         zoneName: zoneType,
                         zoneType: zoneType,
                         rates: {
-                            standard: { baseRate: 250, perKgRate: 50, freeShippingThreshold: 5000 },
-                            express: { baseRate: 500, perKgRate: 100, freeShippingThreshold: 10000 },
-                            same_day: { baseRate: 1000, perKgRate: 200, freeShippingThreshold: 15000 }
+                            standard: { baseRate: 250, perKgRate: 50, freeShippingThreshold: 100000 },
+                            express: { baseRate: 500, perKgRate: 100, freeShippingThreshold: 150000 },
+                            same_day: { baseRate: 1000, perKgRate: 200, freeShippingThreshold: 200000 }
                         },
                         estimatedDelivery: {
                             standard: { min: 1, max: 3 },
@@ -208,9 +208,9 @@ class ShippingService {
                 zoneName: 'zone3',
                 zoneType: 'zone3',
                 rates: {
-                    standard: { baseRate: 350, perKgRate: 50, freeShippingThreshold: 5000 },
-                    express: { baseRate: 600, perKgRate: 100, freeShippingThreshold: 10000 },
-                    same_day: { baseRate: 1000, perKgRate: 200, freeShippingThreshold: 15000 }
+                    standard: { baseRate: 350, perKgRate: 50, freeShippingThreshold: 100000 },
+                    express: { baseRate: 600, perKgRate: 100, freeShippingThreshold: 150000 },
+                    same_day: { baseRate: 1000, perKgRate: 200, freeShippingThreshold: 200000 }
                 },
                 estimatedDelivery: {
                     standard: { min: 1, max: 5 },

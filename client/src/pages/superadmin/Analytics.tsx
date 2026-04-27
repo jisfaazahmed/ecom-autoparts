@@ -8,7 +8,6 @@ import { api, ApiOrder, ApiShop, ApiProduct, ApiCategory } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatLKR, formatLKRCompact } from '@/lib/currency';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend } from 'recharts';
-import { mockOrders, mockShops, mockProducts, mockCategories } from '@/data/analyticsMockData';
 
 const SuperAdminAnalytics: React.FC = () => {
   const { toast } = useToast();
@@ -48,9 +47,9 @@ const SuperAdminAnalytics: React.FC = () => {
       }
 
       // Use mockup data if real data is insufficient for a professional-looking dashboard
-      const ordersToUse = ordersData.length > 0 ? ordersData : mockOrders;
-      const shopsToUse = shopsData.length > 0 ? shopsData : mockShops;
-      const productsToUse = productsData.length > 0 ? productsData : mockProducts;
+      const ordersToUse = ordersData.length > 0 ? ordersData : [];
+      const shopsToUse = shopsData.length > 0 ? shopsData : [];
+      const productsToUse = productsData.length > 0 ? productsData : [];
       // Note: categoriesData might be used for product category mapping
 
       if (ordersToUse) {

@@ -8,8 +8,33 @@ const User = require('../models/user');
 const OrderTimeLine = require('../models/timeline.model');
 const NotificationService = require('./notification.service');
 const InventoryReservationService = require('./inventoryReservation.service');
+const shippingService = require('./shipping.service');
 
 class OrderService {
+
+    async calculateShippingForOrder(items, address, shippingMethod = 'standard') {
+        try {
+            const quote = await shippingService.calculateShippingCost({
+                items: items.map((item) => ({
+                    product: {
+                        price: Number(item?.product?.price || 0),
+                        weight: Number(item?.product?.weight || 0.5),
+                    },
+                    quantity: Number(item?.quantity || 0),
+                })),
+                deliveryAddress: {
+                    district: String(address?.city || '').trim(),
+                    city: String(address?.city || '').trim(),
+                },
+                shippingMethod,
+            });
+
+            return Number.isFinite(quote?.totalCharge) ? Math.round(quote.totalCharge) : 0;
+        } catch (error) {
+            console.warn('Shipping service quote failed, using fallback calculation:', error.message);
+            return this.calculateShipping(items, address || {});
+        }
+    }
 
     normalizeStatus(status) {
         const value = String(status || '').toLowerCase();
@@ -206,7 +231,12 @@ class OrderService {
             }
 
             const itemTotal = enrichedItems.reduce((sum, { product, quantity }) => sum + (product.price * quantity), 0);
-            const shippingCharge = this.calculateShipping(enrichedItems.map(({ product, quantity }) => ({ product, quantity })), { city: normalizedShippingAddress.city || '' });
+            const shippingItems = enrichedItems.map(({ product, quantity }) => ({ product, quantity }));
+            const shippingCharge = await this.calculateShippingForOrder(
+                shippingItems,
+                { city: normalizedShippingAddress.city || '' },
+                orderData.shippingMethod || 'standard'
+            );
             const taxAmount = this.calculateTax(itemTotal);
             const couponResult = couponCode
                 ? await this.applyCoupon(couponCode, itemTotal, orderData?.shopId)

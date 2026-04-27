@@ -29,7 +29,7 @@ import { useToast } from '@/hooks/use-toast';
 import { formatLKR } from '@/lib/currency';
 import { format } from 'date-fns';
 import { Card, CardContent } from '@/components/ui/card';
-import { mockCoupons } from '@/data/analyticsMockData';
+
 
 interface Coupon {
   id: string;
@@ -87,11 +87,11 @@ const SuperAdminCoupons: React.FC = () => {
       } else {
         // Fallback to mock data if API is empty/fails
         // Preserve any coupons added/edited in the current session
-        setCoupons(prev => prev.length > 0 ? prev : mockCoupons);
+        setCoupons(prev => prev.length > 0 ? prev : []);
       }
     } catch (error: unknown) {
       console.error('Failed to fetch coupons', error);
-      setCoupons(prev => prev.length > 0 ? prev : mockCoupons);
+      setCoupons(prev => prev.length > 0 ? prev : []);
     }
     setLoading(false);
   };
@@ -164,12 +164,6 @@ const SuperAdminCoupons: React.FC = () => {
           setCoupons(prev => [newCoupon, ...prev]);
           toast({ title: 'Created (Demo)', description: 'Created locally for demonstration' });
         }
-
-        await api.updateCoupon(editingCoupon.id, couponData as any);
-        toast({ title: 'Updated', description: 'Coupon updated successfully' });
-      } else {
-        await api.createCoupon({ ...couponData, isActive: true } as any);
-        toast({ title: 'Created', description: 'Coupon created successfully' });
       }
       setDialogOpen(false);
     } catch (error: unknown) {
