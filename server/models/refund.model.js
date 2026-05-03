@@ -174,10 +174,6 @@ const refundSchema = new mongoose.Schema({
             type: String,
             enum: ['courier_pickup', 'self_drop', 'no_return_needed']
         },
-        courierPartner: {
-            type: String,
-            enum: ['pronto', 'domex', 'aramex', 'dhl_sri_lanka', 'self']
-        },
         trackingNumber: String,
         pickupAddress: {
             fullName: String,

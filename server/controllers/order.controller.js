@@ -3,6 +3,30 @@ const orderService = require('../services/order.service');
 const OrderTimeLine = require('../models/timeline.model');
 const Shipping = require('../models/shipping.model');
 const OrderItem = require('../models/orderItem.model');
+const jwt = require('jsonwebtoken');
+
+const GUEST_INVOICE_TOKEN_EXPIRY = process.env.GUEST_INVOICE_TOKEN_EXPIRY || '7d';
+
+function generateGuestInvoiceToken(orderId) {
+    return jwt.sign(
+        {
+            purpose: 'guest_invoice',
+            orderId: String(orderId),
+        },
+        process.env.JWT_SECRET || 'secret123',
+        { expiresIn: GUEST_INVOICE_TOKEN_EXPIRY }
+    );
+}
+
+function verifyGuestInvoiceToken(token, orderId) {
+    if (!token) return false;
+    try {
+        const payload = jwt.verify(token, process.env.JWT_SECRET || 'secret123');
+        return payload?.purpose === 'guest_invoice' && String(payload?.orderId) === String(orderId);
+    } catch (_err) {
+        return false;
+    }
+}
 
 //new order
 module.exports.createOrder = async (req, res) => {
@@ -21,10 +45,17 @@ module.exports.createOrder = async (req, res) => {
             userAgent: req.get('user-agent')
         });
 
-        res.status(200).json({
+        const payload = {
             order: newOrder,
             message: 'order placed successfully',
-        });
+        };
+
+        // For guest checkouts, return a signed short-lived token for invoice download.
+        if (!userId) {
+            payload.guestInvoiceToken = generateGuestInvoiceToken(newOrder._id);
+        }
+
+        res.status(200).json(payload);
     }
     catch (error) {
         const message = String(error?.message || 'Failed to place order');
@@ -408,5 +439,60 @@ module.exports.recoverGuestOrders = async (req, res) => {
             success: false,
             message: error.message || 'Failed to recover guest orders'
         });
+    }
+};
+
+// Generate or return invoice PDF for an order
+module.exports.getInvoice = async (req, res) => {
+    try {
+        const invoiceService = require('../services/invoice.service');
+        const orderId = req.params.id;
+
+        const ord = await order.findById(orderId).select('user');
+        if (!ord) return res.status(404).json({ message: 'Order not found' });
+
+        const userId = req.user?.id || req.user?._id;
+        const role = String(req.user?.role || '').toLowerCase();
+        const isAdmin = ['admin', 'superadmin'].includes(role);
+
+        // Authenticated customer endpoint should never expose guest orders.
+        if (!ord.user && !isAdmin) {
+            return res.status(403).json({ message: 'Guest order invoice requires guest invoice token' });
+        }
+
+        if (ord.user && String(ord.user) !== String(userId) && !isAdmin) {
+            return res.status(403).json({ message: 'Unauthorized to download invoice' });
+        }
+
+        const { filePath, fileName } = await invoiceService.generateInvoicePdf(orderId);
+
+        return res.download(filePath, fileName);
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+// Public endpoint for guest checkout invoices using signed token
+module.exports.getGuestInvoice = async (req, res) => {
+    try {
+        const invoiceService = require('../services/invoice.service');
+        const orderId = req.params.id;
+        const token = req.query?.token || req.header('x-guest-invoice-token');
+
+        const ord = await order.findById(orderId).select('user');
+        if (!ord) return res.status(404).json({ message: 'Order not found' });
+
+        if (ord.user) {
+            return res.status(400).json({ message: 'This order belongs to an account. Please login to download invoice.' });
+        }
+
+        if (!verifyGuestInvoiceToken(token, orderId)) {
+            return res.status(401).json({ message: 'Invalid or expired guest invoice token' });
+        }
+
+        const { filePath, fileName } = await invoiceService.generateInvoicePdf(orderId);
+        return res.download(filePath, fileName);
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
     }
 };
