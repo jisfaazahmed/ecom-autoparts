@@ -22,30 +22,41 @@ const PaymentSuccess: React.FC = () => {
   const sessionId = searchParams.get('session_id');
   const paymentIntentId = searchParams.get('payment_intent');
   const orderId = searchParams.get('order_id');
+  const guestToken = searchParams.get('guest_token');
 
   useEffect(() => {
     const verifyPayment = async () => {
-      if (!orderId || (!sessionId && !paymentIntentId)) {
+      if (!orderId || (!sessionId && !paymentIntentId && !guestToken)) {
         toast.error('Invalid payment session');
         navigate('/orders');
         return;
       }
 
       try {
-        // Fetch order details to confirm payment
-        const order = await api.getOrder(orderId);
-        
-        if (order && order.paymentStatus === 'completed') {
-          setOrderNumber(order.orderNumber || '');
-          setOrderData(order);
-          
-          // Clear cart on successful payment
+        // If guest token is present, we don't require an authenticated order fetch.
+        if (guestToken) {
+          setOrderData({ guestInvoiceToken: guestToken });
+          setOrderNumber('');
           if (!cleared) {
             clearCart();
             setCleared(true);
           }
         } else {
-          toast.info('Payment is being processed...');
+          // Fetch order details to confirm payment
+          const order = await api.getOrder(orderId);
+
+          if (order && order.paymentStatus === 'completed') {
+            setOrderNumber(order.orderNumber || '');
+            setOrderData(order);
+
+            // Clear cart on successful payment
+            if (!cleared) {
+              clearCart();
+              setCleared(true);
+            }
+          } else {
+            toast.info('Payment is being processed...');
+          }
         }
       } catch (error) {
         console.error('Error verifying payment:', error);

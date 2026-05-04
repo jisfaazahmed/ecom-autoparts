@@ -13,6 +13,7 @@ import Cart from "./pages/Cart";
 import ProductDetail from "./pages/ProductDetail";
 import Checkout from "./pages/Checkout";
 import PaymentSuccess from "./pages/PaymentSuccess";
+import PaymentDownload from "./pages/PaymentDownload";
 import PaymentCancel from "./pages/PaymentCancel";
 import Orders from "./pages/Orders";
 import ReturnsRefunds from "./pages/ReturnsRefunds";
@@ -88,11 +89,9 @@ const App = () => (
                 <Profile />
               </ProtectedRoute>
             } />
-            <Route path="/payment/success" element={
-              <ProtectedRoute>
-                <PaymentSuccess />
-              </ProtectedRoute>
-            } />
+          
+            <Route path="/payment/success" element={<PaymentSuccess />} />
+            <Route path="/payment/download" element={<PaymentDownload />} />
             <Route path="/payment/cancel" element={
               <ProtectedRoute>
                 <PaymentCancel />
