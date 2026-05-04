@@ -81,6 +81,54 @@ class InventoryReservationService {
     }
 
     /**
+     * Get available stock for a specific user by adding back their own active reserved quantity.
+     */
+    static async getAvailableStockForUser(productId, userId) {
+        try {
+            const [availableStock, ownReserved] = await Promise.all([
+                this.getAvailableStock(productId),
+                this.getUserProductReservedQuantity(userId, productId),
+            ]);
+
+            return Math.max(0, availableStock + ownReserved);
+        } catch (error) {
+            console.error('Error getting user-aware available stock:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get active reserved quantity for a user's specific product.
+     */
+    static async getUserProductReservedQuantity(userId, productId) {
+        try {
+            if (!userId || !productId) return 0;
+
+            const result = await InventoryReservation.aggregate([
+                {
+                    $match: {
+                        user: userId,
+                        product: productId,
+                        status: 'reserved',
+                        expiresAt: { $gt: new Date() },
+                    }
+                },
+                {
+                    $group: {
+                        _id: null,
+                        total: { $sum: '$quantity' }
+                    }
+                }
+            ]);
+
+            return result.length > 0 ? Number(result[0].total || 0) : 0;
+        } catch (error) {
+            console.error('Error getting user product reserved quantity:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Confirm a reservation (convert to order)
      */
     static async confirmReservation(reservationId, orderId, orderItemId = null) {
@@ -129,6 +177,140 @@ class InventoryReservationService {
             return reservation;
         } catch (error) {
             console.error('Error releasing reservation:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Create or update active reservation for a user-product pair.
+     */
+    static async upsertUserReservation(productId, userId, quantity, sessionId = null, cartId = null) {
+        try {
+            if (!userId) {
+                throw new Error('User is required for inventory reservation');
+            }
+
+            const requestedQuantity = Number(quantity || 0);
+            if (!Number.isFinite(requestedQuantity) || requestedQuantity < 1) {
+                throw new Error('Reservation quantity must be at least 1');
+            }
+
+            const availableForUser = await this.getAvailableStockForUser(productId, userId);
+            if (availableForUser < requestedQuantity) {
+                throw new Error(`Insufficient stock. Available: ${availableForUser}, Requested: ${requestedQuantity}`);
+            }
+
+            const now = new Date();
+            const expiresAt = new Date(now.getTime() + this.RESERVATION_DURATION_MS);
+
+            const activeReservation = await InventoryReservation.findOne({
+                product: productId,
+                user: userId,
+                status: 'reserved',
+                expiresAt: { $gt: now }
+            }).sort({ createdAt: -1 });
+
+            if (!activeReservation) {
+                return this.reserveStock(productId, userId, requestedQuantity, sessionId);
+            }
+
+            activeReservation.quantity = requestedQuantity;
+            activeReservation.expiresAt = expiresAt;
+            if (sessionId) activeReservation.sessionId = sessionId;
+            if (cartId) activeReservation.cart = cartId;
+            await activeReservation.save();
+            return activeReservation;
+        } catch (error) {
+            console.error('Error upserting user reservation:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Release active reservations for a user-product pair.
+     */
+    static async releaseUserProductReservation(userId, productId, reason = 'cancelled_by_user') {
+        try {
+            if (!userId || !productId) {
+                return { modifiedCount: 0, matchedCount: 0 };
+            }
+
+            return InventoryReservation.updateMany(
+                {
+                    user: userId,
+                    product: productId,
+                    status: 'reserved',
+                    expiresAt: { $gt: new Date() }
+                },
+                {
+                    status: 'released',
+                    releasedAt: new Date(),
+                    releaseReason: reason
+                }
+            );
+        } catch (error) {
+            console.error('Error releasing user product reservation:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Release all active reservations for a user.
+     */
+    static async releaseUserReservations(userId, reason = 'cancelled_by_user') {
+        try {
+            if (!userId) {
+                return { modifiedCount: 0, matchedCount: 0 };
+            }
+
+            return InventoryReservation.updateMany(
+                {
+                    user: userId,
+                    status: 'reserved',
+                    expiresAt: { $gt: new Date() }
+                },
+                {
+                    status: 'released',
+                    releasedAt: new Date(),
+                    releaseReason: reason
+                }
+            );
+        } catch (error) {
+            console.error('Error releasing user reservations:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Convert user's active reservation for a product to an order allocation.
+     */
+    static async convertUserReservationToOrder({ userId, productId, quantity, orderId, orderItemId = null }) {
+        try {
+            if (!userId || !productId || !orderId || !quantity) {
+                return null;
+            }
+
+            const reservation = await InventoryReservation.findOne({
+                user: userId,
+                product: productId,
+                status: 'reserved',
+                expiresAt: { $gt: new Date() }
+            }).sort({ createdAt: -1 });
+
+            if (!reservation) {
+                return null;
+            }
+
+            reservation.status = 'converted_to_order';
+            reservation.order = orderId;
+            reservation.orderItem = orderItemId;
+            reservation.confirmedAt = new Date();
+            reservation.expiresAt = new Date(Date.now() + (24 * 60 * 60 * 1000));
+            reservation.quantity = Number(quantity);
+            await reservation.save();
+            return reservation;
+        } catch (error) {
+            console.error('Error converting reservation to order:', error);
             throw error;
         }
     }
@@ -195,6 +377,26 @@ class InventoryReservationService {
             return reservations;
         } catch (error) {
             console.error('Error getting order reservations:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get active reservations for a product.
+     */
+    static async getProductReservations(productId) {
+        try {
+            return InventoryReservation.find({
+                product: productId,
+                status: { $in: ['reserved', 'confirmed', 'converted_to_order'] },
+                expiresAt: { $gt: new Date() }
+            })
+                .populate('user', 'name email')
+                .populate('order', 'orderNumber paymentStatus overallStatus')
+                .sort({ createdAt: -1 })
+                .lean();
+        } catch (error) {
+            console.error('Error getting product reservations:', error);
             throw error;
         }
     }
@@ -334,7 +536,7 @@ class InventoryReservationService {
         try {
             const result = await Product.findByIdAndUpdate(
                 productId,
-                { $inc: { stock: quantity } },
+                { $inc: { stock: quantity, soldCount: -quantity } },
                 { new: true }
             );
 

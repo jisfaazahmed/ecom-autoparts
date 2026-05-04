@@ -24,9 +24,9 @@ class SettlementService {
 
             // Fetch refunds for these orders
             const refunds = await Refund.find({
-                'order.seller': vendorId,
+                vendor: vendorId,
                 createdAt: { $gte: startDate, $lte: endDate },
-                status: { $in: ['approved', 'refunded'] }
+                status: { $in: ['refund_completed'] }
             });
 
             // Get vendor commission rate
@@ -46,7 +46,8 @@ class SettlementService {
 
             // Sum up refunded amounts
             refunds.forEach(refund => {
-                totalRefunded += refund.refundAmount || 0;
+                const refundValue = Number(refund.refundAmount?.totalRefund ?? refund.amount ?? 0);
+                totalRefunded += Number.isFinite(refundValue) ? refundValue : 0;
             });
 
             // Calculate net order amount
@@ -90,7 +91,7 @@ class SettlementService {
                 subOrders: subOrders.map(so => so._id),
                 refunds: refunds.map(r => ({
                     refundId: r._id,
-                    amount: r.refundAmount,
+                    amount: Number(r.refundAmount?.totalRefund ?? r.amount ?? 0),
                     date: r.createdAt
                 }))
             };

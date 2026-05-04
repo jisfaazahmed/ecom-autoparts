@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { CheckCircle, Package, ArrowRight, Loader2, Truck, Clock, Mail } from 'lucide-react';
+import { CheckCircle, Package, ArrowRight, Loader2, Truck, Clock, Mail, Receipt } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import Navbar from '@/components/layout/Navbar';
@@ -17,6 +17,7 @@ const PaymentSuccess: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [orderNumber, setOrderNumber] = useState<string>('');
   const [orderData, setOrderData] = useState<any>(null);
+  const [downloadingInvoice, setDownloadingInvoice] = useState(false);
   
   const sessionId = searchParams.get('session_id');
   const paymentIntentId = searchParams.get('payment_intent');
@@ -56,6 +57,31 @@ const PaymentSuccess: React.FC = () => {
 
     verifyPayment();
   }, [sessionId, paymentIntentId, orderId, clearCart, cleared, navigate]);
+
+  const handleDownloadInvoice = async () => {
+    if (!orderId || !orderData) {
+      toast.error('Unable to download invoice');
+      return;
+    }
+
+    setDownloadingInvoice(true);
+    try {
+      const success = await api.downloadInvoice(orderId, {
+        guestToken: orderData.guestInvoiceToken
+      });
+
+      if (success) {
+        toast.success('Invoice downloaded successfully');
+      } else {
+        toast.error('Failed to download invoice');
+      }
+    } catch (error) {
+      console.error('Error downloading invoice:', error);
+      toast.error('Error downloading invoice');
+    } finally {
+      setDownloadingInvoice(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -189,10 +215,29 @@ const PaymentSuccess: React.FC = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.6 }}
-          className="flex flex-col sm:flex-row gap-4 justify-center"
+          className="flex flex-col sm:flex-row gap-4 justify-center flex-wrap"
         >
           <Button 
-            onClick={() => navigate(`/orders/${orderNumber || ''}`)}
+            onClick={handleDownloadInvoice}
+            disabled={downloadingInvoice}
+            size="lg"
+            className="gap-2 text-base"
+            variant="default"
+          >
+            {downloadingInvoice ? (
+              <>
+                <Loader2 className="h-5 w-5 animate-spin" />
+                Downloading...
+              </>
+            ) : (
+              <>
+                <Receipt className="h-5 w-5" />
+                Download Invoice
+              </>
+            )}
+          </Button>
+          <Button 
+             onClick={() => navigate('/orders')}
             size="lg"
             className="gap-2 text-base"
           >

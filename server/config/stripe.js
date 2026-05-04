@@ -2,7 +2,10 @@ const Stripe = require('stripe');
 
 let stripe;
 
-if (process.env.NODE_ENV === 'test' || process.env.USE_STRIPE_MOCK === 'true') {
+// Use internal mock only during automated tests (NODE_ENV=test).
+// Runtime mocking via `USE_STRIPE_MOCK` has been removed to avoid accidental mock usage
+// when developers are running the app locally with real Stripe test keys.
+if (process.env.NODE_ENV === 'test') {
     const mockPaymentIntents = new Map();
 
     // Mock Stripe for testing
