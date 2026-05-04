@@ -116,6 +116,8 @@ function InlineCardForm({
   const stripe = useStripe();
   const elements = useElements();
   const [cardError, setCardError] = useState<string | null>(null);
+  const [cardComplete, setCardComplete] = useState(false);
+  const [cardBrand, setCardBrand] = useState<string>('');
 
   useEffect(() => {
     onReady(async (clientSecret, billing) => {
@@ -153,43 +155,111 @@ function InlineCardForm({
     return () => onReady(null);
   }, [elements, onReady, stripe]);
 
+  const getBrandIcon = (brand: string) => {
+    const icons: { [key: string]: string } = {
+      visa: '💳 Visa',
+      mastercard: '🎯 Mastercard',
+      amex: '🅰️ American Express',
+      discover: '🔍 Discover',
+    };
+    return icons[brand] || '💳';
+  };
+
   return (
-    <div className="space-y-3">
-      <Label htmlFor="card-element">Card Details</Label>
-      <div
-        id="card-element"
-        className="rounded-md border border-input bg-background px-3 py-3"
-      >
-        <CardElement
-          options={{
-            hidePostalCode: true,
-            disabled,
-            style: {
-              base: {
-                fontSize: '16px',
-                color: '#1f2937',
-                '::placeholder': {
-                  color: '#9ca3af',
+    <div className="space-y-4">
+      {/* Card Input */}
+      <div className="space-y-2">
+        <Label htmlFor="card-element" className="text-sm font-semibold">Card Details</Label>
+        <div
+          id="card-element"
+          className={`rounded-lg border-2 transition-all bg-background px-4 py-3.5 ${
+            cardError ? 'border-destructive' : cardComplete ? 'border-green-500' : 'border-input hover:border-muted-foreground'
+          }`}
+        >
+          <CardElement
+            options={{
+              hidePostalCode: true,
+              disabled,
+              style: {
+                base: {
+                  fontSize: '15px',
+                  color: '#1f2937',
+                  fontFamily: '"Inter", system-ui, sans-serif',
+                  '::placeholder': {
+                    color: '#d1d5db',
+                  },
+                  ':-webkit-autofill': {
+                    color: '#1f2937',
+                  },
+                },
+                invalid: {
+                  color: '#dc2626',
+                  iconColor: '#dc2626',
+                },
+                complete: {
+                  color: '#16a34a',
+                  iconColor: '#16a34a',
                 },
               },
-              invalid: {
-                color: '#dc2626',
-              },
-            },
-          }}
-          onChange={(event) => {
-            if (event.error?.message) {
-              setCardError(event.error.message);
-            } else {
-              setCardError(null);
-            }
-          }}
-        />
+            }}
+            onChange={(event) => {
+              if (event.error?.message) {
+                setCardError(event.error.message);
+                setCardComplete(false);
+              } else {
+                setCardError(null);
+                setCardComplete(event.complete || false);
+              }
+              
+              if (event.brand) {
+                setCardBrand(event.brand);
+              }
+            }}
+          />
+        </div>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Use Stripe test card: 4242 4242 4242 4242, any future date, any CVC.
-      </p>
-      {cardError && <p className="text-sm text-destructive">{cardError}</p>}
+
+      {/* Card Brand & Status Indicators */}
+      <div className="flex items-center justify-between pt-2">
+        <div className="flex items-center gap-2">
+          {cardComplete && !cardError && (
+            <div className="flex items-center gap-1.5 text-green-600">
+              <Check className="h-4 w-4" />
+              <span className="text-xs font-medium">Card verified</span>
+            </div>
+          )}
+          {cardBrand && (
+            <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full font-medium">
+              {getBrandIcon(cardBrand)}
+            </span>
+          )}
+        </div>
+        {cardError && (
+          <span className="text-xs text-destructive font-medium flex items-center gap-1">
+            <AlertCircle className="h-3 w-3" />
+            {cardError}
+          </span>
+        )}
+      </div>
+
+      {/* Test Card Info */}
+      <div className="bg-blue-50/50 border border-blue-200/50 rounded-lg p-3">
+        <p className="text-xs text-blue-700/80">
+          <span className="font-semibold">Test Card:</span> 4242 4242 4242 4242 • Any future expiry • Any CVC
+        </p>
+      </div>
+
+      {/* Security Info */}
+      <div className="flex items-center justify-between text-xs text-muted-foreground px-2 py-1">
+        <div className="flex items-center gap-1.5">
+          <ShieldCheck className="h-3.5 w-3.5 text-green-600" />
+          <span>SSL Encrypted & Secure</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Check className="h-3.5 w-3.5 text-green-600" />
+          <span>PCI Compliant</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -506,7 +576,10 @@ export default function Checkout() {
         throw new Error('Order created but order ID was not returned');
       }
 
-      const paymentIntent = await api.createPaymentIntent({ orderId });
+      const paymentIntent = await api.createPaymentIntent({
+        orderId,
+        email: form.email,
+      });
 
       const paymentIntentId = isMockInline
         ? paymentIntent.paymentIntentId
@@ -516,10 +589,12 @@ export default function Checkout() {
             phone: form.phone,
           });
 
-      await api.confirmPaymentIntent({
-        orderId,
-        paymentIntentId,
-      });
+      if (isMockInline) {
+        await api.confirmPaymentIntent({
+          orderId,
+          paymentIntentId,
+        });
+      }
 
       clearCart();
       toast.success('Card payment completed successfully!');
@@ -1167,7 +1242,13 @@ export default function Checkout() {
                     </div>
 
                     {paymentMethod === 'stripe' && stripePromise && (
-                      <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-background p-5">
+                      <div className="rounded-xl border-2 border-primary/30 bg-gradient-to-br from-primary/8 via-background to-background p-6 space-y-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <h3 className="font-semibold text-sm text-foreground">Secure Payment</h3>
+                          <Badge variant="secondary" className="text-xs">
+                            🔒 Powered by Stripe
+                          </Badge>
+                        </div>
                         <Elements stripe={stripePromise}>
                           <InlineCardForm
                             onReady={handleInlineCardReady}

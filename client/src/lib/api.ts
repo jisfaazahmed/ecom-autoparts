@@ -1562,7 +1562,7 @@ class ApiClient {
     return response.data || response;
   }
 
-  async createPaymentIntent(data: { orderId: string; mockScenario?: 'requires_action' | 'fail_once' | 'always_fail' }): Promise<{
+  async createPaymentIntent(data: { orderId: string; email?: string; mockScenario?: 'requires_action' | 'fail_once' | 'always_fail' }): Promise<{
     paymentIntentId: string;
     clientSecret: string;
     amount: number;

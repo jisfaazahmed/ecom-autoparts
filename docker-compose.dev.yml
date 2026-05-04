@@ -25,13 +25,14 @@ services:
     environment:
       - PORT=5000
       - NODE_ENV=development
-      - USE_STRIPE_MOCK=true
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
       - MONGO_IP=mongo
       - MONGO_PORT=27017
       - MONGO_USER=root
       - MONGO_PASSWORD=password
       - MONGO_DB=ecom-autoparts
-      - CLIENT_URL=http://localhost:3000
+      - CLIENT_URL=${CLIENT_URL}
     volumes:
       - ./server:/app
       - /app/node_modules
@@ -44,8 +45,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - VITE_API_URL=http://localhost:5000/api
-      - VITE_USE_STRIPE_MOCK=true
+      - VITE_API_URL=${VITE_API_URL}
+      - VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
     volumes:
       - ./client:/app
       - /app/node_modules
