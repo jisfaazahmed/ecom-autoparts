@@ -4,6 +4,7 @@ const paymentService = require('../services/payment.service');
 const stripe = require('../config/stripe');
 const OrderTimeline = require('../models/timeline.model');
 const User = require('../models/user');
+const invoiceService = require('../services/invoice.service');
 
 function isStripeMockMode() {
   return process.env.NODE_ENV === 'test' || process.env.USE_STRIPE_MOCK === 'true';
@@ -148,6 +149,12 @@ async function finalizeSuccessfulCardPayment({ order, paymentIntentId, sessionId
     },
   });
 
+  try {
+    await invoiceService.generateInvoicePdf(order._id);
+  } catch (invoiceError) {
+    console.error(`Invoice generation failed for order ${order.orderNumber}:`, invoiceError);
+  }
+
   return payment;
 }
 
@@ -269,12 +276,8 @@ exports.createPaymentIntent = async (req, res) => {
     const payment = await getOrCreatePaymentForOrder(order, userId, 'card');
     payment.status = 'processing';
     payment.gateway = 'stripe';
-    payment.provider = {
-      ...(payment.provider || {}),
-      name: 'stripe',
-      paymentIntentId: paymentIntent.id,
-      transactionId: paymentIntent.id,
-    };
+    payment.transactionId = paymentIntent.id;
+    payment.gatewayTransactionId = paymentIntent.id;
     payment.timeline.push({
       event: 'payment_processing',
       timestamp: new Date(),
@@ -495,34 +498,56 @@ async function handleCheckoutSessionCompleted(session) {
 
 // Helper function to handle successful payment intent
 async function handlePaymentIntentSucceeded(paymentIntent) {
-    const payment = await Payment.findOne({ 
-        'provider.paymentIntentId': paymentIntent.id 
+  const paymentIntentId = paymentIntent.id;
+  const payment = await Payment.findOne({
+    $or: [
+      { transactionId: paymentIntentId },
+      { gatewayTransactionId: paymentIntentId },
+    ],
+  });
+
+  if (payment) {
+    payment.status = 'completed';
+    payment.gateway = 'stripe';
+    payment.transactionId = paymentIntentId;
+    payment.gatewayTransactionId = paymentIntentId;
+    payment.timeline.push({
+      event: 'payment_completed',
+      timestamp: new Date(),
+      description: 'Payment intent succeeded',
     });
 
-    if (payment) {
-        payment.status = 'completed';
-        payment.provider = payment.provider || {};
-        payment.provider.chargeId = paymentIntent.charges.data[0]?.id;
-        payment.provider.receiptUrl = paymentIntent.charges.data[0]?.receipt_url;
-        
-        payment.timeline.push({
-            event: 'payment_completed',
-            timestamp: new Date(),
-            description: 'Payment intent succeeded'
-        });
+    await payment.save();
 
-        await payment.save();
-
-        // Update order
-        const order = await Order.findById(payment.order);
-        if (order) {
-            await paymentService.syncOrderAfterPayment(order._id, {
-              paymentStatus: 'completed',
-              transactionId: paymentIntent.id,
-              itemStatus: 'confirmed'
-            });
-        }
+    const order = await Order.findById(payment.order);
+    if (order) {
+      await finalizeSuccessfulCardPayment({
+        order,
+        paymentIntentId,
+        customerEmail: paymentIntent.receipt_email || paymentIntent.customer_email || null,
+      });
     }
+    return;
+  }
+
+  const orderId = paymentIntent?.metadata?.orderId;
+
+  if (!orderId) {
+    console.error(`Payment intent ${paymentIntent.id} is missing order metadata`);
+    return;
+  }
+
+  const order = await Order.findById(orderId);
+  if (!order) {
+    console.error(`Order not found for payment intent ${paymentIntent.id}: ${orderId}`);
+    return;
+  }
+
+  await finalizeSuccessfulCardPayment({
+    order,
+    paymentIntentId: paymentIntent.id,
+    customerEmail: paymentIntent.receipt_email || paymentIntent.customer_email || null,
+  });
 }
 
 // Helper function to handle failed payment
