@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ShoppingCart, CreditCard, Truck, Check, AlertCircle, Loader2, Tag, ShieldCheck } from 'lucide-react';
@@ -334,7 +334,10 @@ export default function Checkout() {
 
   useEffect(() => {
     if (cart.length === 0) {
-      navigate('/cart');
+      // Prevent redirect to cart when we intentionally clear the cart after checkout flow
+      if (!skipEmptyCartRedirect.current) {
+        navigate('/cart');
+      }
       return;
     }
 
@@ -408,6 +411,8 @@ export default function Checkout() {
   const taxAmount = Math.round(cartTotal * 0.18);
   const finalTotal = cartTotal + shippingCost + taxAmount - discountAmount;
   const validCart = cart.filter(item => item && item.product);
+
+  const skipEmptyCartRedirect = useRef(false);
 
   // Get unique shop IDs from cart
   const shopIds = [...new Set(validCart.map((item) => item.product.shopId))].filter(Boolean);
@@ -572,6 +577,7 @@ export default function Checkout() {
       });
 
       const orderId = order.id || order._id;
+      const guestToken = (order as any).guestInvoiceToken || null;
       if (!orderId) {
         throw new Error('Order created but order ID was not returned');
       }
@@ -596,9 +602,10 @@ export default function Checkout() {
         });
       }
 
+      skipEmptyCartRedirect.current = true;
       clearCart();
       toast.success('Card payment completed successfully!');
-      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId)}`);
+      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId)}${guestToken ? `&guest_token=${encodeURIComponent(guestToken)}` : ''}`);
     } catch (error) {
       console.error('Inline card checkout error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to process card payment');
@@ -639,6 +646,7 @@ export default function Checkout() {
         notes: 'Cash on Delivery',
       });
 
+      skipEmptyCartRedirect.current = true;
       clearCart();
       toast.success('Order placed successfully!');
       
@@ -726,9 +734,11 @@ export default function Checkout() {
       setWalletPendingOrderId(null);
       setWalletMockOtpHint(null);
       setWalletOtp('');
+      const guestToken = (order as any).guestInvoiceToken || null;
+      skipEmptyCartRedirect.current = true;
       clearCart();
       toast.success('Wallet payment completed successfully!');
-      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&method=wallet`);
+      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&method=wallet${guestToken ? `&guest_token=${encodeURIComponent(guestToken)}` : ''}`);
     } catch (error) {
       console.error('Wallet checkout error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to process wallet payment');
