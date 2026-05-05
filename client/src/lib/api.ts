@@ -1002,7 +1002,9 @@ class ApiClient {
       try {
         const data = await resp.json();
         message = data.message || message;
-      } catch {}
+      } catch (error) {
+        void error;
+      }
       throw new Error(message);
     }
 
@@ -1324,12 +1326,26 @@ class ApiClient {
     status?: string;
     page?: number;
     limit?: number;
+    startDate?: string;
+    endDate?: string;
   }): Promise<any> {
     const searchParams = new URLSearchParams();
     if (params?.status) searchParams.set('status', params.status);
     if (params?.page) searchParams.set('page', String(params.page));
     if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
     return this.request<any>(`/vendors/${vendorId}/settlements?${searchParams.toString()}`);
+  }
+
+  async getVendorSettlementRangeSummary(vendorId: string, params?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{ totalSettlements: number; totalCommission: number; totalPayable: number; totalOrderAmount: number; totalRefunded: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
+    return this.request<{ totalSettlements: number; totalCommission: number; totalPayable: number; totalOrderAmount: number; totalRefunded: number }>(`/vendors/${vendorId}/settlements/summary?${searchParams.toString()}`);
   }
 
   async getSettlementDetails(settlementId: string): Promise<any> {

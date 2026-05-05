@@ -12,7 +12,7 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 const SuperAdminAnalytics: React.FC = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState('30d');
+  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | '1y'>('30d');
 
   const [totalSales, setTotalSales] = useState(0);
   const [totalCommission, setTotalCommission] = useState(0);
@@ -24,57 +24,183 @@ const SuperAdminAnalytics: React.FC = () => {
 
   useEffect(() => { fetchAnalytics(); }, [timeRange]);
 
+  const getDateRange = (range: '7d' | '30d' | '90d' | '1y') => {
+    const endDate = new Date();
+    const startDate = new Date();
+
+    switch (range) {
+      case '7d':
+        startDate.setDate(endDate.getDate() - 7);
+        break;
+      case '30d':
+        startDate.setDate(endDate.getDate() - 30);
+        break;
+      case '90d':
+        startDate.setDate(endDate.getDate() - 90);
+        break;
+      case '1y':
+        startDate.setFullYear(endDate.getFullYear() - 1);
+        break;
+    }
+
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(23, 59, 59, 999);
+
+    return {
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+    };
+  };
+
   const fetchAnalytics = async () => {
     setLoading(true);
     try {
-      const [orders, shops, products, categories] = await Promise.all([
-        api.getOrders(),
-        api.getShops(),
-        api.getProducts(),
-        api.getCategories()
+      const dateRange = getDateRange(timeRange);
+
+      // Fetch shops first (needed for active vendors list and commission rates)
+      const shopsData = await api.getShops();
+      const shops = shopsData.data || [];
+      
+      // Filter active (approved or active) vendors
+      const activeVendors = shops.filter((s: any) => ['approved', 'active'].includes(String(s.status || '').toLowerCase()));
+      setTotalVendors(activeVendors.length);
+
+      if (activeVendors.length === 0) {
+        setTotalSales(0);
+        setTotalCommission(0);
+        setTotalOrders(0);
+        setOrdersByStatus([]);
+        setSalesByMonth([]);
+        setTopCategories([]);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch analytics for each vendor using live analytics endpoints
+      const [vendorMetrics, vendorTimeSeries, vendorEarnings, vendorSettlementSummaries] = await Promise.all([
+        Promise.all(
+          activeVendors.map((vendor: any) =>
+            api.getVendorAnalytics(vendor.id, { range: timeRange }).catch(() => null)
+          )
+        ),
+        Promise.all(
+          activeVendors.map((vendor: any) =>
+            api.getVendorTimeSeriesAnalytics(vendor.id, { range: timeRange, granularity: 'monthly' }).catch(() => ({ timeSeries: [] }))
+          )
+        ),
+        Promise.all(
+          activeVendors.map((vendor: any) =>
+            api.getVendorEarningsBreakdown(vendor.id, { range: timeRange }).catch(() => ({ byCategory: [] }))
+          )
+        ),
+        Promise.all(
+          activeVendors.map((vendor: any) =>
+            api.getVendorSettlementRangeSummary(vendor.id, dateRange).catch(() => null)
+          )
+        )
       ]);
 
-      if (orders?.data) {
-        const ordersArray = orders.data;
-        setTotalSales(ordersArray.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0));
-        setTotalCommission(ordersArray.reduce((sum: number, o: any) => sum + (o.commissionAmount || 0), 0));
-        setTotalOrders(ordersArray.length);
+      // Aggregate sales and orders from live analytics, commission from settlement records
+      let aggregatedSales = 0;
+      let aggregatedCommission = 0;
+      let aggregatedOrders = 0;
 
-        const statusCounts: Record<string, number> = {};
-        ordersArray.forEach((o: any) => { statusCounts[o.status] = (statusCounts[o.status] || 0) + 1; });
-        setOrdersByStatus([
-          { name: 'Pending', value: statusCounts['pending'] || 0, color: 'hsl(38, 92%, 50%)' },
-          { name: 'Processing', value: statusCounts['processing'] || 0, color: 'hsl(190, 100%, 50%)' },
-          { name: 'Shipped', value: statusCounts['shipped'] || 0, color: 'hsl(270, 100%, 60%)' },
-          { name: 'Delivered', value: statusCounts['delivered'] || 0, color: 'hsl(142, 76%, 36%)' },
-          { name: 'Cancelled', value: statusCounts['cancelled'] || 0, color: 'hsl(0, 72%, 51%)' },
-        ]);
-
-        const monthlyData: Record<string, { sales: number; commission: number; orders: number }> = {};
-        const now = new Date();
-        for (let i = 5; i >= 0; i--) {
-          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-          monthlyData[d.toLocaleString('default', { month: 'short' })] = { sales: 0, commission: 0, orders: 0 };
+      vendorMetrics.forEach((metric: any, idx: number) => {
+        if (metric?.salesMetrics) {
+          const revenue = Number(metric.salesMetrics.totalRevenue || 0);
+          const orders = Number(metric.salesMetrics.totalOrders || 0);
+          
+          aggregatedSales += revenue;
+          aggregatedOrders += orders;
         }
-        ordersArray.forEach((o: any) => {
-          const key = new Date(o.createdAt).toLocaleString('default', { month: 'short' });
-          if (monthlyData[key]) { monthlyData[key].sales += o.totalAmount || 0; monthlyData[key].commission += o.commissionAmount || 0; monthlyData[key].orders += 1; }
-        });
-        setSalesByMonth(Object.entries(monthlyData).map(([month, data]) => ({ month, ...data })));
-      }
+      });
 
-      if (shops?.data) setTotalVendors(shops.data.filter((s: any) => s.status === 'approved').length);
+      aggregatedCommission = vendorSettlementSummaries.reduce((sum: number, summary: any) => {
+        return sum + Number(summary?.totalCommission || 0);
+      }, 0);
 
-      if (products?.data && categories) {
-        const categoryCounts: Record<string, number> = {};
-        products.data.forEach((p: any) => {
-          const catName = p.category?.name || 'Uncategorized'; 
-          categoryCounts[catName] = (categoryCounts[catName] || 0) + 1; 
+      setTotalSales(aggregatedSales);
+      setTotalCommission(aggregatedCommission);
+      setTotalOrders(aggregatedOrders);
+
+      // Aggregate order status breakdown (if available from metrics)
+      const allOrderStatuses: Record<string, number> = {};
+      vendorMetrics.forEach((metric: any) => {
+        if (metric?.orderMetrics?.statusBreakdown) {
+          Object.entries(metric.orderMetrics.statusBreakdown).forEach(([status, count]: [string, any]) => {
+            allOrderStatuses[status] = (allOrderStatuses[status] || 0) + Number(count || 0);
+          });
+        }
+      });
+
+      setOrdersByStatus([
+        { name: 'Pending', value: allOrderStatuses['pending'] || 0, color: 'hsl(38, 92%, 50%)' },
+        { name: 'Processing', value: allOrderStatuses['processing'] || 0, color: 'hsl(190, 100%, 50%)' },
+        { name: 'Shipped', value: allOrderStatuses['shipped'] || 0, color: 'hsl(270, 100%, 60%)' },
+        { name: 'Delivered', value: allOrderStatuses['delivered'] || 0, color: 'hsl(142, 76%, 36%)' },
+        { name: 'Cancelled', value: allOrderStatuses['cancelled'] || 0, color: 'hsl(0, 72%, 51%)' },
+      ]);
+
+      // Aggregate monthly sales and commission from time series
+      const monthlyData: Record<string, { sales: number; commission: number; orders: number }> = {};
+
+      vendorTimeSeries.forEach((series: any, vendorIdx: number) => {
+        const vendorRate = Number(activeVendors[vendorIdx]?.commissionRate || 10) / 100;
+        (series?.timeSeries || []).forEach((point: any) => {
+          const period = String(point?.period || '');
+          if (!period) return;
+          
+          const sales = Number(point?.revenue || 0);
+          const orders = Number(point?.orders || 0);
+          
+          if (!monthlyData[period]) {
+            monthlyData[period] = { sales: 0, commission: 0, orders: 0 };
+          }
+          monthlyData[period].sales += sales;
+          monthlyData[period].commission += sales * vendorRate;
+          monthlyData[period].orders += orders;
         });
-        setTopCategories(Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, value]) => ({ name, value })));
-      }
+      });
+
+      const monthLabels = Object.keys(monthlyData).sort();
+      setSalesByMonth(
+        monthLabels.map((period) => {
+          const monthName = new Date(`${period}-01`).toLocaleString(undefined, { month: 'short' });
+          return {
+            month: monthName,
+            sales: Math.round(monthlyData[period].sales * 100) / 100,
+            commission: Math.round(monthlyData[period].commission * 100) / 100,
+            orders: monthlyData[period].orders,
+          };
+        })
+      );
+
+      // Aggregate top categories from earnings breakdown
+      const categories = await api.getCategories().catch(() => []);
+      const categoryMap: Record<string, number> = {};
+      const categoryNameMap = new Map((categories || []).map((cat: any) => [String(cat.id), String(cat.name)]));
+
+      vendorEarnings.forEach((breakdown: any) => {
+        (breakdown?.byCategory || []).forEach((entry: any) => {
+          const categoryId = String(entry?.category || 'null');
+          categoryMap[categoryId] = (categoryMap[categoryId] || 0) + Number(entry?.earnings || 0);
+        });
+      });
+
+      const categoryColors = ['hsl(190, 100%, 50%)', 'hsl(270, 100%, 60%)', 'hsl(330, 100%, 60%)', 'hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)'];
+      const topCats = Object.entries(categoryMap)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(([categoryId, earnings], idx: number) => ({
+          name: categoryNameMap.get(categoryId) || (categoryId === 'null' ? 'Uncategorized' : 'Other'),
+          value: earnings,
+          color: categoryColors[idx % categoryColors.length],
+        }));
+
+      setTopCategories(topCats);
     } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+      console.error('Analytics fetch error:', error);
+      toast({ title: 'Error', description: error.message || 'Failed to load analytics', variant: 'destructive' });
     }
     setLoading(false);
   };
@@ -85,8 +211,6 @@ const SuperAdminAnalytics: React.FC = () => {
     { label: 'Total Orders', value: totalOrders.toLocaleString(), icon: ShoppingBag, change: '+24%', positive: true, color: 'text-purple-400' },
     { label: 'Active Vendors', value: totalVendors.toLocaleString(), icon: Users, change: '+3', positive: true, color: 'text-warning' },
   ];
-
-  const categoryColors = ['hsl(190, 100%, 50%)', 'hsl(270, 100%, 60%)', 'hsl(330, 100%, 60%)', 'hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)'];
 
   if (loading) return <AdminLayout><div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></AdminLayout>;
 
@@ -183,10 +307,10 @@ const SuperAdminAnalytics: React.FC = () => {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={topCategories} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(240, 10%, 18%)" />
-                    <XAxis type="number" stroke="hsl(215, 20%, 55%)" fontSize={12} />
+                    <XAxis type="number" stroke="hsl(215, 20%, 55%)" fontSize={12} tickFormatter={(v) => formatLKRCompact(v)} />
                     <YAxis type="category" dataKey="name" stroke="hsl(215, 20%, 55%)" width={80} fontSize={12} />
-                    <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} />
-                    <Bar dataKey="value" radius={[0, 4, 4, 0]} name="Products">{topCategories.map((_, index) => <Cell key={`cell-${index}`} fill={categoryColors[index % categoryColors.length]} />)}</Bar>
+                    <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} formatter={(value: number) => formatLKR(value)} />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]} name="Earnings">{topCategories.map((_, index) => <Cell key={`cell-${index}`} fill={topCategories[index]?.color} />)}</Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
