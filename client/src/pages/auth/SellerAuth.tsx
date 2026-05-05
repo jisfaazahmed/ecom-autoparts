@@ -122,6 +122,7 @@ const SellerAuth: React.FC = () => {
       businessRegistration: signupForm.businessRegistration || undefined,
       shopDescription: signupForm.shopDescription || undefined,
       phone: signupForm.phone,
+      address: signupForm.shopAddress || undefined,
     });
 
     if (error) {

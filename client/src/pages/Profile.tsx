@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { User, Mail, Phone, MapPin, Save, Loader2, ArrowLeft, Camera } from 'lucide-react';
+import { User, Mail, Phone, MapPin, Save, Loader2, ArrowLeft, Camera, Lock, Eye, EyeOff } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,7 +26,10 @@ const Profile: React.FC = () => {
   const { toast } = useToast();
   
   const [loading, setLoading] = useState(false);
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [showPasswords, setShowPasswords] = useState({ current: false, new: false, confirm: false });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [form, setForm] = useState({
     fullName: '',
     phone: '',
@@ -82,15 +85,50 @@ const Profile: React.FC = () => {
         description: 'Your profile has been saved successfully.',
       });
       refreshProfile();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: 'Error',
-        description: error.message || 'Failed to update profile',
+        description: error instanceof Error && error.message ? error.message : 'Failed to update profile',
         variant: 'destructive',
       });
     }
     
     setLoading(false);
+  };
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrors({});
+
+    if (!passwordForm.currentPassword) {
+      setErrors({ currentPassword: 'Current password is required' });
+      return;
+    }
+    if (passwordForm.newPassword.length < 6) {
+      setErrors({ newPassword: 'New password must be at least 6 characters' });
+      return;
+    }
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setErrors({ confirmPassword: 'Passwords do not match' });
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      await api.changePassword(passwordForm.currentPassword, passwordForm.newPassword);
+      toast({
+        title: 'Password Changed',
+        description: 'Your password has been updated successfully.',
+      });
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (error: unknown) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error && error.message ? error.message : 'Failed to change password',
+        variant: 'destructive',
+      });
+    }
+    setPasswordLoading(false);
   };
 
   const getInitials = (name: string) => {
@@ -235,20 +273,6 @@ const Profile: React.FC = () => {
 
             <Separator />
 
-            {/* Quick Links */}
-            <div className="flex flex-col sm:flex-row gap-4 pt-2">
-              <Link to="/orders" className="flex-1">
-                <Button variant="outline" className="w-full">
-                  View Order History
-                </Button>
-              </Link>
-              <Link to="/my-vehicle" className="flex-1">
-                <Button variant="outline" className="w-full">
-                  Manage My Vehicle
-                </Button>
-              </Link>
-            </div>
-
             {/* Submit Button */}
             <Button type="submit" className="w-full gap-2" disabled={loading}>
               {loading ? (
@@ -259,6 +283,110 @@ const Profile: React.FC = () => {
               Save Changes
             </Button>
           </form>
+
+          {/* Change Password */}
+          <form onSubmit={handlePasswordChange} className="glass-card rounded-2xl p-6 space-y-6">
+            <div>
+              <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
+                <Lock className="h-5 w-5 text-primary" />
+                Change Password
+              </h2>
+
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="currentPassword">Current Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="currentPassword"
+                      type={showPasswords.current ? 'text' : 'password'}
+                      placeholder="Enter current password"
+                      value={passwordForm.currentPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+                      className="pl-10 pr-10 bg-secondary/30"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswords({ ...showPasswords, current: !showPasswords.current })}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPasswords.current ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {errors.currentPassword && <p className="text-sm text-destructive">{errors.currentPassword}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="newPassword">New Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="newPassword"
+                      type={showPasswords.new ? 'text' : 'password'}
+                      placeholder="Enter new password"
+                      value={passwordForm.newPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+                      className="pl-10 pr-10 bg-secondary/30"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswords({ ...showPasswords, new: !showPasswords.new })}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPasswords.new ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {errors.newPassword && <p className="text-sm text-destructive">{errors.newPassword}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirm New Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="confirmPassword"
+                      type={showPasswords.confirm ? 'text' : 'password'}
+                      placeholder="Confirm new password"
+                      value={passwordForm.confirmPassword}
+                      onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+                      className="pl-10 pr-10 bg-secondary/30"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswords({ ...showPasswords, confirm: !showPasswords.confirm })}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPasswords.confirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {errors.confirmPassword && <p className="text-sm text-destructive">{errors.confirmPassword}</p>}
+                </div>
+              </div>
+            </div>
+
+            <Button type="submit" className="w-full gap-2" disabled={passwordLoading}>
+              {passwordLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Lock className="h-4 w-4" />
+              )}
+              Change Password
+            </Button>
+          </form>
+
+          {/* Quick Links */}
+          <div className="flex flex-col sm:flex-row gap-4">
+            <Link to="/orders" className="flex-1">
+              <Button variant="outline" className="w-full">
+                View Order History
+              </Button>
+            </Link>
+            <Link to="/my-vehicle" className="flex-1">
+              <Button variant="outline" className="w-full">
+                Manage My Vehicle
+              </Button>
+            </Link>
+          </div>
         </motion.div>
       </div>
     </div>

@@ -51,9 +51,11 @@ const Deals: React.FC = () => {
     shopId: p.shopId,
     shopName: p.shop?.name || 'Unknown Shop',
     stock: p.stock,
-    compatibleVehicles: p.compatibleVariants || [],
-    rating: 4.5,
-    reviewCount: 0,
+    compatibleVehicles: (p.compatibleVehicles || []).map((v) =>
+      typeof v === 'string' ? v : `${v.year} ${v.make} ${v.model}`
+    ),
+    rating: p.rating ?? 0,
+    reviewCount: p.reviewCount ?? 0,
     sku: p.sku || '',
   });
 

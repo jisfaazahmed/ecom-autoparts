@@ -122,7 +122,14 @@ const MyVehicle: React.FC = () => {
         >
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h1 className="text-3xl font-bold text-foreground">My Vehicles</h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-3xl font-bold text-foreground">My Vehicles</h1>
+                {vehicles.length > 0 && (
+                  <Badge variant="secondary" className="text-sm">
+                    {vehicles.length} saved
+                  </Badge>
+                )}
+              </div>
               <p className="text-muted-foreground mt-1">
                 Manage your saved vehicles for personalized part recommendations
               </p>
@@ -192,6 +199,12 @@ const MyVehicle: React.FC = () => {
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-2 text-sm text-muted-foreground mb-4">
+                        {vehicle.nickname && (
+                          <div className="flex justify-between">
+                            <span>Nickname:</span>
+                            <span className="text-foreground font-medium">{vehicle.nickname}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between">
                           <span>Brand:</span>
                           <span className="text-foreground font-medium">{vehicle.brand?.name}</span>

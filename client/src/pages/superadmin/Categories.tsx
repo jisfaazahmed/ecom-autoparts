@@ -34,8 +34,8 @@ const SuperAdminCategories: React.FC = () => {
     try {
       const data = await api.getCategories();
       setCategories(data);
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to fetch categories', variant: 'destructive' });
     }
     setLoading(false);
   };
@@ -57,8 +57,8 @@ const SuperAdminCategories: React.FC = () => {
       }
       setDialogOpen(false);
       fetchCategories();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to save category', variant: 'destructive' });
     }
     setSaving(false);
   };
@@ -74,8 +74,8 @@ const SuperAdminCategories: React.FC = () => {
       setDeleteDialogOpen(false);
       setItemToDelete(null);
       fetchCategories();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to delete category', variant: 'destructive' });
     }
     setSaving(false);
   };

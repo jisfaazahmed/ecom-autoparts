@@ -40,8 +40,8 @@ const ResetPassword = () => {
       await api.forgotPassword(email);
       setResetRequested(true);
       toast.success("Check your email for reset instructions!");
-    } catch (err: any) {
-      setError(err.message || "Failed to send reset email");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to send reset email");
     }
 
     setLoading(false);
@@ -72,8 +72,8 @@ const ResetPassword = () => {
       await api.resetPassword(resetToken, password);
       toast.success("Password updated successfully!");
       navigate("/auth/customer");
-    } catch (err: any) {
-      setError(err.message || "Failed to reset password");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to reset password");
     }
 
     setLoading(false);

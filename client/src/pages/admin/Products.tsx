@@ -59,12 +59,14 @@ const AdminProducts: React.FC = () => {
     if (!shop?.id) return;
     setLoading(true);
     try {
-      const [productsRes, categoriesRes] = await Promise.all([
+      const [productsRes, categoriesRes, variantsRes] = await Promise.all([
         api.getProducts({ shop: shop.id }),
         api.getCategories(),
+        api.getAllVehicleVariants(),
       ]);
       setProducts(productsRes.data || []);
       setCategories(categoriesRes || []);
+      setVariants(variantsRes || []);
     } catch (error) {
       console.error('Error fetching data:', error);
     }
@@ -79,6 +81,10 @@ const AdminProducts: React.FC = () => {
 
   const openEditDialog = (product: ApiProduct) => {
     setEditingProduct(product);
+    // Populate compatible_variant (variant IDs)
+    const variantIds = (product.compatibleVehicleVariants || []).map(v =>
+      typeof v === 'string' ? v : v.id
+    );
     setFormData({
       name: product.name,
       description: product.description || '',
@@ -86,7 +92,7 @@ const AdminProducts: React.FC = () => {
       stock: product.stock.toString(),
       sku: product.sku || '',
       category_id: product.categoryId || '',
-      compatible_variants: product.compatibleVariants || [],
+      compatible_variants: variantIds.length > 0 ? variantIds : (product.compatibleVariants || []),
       image_url: product.imageUrl || '',
     });
     setProductDialogOpen(true);
@@ -120,8 +126,8 @@ const AdminProducts: React.FC = () => {
       }
       setProductDialogOpen(false);
       fetchData();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to save product', variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to save product', variant: 'destructive' });
     }
     setSaving(false);
   };
@@ -135,8 +141,8 @@ const AdminProducts: React.FC = () => {
       setDeleteDialogOpen(false);
       setProductToDelete(null);
       fetchData();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to delete product', variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to delete product', variant: 'destructive' });
     }
     setSaving(false);
   };
@@ -146,8 +152,8 @@ const AdminProducts: React.FC = () => {
       await api.updateProduct(product.id, { isActive: !product.isActive });
       setProducts(products.map(p => p.id === product.id ? { ...p, isActive: !p.isActive } : p));
       toast({ title: product.isActive ? 'Deactivated' : 'Activated', description: `Product is now ${product.isActive ? 'hidden' : 'visible'}` });
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to update product', variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to update product', variant: 'destructive' });
     }
   };
 
@@ -316,12 +322,17 @@ const AdminProducts: React.FC = () => {
             <div>
               <Label>Compatible Vehicles ({formData.compatible_variants.length} selected)</Label>
               <ScrollArea className="h-48 border rounded-lg p-2 mt-2">
-                {variants.map(v => (
-                  <div key={v.id} className="flex items-center space-x-2 py-1">
-                    <Checkbox id={`edit-${v.id}`} checked={formData.compatible_variants.includes(v.id)} onCheckedChange={() => toggleVariant(v.id)} />
-                    <label htmlFor={`edit-${v.id}`} className="text-sm cursor-pointer">{v.name} ({v.yearStart}-{v.yearEnd || 'Present'})</label>
-                  </div>
-                ))}
+                {variants.map(v => {
+                  const brandName = v.model?.brandName || '';
+                  const modelName = v.model?.name || '';
+                  const label = `${brandName} ${modelName} ${v.name} (${v.yearStart}-${v.yearEnd || 'Present'})`;
+                  return (
+                    <div key={v.id} className="flex items-center space-x-2 py-1">
+                      <Checkbox id={`edit-${v.id}`} checked={formData.compatible_variants.includes(v.id)} onCheckedChange={() => toggleVariant(v.id)} />
+                      <label htmlFor={`edit-${v.id}`} className="text-sm cursor-pointer">{label}</label>
+                    </div>
+                  );
+                })}
               </ScrollArea>
             </div>
           </div>
