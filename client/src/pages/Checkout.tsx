@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ShoppingCart, CreditCard, Truck, Check, AlertCircle, Loader2, Tag, ShieldCheck } from 'lucide-react';
@@ -38,6 +38,41 @@ const DEFAULT_SHIPPING_COST = 500;
 const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined;
 const useStripeMock = (import.meta.env.VITE_USE_STRIPE_MOCK as string | undefined) === 'true';
 const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
+
+const ZONE_1_CITIES = ['colombo'];
+const ZONE_2_CITIES = ['gampaha', 'kaluthara'];
+const ZONE_3_CITIES = [
+  'kurunegala',
+  'kandy',
+  'matale',
+  'nuwara eliya',
+  'galle',
+  'matara',
+  'hambantota',
+  'puttalam',
+  'anuradhapura',
+  'polonnaruwa',
+  'badulla',
+  'monaragala',
+  'ratnapura',
+  'kegalle',
+  'trincomalee',
+  'batticaloa',
+  'ampara',
+  'jaffna',
+  'vavuniya',
+  'mannar',
+  'kilinochchi',
+  'mullaitivu',
+];
+
+function getZoneMultiplier(city: string) {
+  const normalizedCity = String(city || '').trim().toLowerCase();
+  if (ZONE_1_CITIES.includes(normalizedCity)) return 100;
+  if (ZONE_2_CITIES.includes(normalizedCity)) return 200;
+  if (ZONE_3_CITIES.includes(normalizedCity)) return 300;
+  return 0;
+}
 
 type ConfirmInlineCardFn = (
   clientSecret: string,
@@ -81,6 +116,8 @@ function InlineCardForm({
   const stripe = useStripe();
   const elements = useElements();
   const [cardError, setCardError] = useState<string | null>(null);
+  const [cardComplete, setCardComplete] = useState(false);
+  const [cardBrand, setCardBrand] = useState<string>('');
 
   useEffect(() => {
     onReady(async (clientSecret, billing) => {
@@ -118,43 +155,111 @@ function InlineCardForm({
     return () => onReady(null);
   }, [elements, onReady, stripe]);
 
+  const getBrandIcon = (brand: string) => {
+    const icons: { [key: string]: string } = {
+      visa: '💳 Visa',
+      mastercard: '🎯 Mastercard',
+      amex: '🅰️ American Express',
+      discover: '🔍 Discover',
+    };
+    return icons[brand] || '💳';
+  };
+
   return (
-    <div className="space-y-3">
-      <Label htmlFor="card-element">Card Details</Label>
-      <div
-        id="card-element"
-        className="rounded-md border border-input bg-background px-3 py-3"
-      >
-        <CardElement
-          options={{
-            hidePostalCode: true,
-            disabled,
-            style: {
-              base: {
-                fontSize: '16px',
-                color: '#1f2937',
-                '::placeholder': {
-                  color: '#9ca3af',
+    <div className="space-y-4">
+      {/* Card Input */}
+      <div className="space-y-2">
+        <Label htmlFor="card-element" className="text-sm font-semibold">Card Details</Label>
+        <div
+          id="card-element"
+          className={`rounded-lg border-2 transition-all bg-background px-4 py-3.5 ${
+            cardError ? 'border-destructive' : cardComplete ? 'border-green-500' : 'border-input hover:border-muted-foreground'
+          }`}
+        >
+          <CardElement
+            options={{
+              hidePostalCode: true,
+              disabled,
+              style: {
+                base: {
+                  fontSize: '15px',
+                  color: '#1f2937',
+                  fontFamily: '"Inter", system-ui, sans-serif',
+                  '::placeholder': {
+                    color: '#d1d5db',
+                  },
+                  ':-webkit-autofill': {
+                    color: '#1f2937',
+                  },
+                },
+                invalid: {
+                  color: '#dc2626',
+                  iconColor: '#dc2626',
+                },
+                complete: {
+                  color: '#16a34a',
+                  iconColor: '#16a34a',
                 },
               },
-              invalid: {
-                color: '#dc2626',
-              },
-            },
-          }}
-          onChange={(event) => {
-            if (event.error?.message) {
-              setCardError(event.error.message);
-            } else {
-              setCardError(null);
-            }
-          }}
-        />
+            }}
+            onChange={(event) => {
+              if (event.error?.message) {
+                setCardError(event.error.message);
+                setCardComplete(false);
+              } else {
+                setCardError(null);
+                setCardComplete(event.complete || false);
+              }
+              
+              if (event.brand) {
+                setCardBrand(event.brand);
+              }
+            }}
+          />
+        </div>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Use Stripe test card: 4242 4242 4242 4242, any future date, any CVC.
-      </p>
-      {cardError && <p className="text-sm text-destructive">{cardError}</p>}
+
+      {/* Card Brand & Status Indicators */}
+      <div className="flex items-center justify-between pt-2">
+        <div className="flex items-center gap-2">
+          {cardComplete && !cardError && (
+            <div className="flex items-center gap-1.5 text-green-600">
+              <Check className="h-4 w-4" />
+              <span className="text-xs font-medium">Card verified</span>
+            </div>
+          )}
+          {cardBrand && (
+            <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full font-medium">
+              {getBrandIcon(cardBrand)}
+            </span>
+          )}
+        </div>
+        {cardError && (
+          <span className="text-xs text-destructive font-medium flex items-center gap-1">
+            <AlertCircle className="h-3 w-3" />
+            {cardError}
+          </span>
+        )}
+      </div>
+
+      {/* Test Card Info */}
+      <div className="bg-blue-50/50 border border-blue-200/50 rounded-lg p-3">
+        <p className="text-xs text-blue-700/80">
+          <span className="font-semibold">Test Card:</span> 4242 4242 4242 4242 • Any future expiry • Any CVC
+        </p>
+      </div>
+
+      {/* Security Info */}
+      <div className="flex items-center justify-between text-xs text-muted-foreground px-2 py-1">
+        <div className="flex items-center gap-1.5">
+          <ShieldCheck className="h-3.5 w-3.5 text-green-600" />
+          <span>SSL Encrypted & Secure</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Check className="h-3.5 w-3.5 text-green-600" />
+          <span>PCI Compliant</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -229,7 +334,10 @@ export default function Checkout() {
 
   useEffect(() => {
     if (cart.length === 0) {
-      navigate('/cart');
+      // Prevent redirect to cart when we intentionally clear the cart after checkout flow
+      if (!skipEmptyCartRedirect.current) {
+        navigate('/cart');
+      }
       return;
     }
 
@@ -300,8 +408,11 @@ export default function Checkout() {
   };
 
   const cartTotal = getCartTotal();
-  const finalTotal = cartTotal + shippingCost - discountAmount;
+  const taxAmount = Math.round(cartTotal * 0.18);
+  const finalTotal = cartTotal + shippingCost + taxAmount - discountAmount;
   const validCart = cart.filter(item => item && item.product);
+
+  const skipEmptyCartRedirect = useRef(false);
 
   // Get unique shop IDs from cart
   const shopIds = [...new Set(validCart.map((item) => item.product.shopId))].filter(Boolean);
@@ -314,43 +425,22 @@ export default function Checkout() {
       return;
     }
 
-    const district = form.city.trim();
-    if (!district) {
-      setShippingCost(DEFAULT_SHIPPING_COST);
-      setShippingError(null);
-      return;
-    }
-
-    // Shipping calculation endpoint is authenticated in backend. For guests we use a fallback estimate.
-    if (!api.getToken()) {
-      setShippingCost(DEFAULT_SHIPPING_COST);
-      setShippingError('Sign in to get exact shipping cost for your address.');
-      return;
-    }
-
     setShippingLoading(true);
     try {
-      const quote = await api.calculateShipping({
-        items: validCart.map((item) => ({
-          product: {
-            price: item.product.price,
-            weight: item.product.weight || 0,
-          },
-          quantity: item.quantity,
-        })),
-        deliveryAddress: {
-          district,
-          city: form.city.trim(),
-        },
-        shippingMethod: 'standard',
-      });
+      const totalWeight = validCart.reduce((sum, item) => {
+        const weight = item.product.weight || 0.5;
+        return sum + (weight * item.quantity);
+      }, 0);
 
-      setShippingCost(typeof quote.totalCharge === 'number' ? quote.totalCharge : DEFAULT_SHIPPING_COST);
-      setShippingError(null);
-    } catch (error) {
-      console.error('Shipping calculation failed:', error);
-      setShippingCost(DEFAULT_SHIPPING_COST);
-      setShippingError('Using estimated shipping cost. Exact charge will apply at fulfillment.');
+      const zoneMultiplier = getZoneMultiplier(form.city);
+      const computedShipping = Math.round(300 + (totalWeight * 50) + zoneMultiplier + 300);
+
+      setShippingCost(Number.isFinite(computedShipping) ? computedShipping : DEFAULT_SHIPPING_COST);
+      setShippingError(
+        form.city.trim()
+          ? null
+          : 'Enter your city to include zone-based shipping charge.'
+      );
     } finally {
       setShippingLoading(false);
     }
@@ -487,11 +577,15 @@ export default function Checkout() {
       });
 
       const orderId = order.id || order._id;
+      const guestToken = (order as any).guestInvoiceToken || null;
       if (!orderId) {
         throw new Error('Order created but order ID was not returned');
       }
 
-      const paymentIntent = await api.createPaymentIntent({ orderId });
+      const paymentIntent = await api.createPaymentIntent({
+        orderId,
+        email: form.email,
+      });
 
       const paymentIntentId = isMockInline
         ? paymentIntent.paymentIntentId
@@ -501,14 +595,17 @@ export default function Checkout() {
             phone: form.phone,
           });
 
-      await api.confirmPaymentIntent({
-        orderId,
-        paymentIntentId,
-      });
+      if (isMockInline) {
+        await api.confirmPaymentIntent({
+          orderId,
+          paymentIntentId,
+        });
+      }
 
+      skipEmptyCartRedirect.current = true;
       clearCart();
       toast.success('Card payment completed successfully!');
-      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId)}`);
+      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId)}${guestToken ? `&guest_token=${encodeURIComponent(guestToken)}` : ''}`);
     } catch (error) {
       console.error('Inline card checkout error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to process card payment');
@@ -549,6 +646,7 @@ export default function Checkout() {
         notes: 'Cash on Delivery',
       });
 
+      skipEmptyCartRedirect.current = true;
       clearCart();
       toast.success('Order placed successfully!');
       
@@ -636,9 +734,11 @@ export default function Checkout() {
       setWalletPendingOrderId(null);
       setWalletMockOtpHint(null);
       setWalletOtp('');
+      const guestToken = (order as any).guestInvoiceToken || null;
+      skipEmptyCartRedirect.current = true;
       clearCart();
       toast.success('Wallet payment completed successfully!');
-      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&method=wallet`);
+      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&method=wallet${guestToken ? `&guest_token=${encodeURIComponent(guestToken)}` : ''}`);
     } catch (error) {
       console.error('Wallet checkout error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to process wallet payment');
@@ -1152,7 +1252,13 @@ export default function Checkout() {
                     </div>
 
                     {paymentMethod === 'stripe' && stripePromise && (
-                      <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-background p-5">
+                      <div className="rounded-xl border-2 border-primary/30 bg-gradient-to-br from-primary/8 via-background to-background p-6 space-y-4">
+                        <div className="flex items-center justify-between mb-1">
+                          <h3 className="font-semibold text-sm text-foreground">Secure Payment</h3>
+                          <Badge variant="secondary" className="text-xs">
+                            🔒 Powered by Stripe
+                          </Badge>
+                        </div>
                         <Elements stripe={stripePromise}>
                           <InlineCardForm
                             onReady={handleInlineCardReady}
@@ -1358,6 +1464,10 @@ export default function Checkout() {
                       ) : (
                         <span className="font-medium">{formatLKR(shippingCost)}</span>
                       )}
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">Tax (18%)</span>
+                      <span className="font-medium">{formatLKR(taxAmount)}</span>
                     </div>
                     {shippingError && (
                       <p className="text-xs text-amber-500 col-span-2">{shippingError}</p>

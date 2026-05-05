@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Package, Truck, MapPin, Calendar, CreditCard, Phone, Timer, Receipt } from 'lucide-react';
-import { ApiOrder, ApiOrderTimelineEvent } from '@/lib/api';
+import { ApiOrder, ApiOrderTimelineEvent, api } from '@/lib/api';
+import { toast } from 'sonner';
 import { formatLKR } from '@/lib/currency';
 import {
   Dialog,
@@ -80,6 +81,34 @@ const paymentStatusConfig: Record<string, { color: string; label: string }> = {
   },
 };
 
+const InvoiceButton: React.FC<{ orderId: string }> = ({ orderId }) => {
+  const [loading, setLoading] = useState(false);
+
+  const handleDownload = async () => {
+    try {
+      setLoading(true);
+      await api.downloadInvoice(orderId);
+      toast.success('Invoice downloaded');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to download invoice');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleDownload}
+      disabled={loading}
+      className="inline-flex items-center gap-2 px-3 py-1 rounded-md border hover:bg-muted/50"
+      title="Download invoice"
+    >
+      <Receipt className="h-4 w-4" />
+      <span className="text-sm">{loading ? 'Preparing…' : 'Invoice'}</span>
+    </button>
+  );
+};
+
 const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({
   order,
   timeline = [],
@@ -142,7 +171,10 @@ const OrderDetailsDialog: React.FC<OrderDetailsDialogProps> = ({
                 ? `Order #${orderId.slice(0, 8).toUpperCase()}`
                 : 'Order Details'}
             </span>
-            <Badge className={status.color}>{status.label}</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge className={status.color}>{status.label}</Badge>
+                    <InvoiceButton orderId={order.id || order._id} />
+                  </div>
           </DialogTitle>
         </DialogHeader>
 
