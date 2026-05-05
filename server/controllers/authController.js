@@ -269,3 +269,44 @@ exports.changePassword = async (req, res) => {
     res.status(500).json({ message: 'Error changing password' });
   }
 };
+
+// PUT /auth/profile - Update user profile
+exports.updateProfile = async (req, res) => {
+  try {
+    const { name, fullName, phone, address } = req.body;
+    const userId = req.user?.id || req.user?._id;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (name || fullName) user.name = name || fullName;
+    if (phone) user.phone = phone;
+    if (address) user.address = address;
+
+    await user.save();
+
+    const roleLower = (user.role || '').toLowerCase().replace('_', '');
+    res.status(200).json({
+      message: 'Profile updated successfully',
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.name,
+        role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer',
+        status: user.status,
+        phone: user.phone,
+        address: user.address,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error updating profile' });
+  }
+};
