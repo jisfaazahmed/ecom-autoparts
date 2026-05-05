@@ -159,17 +159,11 @@ const SuperAdminCoupons: React.FC = () => {
             id: `mock-${Date.now()}`,
             usedCount: 0,
             isActive: true,
-            discountType: formData.discountType // Ensure valid discountType
+            discountType: formData.discountType
           };
           setCoupons(prev => [newCoupon, ...prev]);
           toast({ title: 'Created (Demo)', description: 'Created locally for demonstration' });
         }
-
-        await api.updateCoupon(editingCoupon.id, couponData as any);
-        toast({ title: 'Updated', description: 'Coupon updated successfully' });
-      } else {
-        await api.createCoupon({ ...couponData, isActive: true } as any);
-        toast({ title: 'Created', description: 'Coupon created successfully' });
       }
       setDialogOpen(false);
     } catch (error: unknown) {

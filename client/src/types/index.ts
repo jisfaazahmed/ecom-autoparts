@@ -55,6 +55,8 @@ export interface Order {
   shopId: string;
   items: OrderItem[];
   total: number;
+  totalAmount?: number;
+  commissionAmount?: number;
   status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
   shippingAddress: string;
   shippingCity?: string;
