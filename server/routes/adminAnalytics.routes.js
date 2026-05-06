@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const adminAnalyticsController = require('../controllers/adminAnalyticsController');
-const { protect, authorize } = require('../middleware/auth.middleware');
+const { verifyToken, isSuperAdmin } = require('../middleware/authMiddleware');
 
 // GET /api/admin-analytics/superadmin
-router.get('/superadmin', protect, authorize(['superadmin']), adminAnalyticsController.getSuperAdminAnalytics);
+router.get('/superadmin', verifyToken, isSuperAdmin, adminAnalyticsController.getSuperAdminAnalytics);
 
 module.exports = router;

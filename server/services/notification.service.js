@@ -5,36 +5,38 @@ const emailService = require('./email.service');
 class NotificationService {
     static async createNotification(userId, type, data) {
         try {
+            // Handle Admin-wide notifications (for Super Admins)
+            if (type.startsWith('admin_') && !userId) {
+                const superAdmins = await User.find({ role: 'SUPER_ADMIN' });
+                const notifications = [];
+                
+                for (const admin of superAdmins) {
+                    const result = await this.createNotification(admin._id, type, data);
+                    if (result) notifications.push(result);
+                }
+                
+                // Also send a direct email to the configured ADMIN_EMAIL if it's different
+                const configAdminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER;
+                if (configAdminEmail && !superAdmins.some(a => a.email === configAdminEmail)) {
+                    const template = this._getTemplate(type, data);
+                    if (template.emailFunc && emailService[template.emailFunc]) {
+                        await emailService[template.emailFunc](configAdminEmail, data);
+                    }
+                }
+                
+                return notifications[0] || null;
+            }
+
             // Get user to check preferences
             const user = await User.findById(userId);
             if (!user) return null;
 
             const category = this._getCategoryFromType(type);
             const prefs = user.notificationPreferences?.[category] || { inApp: true, email: true };
-
-            const notificationTemplates = {
-                order_placed: {
-                    title: 'Order Placed Successfully',
-                    message: (data) => `Your order #${data.orderNumber} has been placed successfully!`,
-                    priority: 'normal',
-                    emailFunc: 'sendOrderConfirmation'
-                },
-                // ... other templates ...
-                order_shipped: {
-                    title: 'Order Shipped',
-                    message: (data) => `Your order #${data.orderNumber} has been shipped! Tracking #${data.trackingNumber} via ${data.courierPartner}`,
-                    priority: 'high',
-                    emailFunc: 'sendOrderShipped'
-                },
-                // ... 
-            };
-
-            // Implementation note: I will refactor the whole createNotification to be more robust
-            // but for now let's just make it check preferences.
+            const template = this._getTemplate(type, data);
 
             let notification = null;
             if (prefs.inApp) {
-                const template = this._getTemplate(type, data);
                 notification = new Notification({
                     user: userId,
                     type,
@@ -50,7 +52,6 @@ class NotificationService {
             }
 
             if (prefs.email && user.email) {
-                const template = this._getTemplate(type, data);
                 if (template.emailFunc && emailService[template.emailFunc]) {
                     await emailService[template.emailFunc](user.email, data);
                 }
@@ -64,9 +65,9 @@ class NotificationService {
     }
 
     static _getCategoryFromType(type) {
-        if (type.startsWith('order_') || type.startsWith('refund_') || type.startsWith('payment_')) return 'orderUpdates';
+        if (type.startsWith('order_') || type.startsWith('refund_') || type.startsWith('payment_') || type.startsWith('vendor_')) return 'orderUpdates';
         if (type.startsWith('promo_')) return 'promotions';
-        if (type.startsWith('security_') || type === 'login_alert') return 'security';
+        if (type.startsWith('security_') || type === 'login_alert' || type.startsWith('admin_')) return 'security';
         return 'orderUpdates';
     }
 
@@ -81,7 +82,8 @@ class NotificationService {
             order_confirmed: {
                 title: 'Order Confirmed',
                 message: `Order #${data.orderNumber} has been confirmed by the seller.`,
-                priority: 'normal'
+                priority: 'normal',
+                emailFunc: 'sendOrderConfirmed'
             },
             order_shipped: {
                 title: 'Order Shipped',
@@ -92,7 +94,32 @@ class NotificationService {
             order_delivered: {
                 title: 'Order Delivered',
                 message: `Your order #${data.orderNumber} has been delivered successfully!`,
-                priority: 'high'
+                priority: 'high',
+                emailFunc: 'sendOrderDelivered'
+            },
+            vendor_order_alert: {
+                title: 'New Order Received',
+                message: `You have received a new order #${data.orderNumber}. Please review and approve it.`,
+                priority: 'high',
+                emailFunc: 'sendVendorOrderAlert'
+            },
+            admin_vendor_applied: {
+                title: 'New Vendor Application',
+                message: `A new vendor "${data.vendorName}" has applied. Email: ${data.vendorEmail}`,
+                priority: 'high',
+                emailFunc: 'sendAdminVendorAppliedAlert'
+            },
+            admin_product_added: {
+                title: 'New Product for Approval',
+                message: `Vendor "${data.vendorName}" added a new product: ${data.productName}`,
+                priority: 'normal',
+                emailFunc: 'sendAdminProductAddedAlert'
+            },
+            admin_customer_signup: {
+                title: 'New Customer Signup',
+                message: `A new customer has signed up: ${data.customerName} (${data.customerEmail})`,
+                priority: 'low',
+                emailFunc: 'sendAdminCustomerSignupAlert'
             },
             refund_initiated: {
                 title: 'Refund Initiated',
@@ -223,11 +250,26 @@ class NotificationService {
 
     static async notifyOrderCreated(order) {
         try {
-            if (!order.user) return;
-            await this.createNotification(order.user, 'order_placed', {
-                orderId: order._id,
-                orderNumber: order.orderNumber
-            });
+            // Notify customer
+            if (order.user) {
+                await this.createNotification(order.user, 'order_placed', {
+                    orderId: order._id,
+                    orderNumber: order.orderNumber,
+                    itemsTotal: order.itemsTotal,
+                    totalAmount: order.totalAmount
+                });
+            }
+
+            // Notify vendors
+            // We need to find distinct vendors from the subOrders
+            if (order.subOrders && order.subOrders.length > 0) {
+                for (const subOrder of order.subOrders) {
+                    const vendorId = subOrder.vendor || subOrder.seller;
+                    if (vendorId) {
+                        await this.notifyVendorOrder(order, vendorId);
+                    }
+                }
+            }
         } catch (error) {
             console.error('Error notifying order created:', error);
         }
@@ -321,6 +363,52 @@ class NotificationService {
             });
         } catch (error) {
             console.error('Error notifying payment success:', error);
+        }
+    }
+
+    static async notifyVendorOrder(order, vendorId) {
+        try {
+            await this.createNotification(vendorId, 'vendor_order_alert', {
+                orderId: order._id,
+                orderNumber: order.orderNumber,
+                customerName: order.shippingAddress?.fullName || 'Customer'
+            });
+        } catch (error) {
+            console.error('Error notifying vendor order:', error);
+        }
+    }
+
+    static async notifySuperAdminVendorApplied(vendor) {
+        try {
+            await this.createNotification(null, 'admin_vendor_applied', {
+                vendorName: vendor.name,
+                vendorEmail: vendor.email
+            });
+        } catch (error) {
+            console.error('Error notifying super admin vendor applied:', error);
+        }
+    }
+
+    static async notifySuperAdminProductAdded(product, vendor) {
+        try {
+            await this.createNotification(null, 'admin_product_added', {
+                productName: product.name,
+                vendorName: vendor.name,
+                productId: product._id
+            });
+        } catch (error) {
+            console.error('Error notifying super admin product added:', error);
+        }
+    }
+
+    static async notifySuperAdminCustomerSignup(customer) {
+        try {
+            await this.createNotification(null, 'admin_customer_signup', {
+                customerName: customer.name,
+                customerEmail: customer.email
+            });
+        } catch (error) {
+            console.error('Error notifying super admin customer signup:', error);
         }
     }
 }

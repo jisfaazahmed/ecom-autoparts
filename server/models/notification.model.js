@@ -12,7 +12,7 @@ const notificationSchema = new mongoose.Schema({
     // Notification type
     type: {
         type: String,
-        enum: ['order_placed', 'order_confirmed', 'order_shipped', 'order_delivered', 'order_cancelled', 'shipping_update', 'refund_initiated', 'refund_completed', 'payment_failed', 'payment_success'],
+        enum: ['order_placed', 'order_confirmed', 'order_shipped', 'order_delivered', 'order_cancelled', 'shipping_update', 'refund_initiated', 'refund_completed', 'payment_failed', 'payment_success', 'vendor_order_alert', 'admin_vendor_applied', 'admin_product_added', 'admin_customer_signup'],
         required: true,
         index: true
     },

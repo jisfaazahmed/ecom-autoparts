@@ -69,7 +69,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/offers', vendorProductRoutes);
 app.use('/api/orders', OrderRoutes);  // Order Management
 app.use('/api/cart', cartRoutes);
-app.use('/api/payments', paymentRoutes); 
+app.use('/api/payments', paymentRoutes);
 app.use('/api/shipping', shippingRoutes);
 app.use('/api/refunds', refundRoutes);
 app.use('/api/addresses', addressRoutes);

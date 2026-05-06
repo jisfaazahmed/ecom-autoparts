@@ -41,8 +41,18 @@ class EmailService {
         const html = `
             <h1>Thank you for your order!</h1>
             <p>Your order #${orderDetails.orderNumber} has been placed successfully.</p>
-            <p>Total Amount: ${orderDetails.totalAmount}</p>
+            <p>Total Amount: ₹${orderDetails.totalAmount || orderDetails.itemsTotal}</p>
             <p>We will notify you when your items are shipped.</p>
+        `;
+        return this.sendEmail(email, subject, html);
+    }
+
+    async sendOrderConfirmed(email, orderDetails) {
+        const subject = `Order Confirmed - #${orderDetails.orderNumber}`;
+        const html = `
+            <h1>Your order has been confirmed!</h1>
+            <p>Order #${orderDetails.orderNumber} has been confirmed by the seller and is being processed.</p>
+            <p>We will notify you when it's shipped.</p>
         `;
         return this.sendEmail(email, subject, html);
     }
@@ -54,6 +64,67 @@ class EmailService {
             <p>Order #${orderDetails.orderNumber} has been shipped.</p>
             <p>Tracking Number: ${orderDetails.trackingNumber}</p>
             <p>Courier: ${orderDetails.courierPartner}</p>
+        `;
+        return this.sendEmail(email, subject, html);
+    }
+
+    async sendOrderDelivered(email, orderDetails) {
+        const subject = `Order Delivered - #${orderDetails.orderNumber}`;
+        const html = `
+            <h1>Your order has been delivered!</h1>
+            <p>Order #${orderDetails.orderNumber} has been delivered successfully.</p>
+            <p>We hope you enjoy your purchase!</p>
+        `;
+        return this.sendEmail(email, subject, html);
+    }
+
+    async sendVendorOrderAlert(email, orderDetails) {
+        const subject = `New Order Received - #${orderDetails.orderNumber}`;
+        const html = `
+            <h1>You have a new order!</h1>
+            <p>Order #${orderDetails.orderNumber} has been received from ${orderDetails.customerName}.</p>
+            <p>Please log in to your dashboard to review and approve the order.</p>
+            <a href="${process.env.FRONTEND_URL}/vendor/orders">View Orders</a>
+        `;
+        return this.sendEmail(email, subject, html);
+    }
+
+    async sendAdminVendorAppliedAlert(email, vendorDetails) {
+        const subject = `New Vendor Application: ${vendorDetails.vendorName}`;
+        const html = `
+            <h1>New Vendor Application Received</h1>
+            <p>A new vendor has applied to join the platform:</p>
+            <ul>
+                <li><strong>Name:</strong> ${vendorDetails.vendorName}</li>
+                <li><strong>Email:</strong> ${vendorDetails.vendorEmail}</li>
+            </ul>
+            <p>Please review the application in the super admin panel.</p>
+        `;
+        return this.sendEmail(email, subject, html);
+    }
+
+    async sendAdminProductAddedAlert(email, productDetails) {
+        const subject = `New Product for Approval: ${productDetails.productName}`;
+        const html = `
+            <h1>New Product Added by Vendor</h1>
+            <p>Vendor "${productDetails.vendorName}" has added a new product that requires approval:</p>
+            <ul>
+                <li><strong>Product Name:</strong> ${productDetails.productName}</li>
+            </ul>
+            <p>Please review it in the super admin panel.</p>
+        `;
+        return this.sendEmail(email, subject, html);
+    }
+
+    async sendAdminCustomerSignupAlert(email, customerDetails) {
+        const subject = `New Customer Signup: ${customerDetails.customerName}`;
+        const html = `
+            <h1>A New Customer has Joined</h1>
+            <p>A new customer has signed up on the platform:</p>
+            <ul>
+                <li><strong>Name:</strong> ${customerDetails.customerName}</li>
+                <li><strong>Email:</strong> ${customerDetails.customerEmail}</li>
+            </ul>
         `;
         return this.sendEmail(email, subject, html);
     }

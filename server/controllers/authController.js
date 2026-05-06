@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const emailService = require('../services/email.service');
+const NotificationService = require('../services/notification.service');
 
 exports.register = async (req, res) => {
   try {
@@ -34,6 +35,14 @@ exports.register = async (req, res) => {
     });
 
     await user.save();
+
+    // Notify Super Admin based on role
+    if (normalizedRole === 'ADMIN') {
+      NotificationService.notifySuperAdminVendorApplied(user).catch(err => console.error('Error notifying super admin vendor application:', err));
+    } else if (normalizedRole === 'CUSTOMER') {
+      NotificationService.notifySuperAdminCustomerSignup(user).catch(err => console.error('Error notifying super admin customer signup:', err));
+    }
+
 
     const payload = { user: { id: user.id, role: user.role } };
     jwt.sign(payload, process.env.JWT_SECRET || 'secret123', { expiresIn: '1d' }, (err, token) => {
