@@ -1,82 +1,121 @@
 const Notification = require('../models/notification.model');
+const User = require('../models/user');
+const emailService = require('./email.service');
 
 class NotificationService {
     static async createNotification(userId, type, data) {
         try {
+            // Get user to check preferences
+            const user = await User.findById(userId);
+            if (!user) return null;
+
+            const category = this._getCategoryFromType(type);
+            const prefs = user.notificationPreferences?.[category] || { inApp: true, email: true };
+
             const notificationTemplates = {
                 order_placed: {
                     title: 'Order Placed Successfully',
                     message: (data) => `Your order #${data.orderNumber} has been placed successfully!`,
-                    priority: 'normal'
+                    priority: 'normal',
+                    emailFunc: 'sendOrderConfirmation'
                 },
-                order_confirmed: {
-                    title: 'Order Confirmed',
-                    message: (data) => `Order #${data.orderNumber} has been confirmed by the seller.`,
-                    priority: 'normal'
-                },
+                // ... other templates ...
                 order_shipped: {
                     title: 'Order Shipped',
                     message: (data) => `Your order #${data.orderNumber} has been shipped! Tracking #${data.trackingNumber} via ${data.courierPartner}`,
-                    priority: 'high'
+                    priority: 'high',
+                    emailFunc: 'sendOrderShipped'
                 },
-                order_delivered: {
-                    title: 'Order Delivered',
-                    message: (data) => `Your order #${data.orderNumber} has been delivered successfully!`,
-                    priority: 'high'
-                },
-                refund_initiated: {
-                    title: 'Refund Initiated',
-                    message: (data) => `Refund of ₹${data.refundAmount} initiated for order #${data.orderNumber}.`,
-                    priority: 'high'
-                },
-                refund_completed: {
-                    title: 'Refund Completed',
-                    message: (data) => `Refund of ₹${data.refundAmount} completed for order #${data.orderNumber}.`,
-                    priority: 'high'
-                },
-                payment_failed: {
-                    title: 'Payment Failed',
-                    message: (data) => `Payment failed for order #${data.orderNumber}.`,
-                    priority: 'high'
-                },
-                payment_success: {
-                    title: 'Payment Successful',
-                    message: (data) => `Payment of ₹${data.paymentAmount} received for order #${data.orderNumber}.`,
-                    priority: 'high'
+                // ... 
+            };
+
+            // Implementation note: I will refactor the whole createNotification to be more robust
+            // but for now let's just make it check preferences.
+
+            let notification = null;
+            if (prefs.inApp) {
+                const template = this._getTemplate(type, data);
+                notification = new Notification({
+                    user: userId,
+                    type,
+                    order: data.orderId,
+                    refund: data.refundId,
+                    title: template.title,
+                    message: template.message,
+                    data,
+                    priority: template.priority,
+                    channel: 'in_app'
+                });
+                await notification.save();
+            }
+
+            if (prefs.email && user.email) {
+                const template = this._getTemplate(type, data);
+                if (template.emailFunc && emailService[template.emailFunc]) {
+                    await emailService[template.emailFunc](user.email, data);
                 }
-            };
+            }
 
-            const template = notificationTemplates[type] || {
-                title: 'Notification',
-                message: () => 'You have a new notification',
-                priority: 'normal'
-            };
-
-            const notification = new Notification({
-                user: userId,
-                type,
-                order: data.orderId,
-                refund: data.refundId,
-                title: template.title,
-                message: typeof template.message === 'function' ? template.message(data) : template.message,
-                data: {
-                    orderNumber: data.orderNumber,
-                    trackingNumber: data.trackingNumber,
-                    courierPartner: data.courierPartner,
-                    refundAmount: data.refundAmount,
-                    paymentMethod: data.paymentMethod,
-                    paymentAmount: data.paymentAmount
-                },
-                priority: template.priority,
-                channel: data.channel || 'in_app'
-            });
-
-            await notification.save();
             return notification;
         } catch (error) {
             console.error('Error creating notification:', error);
             throw error;
         }
+    }
+
+    static _getCategoryFromType(type) {
+        if (type.startsWith('order_') || type.startsWith('refund_') || type.startsWith('payment_')) return 'orderUpdates';
+        if (type.startsWith('promo_')) return 'promotions';
+        if (type.startsWith('security_') || type === 'login_alert') return 'security';
+        return 'orderUpdates';
+    }
+
+    static _getTemplate(type, data) {
+        const templates = {
+            order_placed: {
+                title: 'Order Placed Successfully',
+                message: `Your order #${data.orderNumber} has been placed successfully!`,
+                priority: 'normal',
+                emailFunc: 'sendOrderConfirmation'
+            },
+            order_confirmed: {
+                title: 'Order Confirmed',
+                message: `Order #${data.orderNumber} has been confirmed by the seller.`,
+                priority: 'normal'
+            },
+            order_shipped: {
+                title: 'Order Shipped',
+                message: `Your order #${data.orderNumber} has been shipped! Tracking #${data.trackingNumber} via ${data.courierPartner}`,
+                priority: 'high',
+                emailFunc: 'sendOrderShipped'
+            },
+            order_delivered: {
+                title: 'Order Delivered',
+                message: `Your order #${data.orderNumber} has been delivered successfully!`,
+                priority: 'high'
+            },
+            refund_initiated: {
+                title: 'Refund Initiated',
+                message: `Refund of ₹${data.refundAmount} initiated for order #${data.orderNumber}.`,
+                priority: 'high'
+            },
+            refund_completed: {
+                title: 'Refund Completed',
+                message: `Refund of ₹${data.refundAmount} completed for order #${data.orderNumber}.`,
+                priority: 'high'
+            },
+            payment_failed: {
+                title: 'Payment Failed',
+                message: `Payment failed for order #${data.orderNumber}.`,
+                priority: 'high'
+            },
+            payment_success: {
+                title: 'Payment Successful',
+                message: `Payment of ₹${data.paymentAmount} received for order #${data.orderNumber}.`,
+                priority: 'high'
+            }
+        };
+        return templates[type] || { title: 'Notification', message: 'New update', priority: 'normal' };
     }
 
     static async getUserNotifications(userId, page = 1, limit = 10, filters = {}) {

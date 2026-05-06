@@ -8,7 +8,7 @@ import { api, ApiOrder, ApiShop, ApiProduct, ApiCategory } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatLKR, formatLKRCompact } from '@/lib/currency';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend } from 'recharts';
-import { mockOrders, mockShops, mockProducts, mockCategories } from '@/data/analyticsMockData';
+// Use live data via API; remove mock fallbacks
 
 const SuperAdminAnalytics: React.FC = () => {
   const { toast } = useToast();
@@ -56,150 +56,36 @@ const SuperAdminAnalytics: React.FC = () => {
   const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     try {
-      const dateRange = getDateRange(timeRange);
+      const data = await api.getSuperAdminAnalytics({ range: timeRange });
 
-      // Fetch shops first (needed for active vendors list and commission rates)
-      const shopsData = await api.getShops().catch(() => ({ data: [] }));
-      const shops = shopsData.data || [];
-      
-      // Filter active (approved or active) vendors
-      const activeVendors = shops.filter((s: any) => ['approved', 'active'].includes(String(s.status || '').toLowerCase()));
-      setTotalVendors(activeVendors.length);
+      setTotalVendors(data.totalVendors || 0);
+      setTotalSales(data.totalSales || 0);
+      setTotalCommission(data.totalCommission || 0);
+      setTotalOrders(data.totalOrders || 0);
 
-      if (activeVendors.length === 0) {
-        // Fallback to mock data if no real vendors exist
-        const ordersToUse = mockOrders;
-        setTotalSales(ordersToUse.reduce((sum: number, o: ApiOrder) => sum + (o.totalAmount || 0), 0));
-        setTotalCommission(ordersToUse.reduce((sum: number, o: ApiOrder) => sum + (o.commissionAmount || 0), 0));
-        setTotalOrders(ordersToUse.length);
-
-        const statusCounts: Record<string, number> = {};
-        ordersToUse.forEach((o: ApiOrder) => { statusCounts[o.status] = (statusCounts[o.status] || 0) + 1; });
-        setOrdersByStatus([
-          { name: 'Pending', value: statusCounts['pending'] || 0, color: 'hsl(38, 92%, 50%)' },
-          { name: 'Processing', value: statusCounts['processing'] || 0, color: 'hsl(190, 100%, 50%)' },
-          { name: 'Shipped', value: statusCounts['shipped'] || 0, color: 'hsl(270, 100%, 60%)' },
-          { name: 'Delivered', value: statusCounts['delivered'] || 0, color: 'hsl(142, 76%, 36%)' },
-          { name: 'Cancelled', value: statusCounts['cancelled'] || 0, color: 'hsl(0, 72%, 51%)' },
-        ]);
-
-        const monthlyData: Record<string, { sales: number; commission: number; orders: number }> = {};
-        const now = new Date();
-        for (let i = 5; i >= 0; i--) {
-          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-          monthlyData[d.toLocaleString('default', { month: 'short' })] = { sales: 0, commission: 0, orders: 0 };
-        }
-        ordersToUse.forEach((o: ApiOrder) => {
-          const key = new Date(o.createdAt).toLocaleString('default', { month: 'short' });
-          if (monthlyData[key]) {
-            monthlyData[key].sales += o.totalAmount || 0;
-            monthlyData[key].commission += o.commissionAmount || 0;
-            monthlyData[key].orders += 1;
-          }
-        });
-
-        setSalesByMonth(Object.entries(monthlyData).map(([month, data]) => ({
-          month,
-          ...data
-        })));
-
-        setTopCategories(mockCategories.map((cat, i) => ({
-          name: cat.name,
-          value: Math.floor(Math.random() * 100000) + 50000,
-          color: ['hsl(190, 100%, 50%)', 'hsl(270, 100%, 60%)', 'hsl(330, 100%, 60%)', 'hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)'][i % 5]
-        })));
-
-        setLoading(false);
-        return;
-      }
-
-      // Fetch analytics for each vendor using live analytics endpoints
-      const [vendorMetrics, vendorTimeSeries, vendorEarnings, vendorSettlementSummaries] = await Promise.all([
-        Promise.all(activeVendors.map((vendor: any) => api.getVendorAnalytics(vendor.id, { range: timeRange }).catch(() => null))),
-        Promise.all(activeVendors.map((vendor: any) => api.getVendorTimeSeriesAnalytics(vendor.id, { range: timeRange, granularity: 'monthly' }).catch(() => ({ timeSeries: [] })))),
-        Promise.all(activeVendors.map((vendor: any) => api.getVendorEarningsBreakdown(vendor.id, { range: timeRange }).catch(() => ({ byCategory: [] })))),
-        Promise.all(activeVendors.map((vendor: any) => api.getVendorSettlementRangeSummary(vendor.id, dateRange).catch(() => null)))
-      ]);
-
-      // Aggregate sales and orders
-      let aggregatedSales = 0;
-      let aggregatedOrders = 0;
-
-      vendorMetrics.forEach((metric: any) => {
-        if (metric?.salesMetrics) {
-          aggregatedSales += Number(metric.salesMetrics.totalRevenue || 0);
-          aggregatedOrders += Number(metric.salesMetrics.totalOrders || 0);
-        }
-      });
-
-      const aggregatedCommission = vendorSettlementSummaries.reduce((sum: number, summary: any) => {
-        return sum + Number(summary?.totalCommission || 0);
-      }, 0);
-
-      setTotalSales(aggregatedSales);
-      setTotalCommission(aggregatedCommission);
-      setTotalOrders(aggregatedOrders);
-
-      // Aggregate order status breakdown
-      const allOrderStatuses: Record<string, number> = {};
-      vendorMetrics.forEach((metric: any) => {
-        if (metric?.orderMetrics?.statusBreakdown) {
-          Object.entries(metric.orderMetrics.statusBreakdown).forEach(([status, count]: [string, any]) => {
-            allOrderStatuses[status] = (allOrderStatuses[status] || 0) + Number(count || 0);
-          });
-        }
-      });
-
+      const st = data.ordersByStatus || {};
       setOrdersByStatus([
-        { name: 'Pending', value: allOrderStatuses['pending'] || 0, color: 'hsl(38, 92%, 50%)' },
-        { name: 'Processing', value: allOrderStatuses['processing'] || 0, color: 'hsl(190, 100%, 50%)' },
-        { name: 'Shipped', value: allOrderStatuses['shipped'] || 0, color: 'hsl(270, 100%, 60%)' },
-        { name: 'Delivered', value: allOrderStatuses['delivered'] || 0, color: 'hsl(142, 76%, 36%)' },
-        { name: 'Cancelled', value: allOrderStatuses['cancelled'] || 0, color: 'hsl(0, 72%, 51%)' },
+        { name: 'Pending', value: st['pending'] || 0, color: 'hsl(38, 92%, 50%)' },
+        { name: 'Processing', value: st['processing'] || 0, color: 'hsl(190, 100%, 50%)' },
+        { name: 'Shipped', value: st['shipped'] || 0, color: 'hsl(270, 100%, 60%)' },
+        { name: 'Delivered', value: st['delivered'] || 0, color: 'hsl(142, 76%, 36%)' },
+        { name: 'Cancelled', value: st['cancelled'] || 0, color: 'hsl(0, 72%, 51%)' },
       ]);
 
-      // Aggregate monthly sales and commission
-      const monthlyAggregated: Record<string, { sales: number; commission: number; orders: number }> = {};
-      vendorTimeSeries.forEach((series: any, vendorIdx: number) => {
-        const vendorRate = Number(activeVendors[vendorIdx]?.commissionRate || 10) / 100;
-        (series?.timeSeries || []).forEach((point: any) => {
-          const period = String(point?.period || '');
-          if (!period) return;
-          if (!monthlyAggregated[period]) monthlyAggregated[period] = { sales: 0, commission: 0, orders: 0 };
-          monthlyAggregated[period].sales += Number(point.revenue || 0);
-          monthlyAggregated[period].commission += Number(point.revenue || 0) * vendorRate;
-          monthlyAggregated[period].orders += Number(point.orders || 0);
-        });
-      });
+      setSalesByMonth(data.salesByMonth || []);
 
-      setSalesByMonth(Object.entries(monthlyAggregated).map(([month, data]) => ({
-        month,
-        ...data
-      })));
-
-      // Aggregate top categories
       const categories = await api.getCategories().catch(() => []);
-      const categoryMap: Record<string, number> = {};
       const categoryNameMap = new Map((categories || []).map((cat: any) => [String(cat.id), String(cat.name)]));
 
-      vendorEarnings.forEach((breakdown: any) => {
-        (breakdown?.byCategory || []).forEach((entry: any) => {
-          const catId = String(entry?.category || 'null');
-          categoryMap[catId] = (categoryMap[catId] || 0) + Number(entry?.earnings || 0);
-        });
-      });
-
       const categoryColors = ['hsl(190, 100%, 50%)', 'hsl(270, 100%, 60%)', 'hsl(330, 100%, 60%)', 'hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)'];
-      const topCats = Object.entries(categoryMap)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([catId, earnings], idx) => ({
-          name: categoryNameMap.get(catId) || (catId === 'null' ? 'Uncategorized' : 'Other'),
-          value: earnings,
-          color: categoryColors[idx % categoryColors.length],
-        }));
+      const topCats = (data.topCategories || []).map((c, idx) => ({
+        name: categoryNameMap.get(c.categoryId) || (c.categoryId === 'null' ? 'Uncategorized' : 'Other'),
+        value: c.earnings,
+        color: categoryColors[idx % categoryColors.length],
+      }));
 
       setTopCategories(topCats);
+
     } catch (error: any) {
       console.error('Analytics fetch error:', error);
       toast({ title: 'Error', description: error.message || 'Failed to load analytics', variant: 'destructive' });

@@ -2,6 +2,7 @@ const User = require('../models/user')
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const emailService = require('../services/email.service');
 
 exports.register = async (req, res) => {
   try {
@@ -159,11 +160,9 @@ exports.forgotPassword = async (req, res) => {
     user.resetTokenExpiry = resetTokenExpiry;
     await user.save();
 
-    // TODO: Send email with reset link
-    // For now, return token for testing (in production, send via email)
     const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/reset-password?token=${resetToken}`;
     
-    console.log(`Password reset link for ${normalizedEmail}: ${resetLink}`);
+    await emailService.sendPasswordReset(normalizedEmail, resetLink);
 
     res.status(200).json({ 
       message: 'Password reset link has been sent to your email',
