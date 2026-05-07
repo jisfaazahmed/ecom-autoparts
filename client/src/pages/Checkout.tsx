@@ -577,7 +577,7 @@ export default function Checkout() {
       });
 
       const orderId = order.id || order._id;
-      const guestToken = (order as any).guestInvoiceToken || null;
+      const guestToken = (order).guestInvoiceToken || null;
       if (!orderId) {
         throw new Error('Order created but order ID was not returned');
       }
@@ -734,7 +734,7 @@ export default function Checkout() {
       setWalletPendingOrderId(null);
       setWalletMockOtpHint(null);
       setWalletOtp('');
-      const guestToken = (order as any).guestInvoiceToken || null;
+      const guestToken = (orderId ).guestInvoiceToken || null;
       skipEmptyCartRedirect.current = true;
       clearCart();
       toast.success('Wallet payment completed successfully!');

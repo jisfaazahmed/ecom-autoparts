@@ -1316,6 +1316,25 @@ class ApiClient {
     return this.request<any>(`/vendors/${vendorId}/analytics/earnings?${searchParams.toString()}`);
   }
 
+  // ============ SYSTEM ANALYTICS ============
+
+  async getSuperAdminAnalytics(params?: {
+    range?: '7d' | '30d' | '90d' | '1y';
+  }): Promise<{
+    totalSales: number;
+    totalCommission: number;
+    totalOrders: number;
+    totalVendors: number;
+    ordersByStatus: Record<string, number>;
+    salesByMonth: Array<{ month: string; sales: number; commission: number; orders: number }>;
+    topCategories: Array<{ categoryId: string; earnings: number }>;
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params?.range) searchParams.set('range', params.range);
+    const response = await this.request<{ success: boolean; data: any }>(`/admin-analytics/superadmin?${searchParams.toString()}`);
+    return response.data;
+  }
+
   // ============ SETTLEMENT / PAYOUT ============
 
   async getSettlementSummary(vendorId: string): Promise<any> {
