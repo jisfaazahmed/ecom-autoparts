@@ -78,12 +78,43 @@ class EmailService {
         return this.sendEmail(email, subject, html);
     }
 
+    async sendOrderProcessing(email, orderDetails) {
+        const subject = `Order Update: We are packing your order - #${orderDetails.orderNumber}`;
+        const html = `
+            <h1>We are preparing your order!</h1>
+            <p>Order #${orderDetails.orderNumber} is now being packed and prepared for shipping.</p>
+            <p>We will notify you once it's picked up by our courier partner.</p>
+        `;
+        return this.sendEmail(email, subject, html);
+    }
+
+    async sendOrderOutForDelivery(email, orderDetails) {
+        const subject = `Order Update: Out for Delivery - #${orderDetails.orderNumber}`;
+        const html = `
+            <h1>Your order is out for delivery!</h1>
+            <p>Order #${orderDetails.orderNumber} is with our delivery partner and will reach you today.</p>
+            <p>Please ensure someone is available to receive the package.</p>
+        `;
+        return this.sendEmail(email, subject, html);
+    }
+
     async sendVendorOrderAlert(email, orderDetails) {
         const subject = `New Order Received - #${orderDetails.orderNumber}`;
         const html = `
             <h1>You have a new order!</h1>
             <p>Order #${orderDetails.orderNumber} has been received from ${orderDetails.customerName}.</p>
             <p>Please log in to your dashboard to review and approve the order.</p>
+            <a href="${process.env.FRONTEND_URL}/vendor/orders">View Orders</a>
+        `;
+        return this.sendEmail(email, subject, html);
+    }
+
+    async sendVendorOrderDelivered(email, orderDetails) {
+        const subject = `Order Delivered to Customer - #${orderDetails.orderNumber}`;
+        const html = `
+            <h1>Great news!</h1>
+            <p>Order #${orderDetails.orderNumber} has been successfully delivered to the customer.</p>
+            <p>You can check the details in your vendor dashboard.</p>
             <a href="${process.env.FRONTEND_URL}/vendor/orders">View Orders</a>
         `;
         return this.sendEmail(email, subject, html);
@@ -125,6 +156,29 @@ class EmailService {
                 <li><strong>Name:</strong> ${customerDetails.customerName}</li>
                 <li><strong>Email:</strong> ${customerDetails.customerEmail}</li>
             </ul>
+        `;
+        return this.sendEmail(email, subject, html);
+    }
+
+    async sendVendorApplicationApproved(email, details) {
+        const subject = 'Welcome to Ecom Autoparts! Your Application is Approved';
+        const html = `
+            <h1>Congratulations!</h1>
+            <p>Your vendor application for <strong>"${details.shopName}"</strong> has been approved.</p>
+            <p>You can now log in to your dashboard to start adding products and managing your shop.</p>
+            <a href="${process.env.FRONTEND_URL}/auth/login" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Log in to Dashboard</a>
+            <p>If you have any questions, please contact our support team.</p>
+        `;
+        return this.sendEmail(email, subject, html);
+    }
+
+    async sendVendorApplicationRejected(email, details) {
+        const subject = 'Update on Your Vendor Application';
+        const html = `
+            <h1>Application Update</h1>
+            <p>Thank you for your interest in joining Ecom Autoparts.</p>
+            <p>We regret to inform you that your application for <strong>"${details.shopName}"</strong> was not approved at this time.</p>
+            <p>We appreciate your interest and wish you the best in your business endeavors.</p>
         `;
         return this.sendEmail(email, subject, html);
     }

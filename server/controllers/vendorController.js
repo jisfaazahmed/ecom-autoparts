@@ -2,6 +2,8 @@ const User = require('../models/user');
 const SettlementService = require('../services/settlement.service');
 const VendorAnalyticsService = require('../services/vendorAnalytics.service');
 const Settlement = require('../models/settlement.model');
+const NotificationService = require('../services/notification.service');
+
 
 // GET all vendors (Usage: /api/vendors?status=PENDING)
 exports.getAllVendors = async (req, res) => {
@@ -37,6 +39,12 @@ exports.updateVendorStatus = async (req, res) => {
     ).select('-password');
 
     if (!vendor) return res.status(404).json({ message: 'Vendor not found' });
+
+    // Notify Vendor of the result (Approved or Rejected)
+    if (normalizedStatus === 'ACTIVE' || normalizedStatus === 'REJECTED') {
+      NotificationService.notifyVendorApplicationResult(vendor, normalizedStatus).catch(err => console.error('Error notifying vendor status update:', err));
+    }
+
     res.json({ message: `Vendor status updated to ${normalizedStatus}`, vendor });
   } catch (err) {
     console.error(err);

@@ -97,6 +97,24 @@ class NotificationService {
                 priority: 'high',
                 emailFunc: 'sendOrderDelivered'
             },
+            order_processing: {
+                title: 'Order Being Packed',
+                message: `Good news! Your order #${data.orderNumber} is being packed and prepared for shipping.`,
+                priority: 'normal',
+                emailFunc: 'sendOrderProcessing'
+            },
+            order_out_for_delivery: {
+                title: 'Order Out for Delivery',
+                message: `Your order #${data.orderNumber} is out for delivery and will reach you soon!`,
+                priority: 'high',
+                emailFunc: 'sendOrderOutForDelivery'
+            },
+            vendor_order_delivered: {
+                title: 'Order Delivered to Customer',
+                message: `Order #${data.orderNumber} has been successfully delivered to the customer.`,
+                priority: 'normal',
+                emailFunc: 'sendVendorOrderDelivered'
+            },
             vendor_order_alert: {
                 title: 'New Order Received',
                 message: `You have received a new order #${data.orderNumber}. Please review and approve it.`,
@@ -120,6 +138,18 @@ class NotificationService {
                 message: `A new customer has signed up: ${data.customerName} (${data.customerEmail})`,
                 priority: 'low',
                 emailFunc: 'sendAdminCustomerSignupAlert'
+            },
+            vendor_application_approved: {
+                title: 'Vendor Application Approved!',
+                message: `Congratulations! Your vendor application for "${data.shopName}" has been approved. You can now start adding products.`,
+                priority: 'high',
+                emailFunc: 'sendVendorApplicationApproved'
+            },
+            vendor_application_rejected: {
+                title: 'Vendor Application Update',
+                message: `We regret to inform you that your vendor application for "${data.shopName}" was not approved at this time.`,
+                priority: 'high',
+                emailFunc: 'sendVendorApplicationRejected'
             },
             refund_initiated: {
                 title: 'Refund Initiated',
@@ -303,13 +333,49 @@ class NotificationService {
 
     static async notifyOrderDelivered(order) {
         try {
+            // Notify Customer
+            if (order.user) {
+                await this.createNotification(order.user, 'order_delivered', {
+                    orderId: order._id,
+                    orderNumber: order.orderNumber
+                });
+            }
+
+            // Notify Vendors
+            if (order.subOrders && order.subOrders.length > 0) {
+                for (const subOrder of order.subOrders) {
+                    const vendorId = subOrder.vendor || subOrder.seller;
+                    if (vendorId) {
+                        await this.notifyVendorOrderDelivered(order, vendorId);
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error notifying order delivered:', error);
+        }
+    }
+
+    static async notifyOrderProcessing(order) {
+        try {
             if (!order.user) return;
-            await this.createNotification(order.user, 'order_delivered', {
+            await this.createNotification(order.user, 'order_processing', {
                 orderId: order._id,
                 orderNumber: order.orderNumber
             });
         } catch (error) {
-            console.error('Error notifying order delivered:', error);
+            console.error('Error notifying order processing:', error);
+        }
+    }
+
+    static async notifyOrderOutForDelivery(order) {
+        try {
+            if (!order.user) return;
+            await this.createNotification(order.user, 'order_out_for_delivery', {
+                orderId: order._id,
+                orderNumber: order.orderNumber
+            });
+        } catch (error) {
+            console.error('Error notifying order out for delivery:', error);
         }
     }
 
@@ -378,6 +444,17 @@ class NotificationService {
         }
     }
 
+    static async notifyVendorOrderDelivered(order, vendorId) {
+        try {
+            await this.createNotification(vendorId, 'vendor_order_delivered', {
+                orderId: order._id,
+                orderNumber: order.orderNumber
+            });
+        } catch (error) {
+            console.error('Error notifying vendor order delivered:', error);
+        }
+    }
+
     static async notifySuperAdminVendorApplied(vendor) {
         try {
             await this.createNotification(null, 'admin_vendor_applied', {
@@ -409,6 +486,17 @@ class NotificationService {
             });
         } catch (error) {
             console.error('Error notifying super admin customer signup:', error);
+        }
+    }
+
+    static async notifyVendorApplicationResult(vendor, status) {
+        try {
+            const type = status === 'ACTIVE' ? 'vendor_application_approved' : 'vendor_application_rejected';
+            await this.createNotification(vendor._id, type, {
+                shopName: vendor.shopName || vendor.name
+            });
+        } catch (error) {
+            console.error('Error notifying vendor application result:', error);
         }
     }
 }
