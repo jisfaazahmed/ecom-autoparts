@@ -4,7 +4,13 @@ const productSchema = new mongoose.Schema({
   // 1. Basic Info
   name: { type: String, required: true, trim: true }, // e.g. "Bosch Ceramic Pads"
   description: { type: String },
+<<<<<<< HEAD
   partNumber: { type: String, required: true }, // e.g. "BC-1234"
+=======
+  price: { type: Number, required: true },
+  stock: { type: Number, required: true, default: 0 },
+  sku: { type: String, required: true }, // Changed from partNumber to match frontend
+>>>>>>> origin/feature/seller
   image: { type: String }, // URL to image
 
   // 2. The Link to "Brakes > Pads"
@@ -21,14 +27,30 @@ const productSchema = new mongoose.Schema({
     ref: 'Vehicle'
   }],
 
+<<<<<<< HEAD
   // 4. Who created this? (Super Admin)
+=======
+  // 4. Who created this? (Vendor or Super Admin)
+>>>>>>> origin/feature/seller
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
   
+<<<<<<< HEAD
   // 5. Is it active?
   isActive: { type: Boolean, default: true }
+=======
+  // 5. Is it active? (Visibility controlled by creator)
+  isActive: { type: Boolean, default: true },
+
+  // 6. Admin Approval Status
+  status: {
+    type: String,
+    enum: ["Pending", "Approved", "Rejected"],
+    default: "Pending"
+  }
+>>>>>>> origin/feature/seller
 }, { timestamps: true });
 
 // Index for fast searching by Category and Vehicle

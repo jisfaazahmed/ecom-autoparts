@@ -31,4 +31,8 @@ const vendorProductSchema = new mongoose.Schema({
 // Prevent a vendor from adding the same product twice
 vendorProductSchema.index({ product: 1, vendor: 1 }, { unique: true });
 
+<<<<<<< HEAD
 module.exports = mongoose.model('VendorProduct', vendorProductSchema);
+=======
+module.exports = mongoose.models.VendorProduct || mongoose.model('VendorProduct', vendorProductSchema);
+>>>>>>> origin/feature/seller

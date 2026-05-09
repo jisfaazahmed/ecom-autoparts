@@ -1,0 +1,327 @@
+import React, { useState } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { motion } from 'framer-motion';
+import { Car, Mail, Lock, User, Phone, MapPin, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
+import { z } from 'zod';
+
+const loginSchema = z.object({
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+});
+
+const signupSchema = z.object({
+  fullName: z.string().min(2, 'Name must be at least 2 characters'),
+  email: z.string().email('Invalid email address'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  phone: z.string().optional(),
+  address: z.string().optional(),
+});
+
+const CustomerAuth: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+    const { signIn, signUp, user, logout: signOut } = useAuth();
+  
+  const role = user?.role;
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [signupForm, setSignupForm] = useState({
+    fullName: '',
+    email: '',
+    password: '',
+    phone: '',
+    address: '',
+  });
+
+  // Redirect if already logged in
+  React.useEffect(() => {
+    if (user && role) {
+      const from = (location.state)?.from?.pathname || '/';
+      if (role === 'superadmin') {
+        navigate('/superadmin');
+      } else if (role === 'admin') {
+        navigate('/admin');
+      } else {
+        navigate(from);
+      }
+    }
+  }, [user, role, navigate, location]);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrors({});
+    
+    try {
+      loginSchema.parse(loginForm);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        const fieldErrors: Record<string, string> = {};
+        err.errors.forEach((error) => {
+          if (error.path[0]) fieldErrors[error.path[0].toString()] = error.message;
+        });
+        setErrors(fieldErrors);
+        return;
+      }
+    }
+
+    setLoading(true);
+    const { error } = await signIn(loginForm.email, loginForm.password);
+    if (error) {
+      console.error(error);
+      toast({
+        title: "Login Failed",
+        description: error.message || "Invalid credentials",
+        variant: "destructive"
+      });
+      setLoading(false);
+      return;
+    }
+
+    // The useAuth hook will update the role, check it after sign in
+    // This is handled by the useEffect above after state updates
+    const from = (location.state)?.from?.pathname || '/shop';
+    navigate(from);
+    setLoading(false);
+  };
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrors({});
+    
+    try {
+      signupSchema.parse(signupForm);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        const fieldErrors: Record<string, string> = {};
+        err.errors.forEach((error) => {
+          if (error.path[0]) fieldErrors[error.path[0].toString()] = error.message;
+        });
+        setErrors(fieldErrors);
+        return;
+      }
+    }
+
+    setLoading(true);
+    const { error } = await signUp({
+      email: signupForm.email,
+      password: signupForm.password,
+      fullName: signupForm.fullName,
+      phone: signupForm.phone,
+    });
+    setLoading(false);
+    
+    if (!error) {
+      navigate('/shop');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative">
+      {/* Theme Toggle */}
+      <div className="absolute top-4 right-4 z-10">
+        <ThemeToggle />
+      </div>
+      
+      <div className="absolute inset-0 bg-grid-pattern opacity-5" />
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-pulse-glow" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/20 rounded-full blur-3xl animate-pulse-glow" />
+      
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="relative w-full max-w-md"
+      >
+        {/* Logo */}
+        <div className="text-center mb-8">
+          <Link to="/" className="inline-flex items-center gap-2">
+            <div className="relative">
+              <div className="absolute inset-0 bg-primary/30 blur-xl rounded-full" />
+              <Car className="relative h-10 w-10 text-primary" />
+            </div>
+            <span className="font-display text-2xl font-bold tracking-wider text-foreground">
+              AUTO<span className="text-primary">MATRIX</span>
+            </span>
+          </Link>
+          <p className="text-muted-foreground mt-2">Customer Portal</p>
+        </div>
+
+        <div className="glass-card rounded-2xl p-8 border border-border/50 shadow-2xl">
+          <Tabs defaultValue="login" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-6">
+              <TabsTrigger value="login">Sign In</TabsTrigger>
+              <TabsTrigger value="signup">Sign Up</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="login">
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="login-email">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="login-email"
+                      type="email"
+                      placeholder="your@email.com"
+                      className="pl-10"
+                      value={loginForm.email}
+                      onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                    />
+                  </div>
+                  {errors.email && <p className="text-sm text-destructive">{errors.email}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="login-password">Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="login-password"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="••••••••"
+                      className="pl-10 pr-10"
+                      value={loginForm.password}
+                      onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
+                </div>
+
+                <div className="text-right">
+                  <Link to="/auth/reset-password" className="text-sm text-primary hover:underline">
+                    Forgot password?
+                  </Link>
+                </div>
+
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Sign In
+                </Button>
+              </form>
+            </TabsContent>
+
+            <TabsContent value="signup">
+              <form onSubmit={handleSignup} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signup-name">Full Name *</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="signup-name"
+                      type="text"
+                      placeholder="John Smith"
+                      className="pl-10"
+                      value={signupForm.fullName}
+                      onChange={(e) => setSignupForm({ ...signupForm, fullName: e.target.value })}
+                    />
+                  </div>
+                  {errors.fullName && <p className="text-sm text-destructive">{errors.fullName}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="signup-email">Email *</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="signup-email"
+                      type="email"
+                      placeholder="your@email.com"
+                      className="pl-10"
+                      value={signupForm.email}
+                      onChange={(e) => setSignupForm({ ...signupForm, email: e.target.value })}
+                    />
+                  </div>
+                  {errors.email && <p className="text-sm text-destructive">{errors.email}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="signup-password">Password *</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="signup-password"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="••••••••"
+                      className="pl-10 pr-10"
+                      value={signupForm.password}
+                      onChange={(e) => setSignupForm({ ...signupForm, password: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="signup-phone">Phone Number</Label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="signup-phone"
+                      type="tel"
+                      placeholder="+94 XX XXX XXXX"
+                      className="pl-10"
+                      value={signupForm.phone}
+                      onChange={(e) => setSignupForm({ ...signupForm, phone: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="signup-address">Default Address</Label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="signup-address"
+                      type="text"
+                      placeholder="123 Main Street, Colombo"
+                      className="pl-10"
+                      value={signupForm.address}
+                      onChange={(e) => setSignupForm({ ...signupForm, address: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Create Account
+                </Button>
+              </form>
+            </TabsContent>
+          </Tabs>
+
+          <div className="mt-6 text-center text-sm text-muted-foreground">
+            Want to sell on AutoMatrix?{' '}
+            <Link to="/auth/seller" className="text-primary hover:underline">
+              Register as a Seller
+            </Link>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+export default CustomerAuth;
