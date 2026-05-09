@@ -18,9 +18,59 @@ const SuperAdminAnalytics: React.FC = () => {
   const [totalCommission, setTotalCommission] = useState(0);
   const [totalOrders, setTotalOrders] = useState(0);
   const [totalVendors, setTotalVendors] = useState(0);
+  const [growth, setGrowth] = useState({
+    sales: 0,
+    commission: 0,
+    orders: 0,
+    vendors: 0,
+  });
   const [ordersByStatus, setOrdersByStatus] = useState<{ name: string; value: number; color: string }[]>([]);
   const [salesByMonth, setSalesByMonth] = useState<{ month: string; sales: number; commission: number; orders: number }[]>([]);
   const [topCategories, setTopCategories] = useState<{ name: string; value: number }[]>([]);
+
+  const getRangeStartDate = (range: string) => {
+    const now = new Date();
+    const start = new Date(now);
+    switch (range) {
+      case '7d':
+        start.setDate(now.getDate() - 7);
+        break;
+      case '30d':
+        start.setDate(now.getDate() - 30);
+        break;
+      case '90d':
+        start.setDate(now.getDate() - 90);
+        break;
+      case '1y':
+        start.setFullYear(now.getFullYear() - 1);
+        break;
+      default:
+        start.setDate(now.getDate() - 30);
+        break;
+    }
+    start.setHours(0, 0, 0, 0);
+    return start;
+  };
+
+  const getBucketKey = (date: Date, range: string) => {
+    if (range === '1y') return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    if (range === '90d') {
+      const weekStart = new Date(date);
+      weekStart.setDate(date.getDate() - date.getDay());
+      return `${weekStart.getFullYear()}-W${String(Math.ceil((((weekStart.getTime() - new Date(weekStart.getFullYear(), 0, 1).getTime()) / 86400000) + 1) / 7)).padStart(2, '0')}`;
+    }
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  };
+
+  const getBucketLabel = (key: string, range: string) => {
+    if (range === '1y') {
+      const [year, month] = key.split('-');
+      return new Date(Number(year), Number(month) - 1, 1).toLocaleString('default', { month: 'short' });
+    }
+    if (range === '90d') return key.replace('-', ' ');
+    const [year, month, day] = key.split('-');
+    return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
 
   const fetchAnalytics = useCallback(async () => {
     setLoading(true);
@@ -32,9 +82,9 @@ const SuperAdminAnalytics: React.FC = () => {
 
       try {
         const [orders, shops, products, categories] = await Promise.all([
-          api.getOrders().catch(() => ({ data: [] })),
+          api.getPlatformOrders({ limit: 200 }).catch(() => ({ data: [] })),
           api.getShops().catch(() => ({ data: [] })),
-          api.getProducts().catch(() => ({ data: [] })),
+          api.getSuperAdminProducts({ limit: 500 }).catch(() => ({ data: [] })),
           api.getCategories().catch(() => [])
         ]);
 
@@ -46,19 +96,76 @@ const SuperAdminAnalytics: React.FC = () => {
         console.error('Failed to fetch from API, using mock data', e);
       }
 
-      // Use mockup data if real data is insufficient for a professional-looking dashboard
-      const ordersToUse = ordersData.length > 0 ? ordersData : [];
-      const shopsToUse = shopsData.length > 0 ? shopsData : [];
-      const productsToUse = productsData.length > 0 ? productsData : [];
-      // Note: categoriesData might be used for product category mapping
+      const ordersToUse = Array.isArray(ordersData) ? ordersData : [];
+      const shopsToUse = Array.isArray(shopsData) ? shopsData : [];
+      const productsToUse = Array.isArray(productsData) ? productsData : [];
+      const startDate = getRangeStartDate(timeRange);
+      const rangeDurationMs = Date.now() - startDate.getTime();
+      const previousStartDate = new Date(startDate.getTime() - rangeDurationMs);
+      const scopedOrders = ordersToUse.filter((o: ApiOrder) => {
+        const createdAt = new Date(o.createdAt);
+        return !Number.isNaN(createdAt.getTime()) && createdAt >= startDate;
+      });
+      const previousOrders = ordersToUse.filter((o: ApiOrder) => {
+        const createdAt = new Date(o.createdAt);
+        return !Number.isNaN(createdAt.getTime()) && createdAt >= previousStartDate && createdAt < startDate;
+      });
 
-      if (ordersToUse) {
-        setTotalSales(ordersToUse.reduce((sum: number, o: ApiOrder) => sum + (o.totalAmount || 0), 0));
-        setTotalCommission(ordersToUse.reduce((sum: number, o: ApiOrder) => sum + (o.commissionAmount || 0), 0));
-        setTotalOrders(ordersToUse.length);
+      const commissionRateByVendor = new Map(
+        shopsToUse.map((s: ApiShop) => [String(s.id), Number(s.commissionRate ?? 10)])
+      );
+
+      const computeOrderCommission = (o: ApiOrder) => {
+        const explicit = Number((o as any)?.commissionAmount || 0);
+        if (explicit > 0) return explicit;
+
+        const subOrders = Array.isArray((o as any)?.subOrders) ? (o as any).subOrders : [];
+        if (subOrders.length > 0) {
+          return subOrders.reduce((sum: number, sub: any) => {
+            const vendorId = String(sub?.vendor?._id || sub?.vendor || '');
+            const rate = Number(commissionRateByVendor.get(vendorId) ?? 10);
+            const subtotal = Number(sub?.subtotal || sub?.totalAmount || 0);
+            return sum + ((subtotal * rate) / 100);
+          }, 0);
+        }
+
+        return (Number(o.totalAmount || 0) * 10) / 100;
+      };
+
+      if (scopedOrders.length >= 0) {
+        const currentSales = scopedOrders.reduce((sum: number, o: ApiOrder) => sum + Number(o.totalAmount || 0), 0);
+        const currentCommission = scopedOrders.reduce((sum: number, o: ApiOrder) => sum + computeOrderCommission(o), 0);
+        const currentOrders = scopedOrders.length;
+        const previousSales = previousOrders.reduce((sum: number, o: ApiOrder) => sum + Number(o.totalAmount || 0), 0);
+        const previousCommission = previousOrders.reduce((sum: number, o: ApiOrder) => sum + computeOrderCommission(o), 0);
+        const previousOrdersCount = previousOrders.length;
+
+        const currentVendors = shopsToUse.filter((s: ApiShop) => s.status === 'approved' || s.status === 'active').length;
+        const previousVendors = shopsToUse.filter((s: ApiShop) => {
+          const createdAt = new Date(s.createdAt || '');
+          return (s.status === 'approved' || s.status === 'active') && !Number.isNaN(createdAt.getTime()) && createdAt < startDate;
+        }).length;
+
+        const calcGrowth = (current: number, previous: number) => {
+          if (previous <= 0) return current > 0 ? 100 : 0;
+          return ((current - previous) / previous) * 100;
+        };
+
+        setTotalSales(currentSales);
+        setTotalCommission(currentCommission);
+        setTotalOrders(currentOrders);
+        setGrowth({
+          sales: calcGrowth(currentSales, previousSales),
+          commission: calcGrowth(currentCommission, previousCommission),
+          orders: calcGrowth(currentOrders, previousOrdersCount),
+          vendors: calcGrowth(currentVendors, previousVendors),
+        });
 
         const statusCounts: Record<string, number> = {};
-        ordersToUse.forEach((o: ApiOrder) => { statusCounts[o.status] = (statusCounts[o.status] || 0) + 1; });
+        scopedOrders.forEach((o: ApiOrder) => {
+          const key = String(o.status || o.overallStatus || 'pending').toLowerCase();
+          statusCounts[key] = (statusCounts[key] || 0) + 1;
+        });
         setOrdersByStatus([
           { name: 'Pending', value: statusCounts['pending'] || 0, color: 'hsl(38, 92%, 50%)' },
           { name: 'Processing', value: statusCounts['processing'] || 0, color: 'hsl(190, 100%, 50%)' },
@@ -67,29 +174,28 @@ const SuperAdminAnalytics: React.FC = () => {
           { name: 'Cancelled', value: statusCounts['cancelled'] || 0, color: 'hsl(0, 72%, 51%)' },
         ]);
 
-        const monthlyData: Record<string, { sales: number; commission: number; orders: number }> = {};
-        const now = new Date();
-        for (let i = 5; i >= 0; i--) {
-          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-          monthlyData[d.toLocaleString('default', { month: 'short' })] = { sales: 0, commission: 0, orders: 0 };
-        }
-        ordersToUse.forEach((o: ApiOrder) => {
-          const key = new Date(o.createdAt).toLocaleString('default', { month: 'short' });
-          if (monthlyData[key]) {
-            monthlyData[key].sales += o.totalAmount || 0;
-            monthlyData[key].commission += o.commissionAmount || 0;
-            monthlyData[key].orders += 1;
-          }
+        const groupedData: Record<string, { sales: number; commission: number; orders: number }> = {};
+        scopedOrders.forEach((o: ApiOrder) => {
+          const created = new Date(o.createdAt);
+          if (Number.isNaN(created.getTime())) return;
+          const key = getBucketKey(created, timeRange);
+          if (!groupedData[key]) groupedData[key] = { sales: 0, commission: 0, orders: 0 };
+          groupedData[key].sales += Number(o.totalAmount || 0);
+          groupedData[key].commission += computeOrderCommission(o);
+          groupedData[key].orders += 1;
         });
-        setSalesByMonth(Object.entries(monthlyData).map(([month, data]) => ({ month, ...data })));
+        const sortedKeys = Object.keys(groupedData).sort();
+        setSalesByMonth(sortedKeys.map((key) => ({ month: getBucketLabel(key, timeRange), ...groupedData[key] })));
       }
 
       setTotalVendors(shopsToUse.filter((s: ApiShop) => s.status === 'approved' || s.status === 'active').length);
 
-      if (productsToUse) {
+      if (productsToUse.length > 0) {
+        const categoryNameById = new Map((categoriesData || []).map((c) => [String(c.id), String(c.name)]));
         const categoryCounts: Record<string, number> = {};
         productsToUse.forEach((p: ApiProduct) => {
-          const catName = p.category?.name || 'Uncategorized';
+          const categoryId = String((p as any)?.categoryId || (p as any)?.category?.id || (p as any)?.category?._id || '');
+          const catName = p.category?.name || categoryNameById.get(categoryId) || 'Uncategorized';
           categoryCounts[catName] = (categoryCounts[catName] || 0) + 1;
         });
         setTopCategories(Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, value]) => ({ name, value })));
@@ -98,16 +204,16 @@ const SuperAdminAnalytics: React.FC = () => {
       toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
     }
     setLoading(false);
-  }, [toast]);
+  }, [toast, timeRange]);
 
   useEffect(() => { fetchAnalytics(); }, [fetchAnalytics, timeRange]);
 
 
   const stats = [
-    { label: 'Total Sales', value: formatLKRCompact(totalSales), icon: DollarSign, change: '+18%', positive: true, color: 'text-primary' },
-    { label: 'Commission Earned', value: formatLKRCompact(totalCommission), icon: TrendingUp, change: '+12%', positive: true, color: 'text-success' },
-    { label: 'Total Orders', value: totalOrders.toLocaleString(), icon: ShoppingBag, change: '+24%', positive: true, color: 'text-purple-400' },
-    { label: 'Active Vendors', value: totalVendors.toLocaleString(), icon: Users, change: '+3', positive: true, color: 'text-warning' },
+    { label: 'Total Sales', value: formatLKRCompact(totalSales), icon: DollarSign, change: growth.sales, color: 'text-primary' },
+    { label: 'Commission Earned', value: formatLKRCompact(totalCommission), icon: TrendingUp, change: growth.commission, color: 'text-success' },
+    { label: 'Total Orders', value: totalOrders.toLocaleString(), icon: ShoppingBag, change: growth.orders, color: 'text-purple-400' },
+    { label: 'Active Vendors', value: totalVendors.toLocaleString(), icon: Users, change: growth.vendors, color: 'text-warning' },
   ];
 
   const categoryColors = ['hsl(190, 100%, 50%)', 'hsl(270, 100%, 60%)', 'hsl(330, 100%, 60%)', 'hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)'];
@@ -135,7 +241,10 @@ const SuperAdminAnalytics: React.FC = () => {
                 <CardContent className="p-4 lg:p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div className="p-2 lg:p-3 rounded-lg bg-primary/10 border border-primary/30"><stat.icon className={`h-4 w-4 lg:h-5 lg:w-5 ${stat.color}`} /></div>
-                    <div className={`flex items-center gap-1 text-xs lg:text-sm ${stat.positive ? 'text-success' : 'text-destructive'}`}>{stat.positive ? <ArrowUpRight className="h-3 w-3 lg:h-4 lg:w-4" /> : <ArrowDownRight className="h-3 w-3 lg:h-4 lg:w-4" />}{stat.change}</div>
+                    <div className={`flex items-center gap-1 text-xs lg:text-sm ${stat.change >= 0 ? 'text-success' : 'text-destructive'}`}>
+                      {stat.change >= 0 ? <ArrowUpRight className="h-3 w-3 lg:h-4 lg:w-4" /> : <ArrowDownRight className="h-3 w-3 lg:h-4 lg:w-4" />}
+                      {`${stat.change >= 0 ? '+' : ''}${stat.change.toFixed(1)}%`}
+                    </div>
                   </div>
                   <p className="text-lg lg:text-2xl font-display font-bold">{stat.value}</p>
                   <p className="text-xs lg:text-sm text-muted-foreground">{stat.label}</p>

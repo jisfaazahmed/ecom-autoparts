@@ -12,9 +12,14 @@ import { formatLKR } from '@/lib/currency';
 interface ProductCardProps {
   product: Product;
   isCompatible?: boolean;
+  showCompatibilityBadge?: boolean;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ product, isCompatible = true }) => {
+const ProductCard: React.FC<ProductCardProps> = ({
+  product,
+  isCompatible = true,
+  showCompatibilityBadge = true,
+}) => {
   const { addToCart } = useStore();
 
   const handleAddToCart = (e: React.MouseEvent) => {
@@ -34,7 +39,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, isCompatible = true 
         className="group relative glass-card overflow-hidden cursor-pointer"
       >
       {/* Compatibility Badge */}
-      {!isCompatible && (
+      {showCompatibilityBadge && !isCompatible && (
         <div className="absolute top-3 left-3 z-10">
           <Badge variant="destructive" className="flex items-center gap-1">
             <AlertCircle className="h-3 w-3" />
@@ -43,7 +48,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, isCompatible = true 
         </div>
       )}
 
-      {isCompatible && (
+      {showCompatibilityBadge && isCompatible && (
         <div className="absolute top-3 left-3 z-10">
           <Badge className="bg-success/20 text-success border-success/30 flex items-center gap-1">
             <Check className="h-3 w-3" />
@@ -53,6 +58,15 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, isCompatible = true 
       )}
 
       {/* Stock Badge */}
+      {/* Discount Badge */}
+      {!!(product.effectiveDiscountPercent && product.effectiveDiscountPercent > 0) && (
+        <div className="absolute bottom-3 left-3 z-10">
+          <Badge className="bg-destructive/90 text-white border-destructive/80">
+            -{Math.round(product.effectiveDiscountPercent)}%
+          </Badge>
+        </div>
+      )}
+
       <div className="absolute top-3 right-3 z-10">
         {product.stock > 10 ? (
           <Badge variant="outline" className="border-success/50 text-success">
@@ -119,6 +133,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, isCompatible = true 
             <span className="font-display text-lg font-bold text-primary">
               {formatLKR(product.price)}
             </span>
+            {!!(product.originalPrice && product.originalPrice > product.price) && (
+              <p className="text-xs text-muted-foreground line-through">
+                {formatLKR(product.originalPrice)}
+              </p>
+            )}
           </div>
           <Button
             size="sm"

@@ -27,6 +27,7 @@ interface CartItem {
 interface StoreState {
   cart: CartItem[];
   userVehicle: any | null;
+  vehicleRefreshKey: number;
   addToCart: (item: CartItem) => void;
   removeFromCart: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
@@ -34,6 +35,7 @@ interface StoreState {
   getCartTotal: () => number;
   getCartCount: () => number;
   setUserVehicle: (vehicle: any | null) => void;
+  triggerVehicleRefresh: () => void;
 }
 
 export const useStore = create<StoreState>()(
@@ -41,6 +43,7 @@ export const useStore = create<StoreState>()(
     (set, get) => ({
       cart: [],
       userVehicle: null,
+      vehicleRefreshKey: 0,
       addToCart: (item) =>
         set((state) => {
           const existing = state.cart.find((i) => i.id === item.id);
@@ -73,6 +76,8 @@ export const useStore = create<StoreState>()(
         return cart.reduce((count, item) => count + item.quantity, 0);
       },
       setUserVehicle: (vehicle) => set({ userVehicle: vehicle }),
+      triggerVehicleRefresh: () =>
+        set((state) => ({ vehicleRefreshKey: state.vehicleRefreshKey + 1 })),
     }),
     {
       name: 'cart-storage',

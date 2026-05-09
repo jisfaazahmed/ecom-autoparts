@@ -88,6 +88,7 @@ export interface ApiShop {
   address?: string;
   businessRegistration?: string;
   commissionRate?: number;
+  shopWideDiscountPercent?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -109,6 +110,12 @@ export interface ApiProduct {
   shopId: string;
   isActive: boolean;
   status: "Pending" | "Approved" | "Rejected";
+  featured?: boolean;
+  hasDiscount?: boolean;
+  originalPrice?: number;
+  productDiscountPercent?: number;
+  shopDiscountPercent?: number;
+  effectiveDiscountPercent?: number;
   compatibleVariants?: string[];
   specifications?: Record<string, string>;
   createdAt: string;
@@ -454,6 +461,7 @@ class ApiClient {
       address: vendor?.address ?? undefined,
       businessRegistration: vendor?.businessRegistration || vendor?.businessRegistrationNumber || undefined,
       commissionRate: vendor?.commissionRate ?? 10,
+      shopWideDiscountPercent: vendor?.shopWideDiscountPercent ?? 0,
       createdAt,
       updatedAt: vendor?.updatedAt || vendor?.updated_at || createdAt,
     };
@@ -792,6 +800,11 @@ class ApiClient {
     return this.request<ApiProduct>(`/products/${id}`);
   }
 
+  async getFeaturedProducts(): Promise<ApiProduct[]> {
+    const response = await this.request<any>('/products/featured');
+    return Array.isArray(response) ? response : (response.products || response.data || []);
+  }
+
   async createProduct(data: Omit<ApiProduct, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiProduct> {
     return this.request<ApiProduct>('/products', {
       method: 'POST',
@@ -810,6 +823,13 @@ class ApiClient {
     return this.request<ApiProduct>(`/products/${id}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status }),
+    });
+  }
+
+  async updateProductFeatured(id: string, featured: boolean): Promise<ApiProduct> {
+    return this.request<ApiProduct>(`/products/${id}/featured`, {
+      method: 'PUT',
+      body: JSON.stringify({ featured }),
     });
   }
 
@@ -877,6 +897,39 @@ class ApiClient {
       };
     }>(`/orders/my_orders?${searchParams.toString()}`);
     const payload = response.data || { orders: [], pagination: { page: 1, limit: 10, total: 0, pages: 1 } };
+
+    return {
+      data: (payload.orders || []).map((order) => this.normalizeOrder(order)),
+      total: payload.pagination.total,
+      page: payload.pagination.page,
+      limit: payload.pagination.limit,
+      totalPages: payload.pagination.pages,
+    };
+  }
+
+  async getPlatformOrders(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<PaginatedResponse<ApiOrder>> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const response = await this.request<{
+      success: boolean;
+      data: {
+        orders: ApiOrder[];
+        pagination: { page: number; limit: number; total: number; pages: number };
+      };
+    }>(`/orders/admin/all?${searchParams.toString()}`);
+
+    const payload = response.data || { orders: [], pagination: { page: 1, limit: 20, total: 0, pages: 1 } };
 
     return {
       data: (payload.orders || []).map((order) => this.normalizeOrder(order)),

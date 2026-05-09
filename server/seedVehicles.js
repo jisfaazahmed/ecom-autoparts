@@ -8,7 +8,7 @@ const VehicleModel = require('./models/vehicleModel.model');
 const VehicleVariant = require('./models/vehicleVariant.model');
 const Vehicle = require('./models/vehicle');
 
-const sampleVehicles = [
+const curatedVehicles = [
   {
     brand: 'Toyota',
     logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Toyota_EU_logo.svg/1200px-Toyota_EU_logo.svg.png',
@@ -16,15 +16,15 @@ const sampleVehicles = [
       {
         name: 'Camry',
         variants: [
-          { name: 'LE', yearStart: 2018, yearEnd: 2024, engine: '2.5L 4-Cylinder' },
-          { name: 'XSE', yearStart: 2018, yearEnd: 2024, engine: '3.5L V6' }
+          { name: 'LE', yearStart: 2018, yearEnd: 2026, engine: '2.5L 4-Cylinder' },
+          { name: 'XSE', yearStart: 2018, yearEnd: 2026, engine: '2.5L Hybrid' }
         ]
       },
       {
-        name: 'Corolla',
+        name: 'RAV4',
         variants: [
-          { name: 'LE', yearStart: 2019, yearEnd: 2024, engine: '1.8L 4-Cylinder' },
-          { name: 'SE', yearStart: 2019, yearEnd: 2024, engine: '2.0L 4-Cylinder' }
+          { name: 'LE', yearStart: 2019, yearEnd: 2026, engine: '2.5L 4-Cylinder' },
+          { name: 'XLE Hybrid', yearStart: 2019, yearEnd: 2026, engine: '2.5L Hybrid' }
         ]
       }
     ]
@@ -36,14 +36,15 @@ const sampleVehicles = [
       {
         name: 'Civic',
         variants: [
-          { name: 'EX', yearStart: 2016, yearEnd: 2021, engine: '2.0L 4-Cylinder' },
-          { name: 'Touring', yearStart: 2016, yearEnd: 2021, engine: '1.5L Turbo' }
+          { name: 'EX', yearStart: 2022, yearEnd: 2026, engine: '2.0L 4-Cylinder' },
+          { name: 'Touring', yearStart: 2022, yearEnd: 2026, engine: '1.5L Turbo' }
         ]
       },
       {
         name: 'CR-V',
         variants: [
-          { name: 'EX-L', yearStart: 2017, yearEnd: 2022, engine: '1.5L Turbo' }
+          { name: 'EX-L', yearStart: 2023, yearEnd: 2026, engine: '1.5L Turbo' },
+          { name: 'Sport Touring', yearStart: 2023, yearEnd: 2026, engine: '2.0L Hybrid' }
         ]
       }
     ]
@@ -55,8 +56,15 @@ const sampleVehicles = [
       {
         name: 'F-150',
         variants: [
-          { name: 'XLT', yearStart: 2015, yearEnd: 2020, engine: '3.5L EcoBoost V6' },
-          { name: 'Lariat', yearStart: 2021, yearEnd: 2024, engine: '5.0L V8' }
+          { name: 'XLT', yearStart: 2021, yearEnd: 2026, engine: '3.5L EcoBoost V6' },
+          { name: 'Lariat', yearStart: 2021, yearEnd: 2026, engine: '5.0L V8' }
+        ]
+      },
+      {
+        name: 'Mustang',
+        variants: [
+          { name: 'EcoBoost', yearStart: 2024, yearEnd: 2026, engine: '2.3L Turbo 4-Cyl' },
+          { name: 'GT', yearStart: 2024, yearEnd: 2026, engine: '5.0L V8' }
         ]
       }
     ]
@@ -68,14 +76,135 @@ const sampleVehicles = [
       {
         name: '3 Series',
         variants: [
-          { name: '330i', yearStart: 2019, yearEnd: 2024, engine: '2.0L Turbo 4-Cyl' },
-          { name: 'M340i', yearStart: 2020, yearEnd: 2024, engine: '3.0L Turbo 6-Cyl' }
+          { name: '330i', yearStart: 2019, yearEnd: 2026, engine: '2.0L Turbo 4-Cyl' },
+          { name: 'M340i', yearStart: 2020, yearEnd: 2026, engine: '3.0L Turbo 6-Cyl' }
         ]
       },
       {
         name: 'X5',
         variants: [
-          { name: 'xDrive40i', yearStart: 2019, yearEnd: 2024, engine: '3.0L Turbo 6-Cyl' }
+          { name: 'xDrive40i', yearStart: 2019, yearEnd: 2026, engine: '3.0L Turbo 6-Cyl' },
+          { name: 'xDrive50e', yearStart: 2024, yearEnd: 2026, engine: '3.0L Plug-in Hybrid' }
+        ]
+      }
+    ]
+  },
+  {
+    brand: 'Hyundai',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/4/44/Hyundai_Motor_Company_logo.svg/2560px-Hyundai_Motor_Company_logo.svg.png',
+    models: [
+      {
+        name: 'Elantra',
+        variants: [
+          { name: 'SEL', yearStart: 2021, yearEnd: 2026, engine: '2.0L 4-Cylinder' },
+          { name: 'N Line', yearStart: 2021, yearEnd: 2026, engine: '1.6L Turbo' }
+        ]
+      },
+      {
+        name: 'Tucson',
+        variants: [
+          { name: 'SE', yearStart: 2022, yearEnd: 2026, engine: '2.5L 4-Cylinder' },
+          { name: 'Limited Hybrid', yearStart: 2022, yearEnd: 2026, engine: '1.6L Hybrid' }
+        ]
+      }
+    ]
+  },
+  {
+    brand: 'Kia',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/13/Kia_logo3.svg/2560px-Kia_logo3.svg.png',
+    models: [
+      {
+        name: 'Sportage',
+        variants: [
+          { name: 'LX', yearStart: 2023, yearEnd: 2026, engine: '2.5L 4-Cylinder' },
+          { name: 'EX Hybrid', yearStart: 2023, yearEnd: 2026, engine: '1.6L Hybrid' }
+        ]
+      },
+      {
+        name: 'Sorento',
+        variants: [
+          { name: 'S', yearStart: 2021, yearEnd: 2026, engine: '2.5L 4-Cylinder' },
+          { name: 'SX Prestige', yearStart: 2021, yearEnd: 2026, engine: '2.5L Turbo 4-Cylinder' }
+        ]
+      }
+    ]
+  },
+  {
+    brand: 'Nissan',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/Nissan_2020_logo.svg/2048px-Nissan_2020_logo.svg.png',
+    models: [
+      {
+        name: 'Altima',
+        variants: [
+          { name: 'SV', yearStart: 2019, yearEnd: 2026, engine: '2.5L 4-Cylinder' },
+          { name: 'SR VC-Turbo', yearStart: 2019, yearEnd: 2026, engine: '2.0L Turbo 4-Cylinder' }
+        ]
+      },
+      {
+        name: 'Rogue',
+        variants: [
+          { name: 'SV', yearStart: 2021, yearEnd: 2026, engine: '1.5L Turbo 3-Cylinder' },
+          { name: 'Platinum', yearStart: 2021, yearEnd: 2026, engine: '1.5L Turbo 3-Cylinder' }
+        ]
+      }
+    ]
+  },
+  {
+    brand: 'Volkswagen',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6d/Volkswagen_logo_2019.svg/2048px-Volkswagen_logo_2019.svg.png',
+    models: [
+      {
+        name: 'Jetta',
+        variants: [
+          { name: 'Sport', yearStart: 2022, yearEnd: 2026, engine: '1.5L Turbo 4-Cylinder' },
+          { name: 'SEL', yearStart: 2022, yearEnd: 2026, engine: '1.5L Turbo 4-Cylinder' }
+        ]
+      },
+      {
+        name: 'Tiguan',
+        variants: [
+          { name: 'S', yearStart: 2022, yearEnd: 2026, engine: '2.0L Turbo 4-Cylinder' },
+          { name: 'SEL R-Line', yearStart: 2022, yearEnd: 2026, engine: '2.0L Turbo 4-Cylinder' }
+        ]
+      }
+    ]
+  },
+  {
+    brand: 'Mercedes-Benz',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Mercedes-Logo.svg/2048px-Mercedes-Logo.svg.png',
+    models: [
+      {
+        name: 'C-Class',
+        variants: [
+          { name: 'C300', yearStart: 2022, yearEnd: 2026, engine: '2.0L Turbo 4-Cylinder' },
+          { name: 'AMG C43', yearStart: 2023, yearEnd: 2026, engine: '2.0L Turbo Mild Hybrid' }
+        ]
+      },
+      {
+        name: 'GLE',
+        variants: [
+          { name: 'GLE 350', yearStart: 2020, yearEnd: 2026, engine: '2.0L Turbo 4-Cylinder' },
+          { name: 'GLE 450', yearStart: 2020, yearEnd: 2026, engine: '3.0L Turbo Mild Hybrid' }
+        ]
+      }
+    ]
+  },
+  {
+    brand: 'Audi',
+    logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/92/Audi-Logo_2016.svg/2560px-Audi-Logo_2016.svg.png',
+    models: [
+      {
+        name: 'A4',
+        variants: [
+          { name: 'Premium', yearStart: 2020, yearEnd: 2026, engine: '2.0L Turbo 4-Cylinder' },
+          { name: 'Premium Plus', yearStart: 2020, yearEnd: 2026, engine: '2.0L Turbo 4-Cylinder' }
+        ]
+      },
+      {
+        name: 'Q5',
+        variants: [
+          { name: '45 TFSI', yearStart: 2021, yearEnd: 2026, engine: '2.0L Turbo 4-Cylinder' },
+          { name: '55 TFSI e', yearStart: 2021, yearEnd: 2026, engine: '2.0L Plug-in Hybrid' }
         ]
       }
     ]
@@ -93,7 +222,7 @@ async function seedVehicles() {
     // Clear existing data? Or just upsert?
     // Let's upsert to be safe and additive.
 
-    for (const brandData of sampleVehicles) {
+    for (const brandData of curatedVehicles) {
       // 1. Create/Find Brand
       let brand = await VehicleBrand.findOne({ name: brandData.brand });
       if (!brand) {
@@ -103,7 +232,13 @@ async function seedVehicles() {
         });
         console.log(`Created Brand: ${brand.name}`);
       } else {
-        console.log(`Found Brand: ${brand.name}`);
+        if (brandData.logo && brand.logoUrl !== brandData.logo) {
+          brand.logoUrl = brandData.logo;
+          await brand.save();
+          console.log(`Updated Brand: ${brand.name}`);
+        } else {
+          console.log(`Found Brand: ${brand.name}`);
+        }
       }
 
       for (const modelData of brandData.models) {
@@ -136,7 +271,17 @@ async function seedVehicles() {
             });
             console.log(`    Created Variant: ${variant.name} (${variantData.yearStart}-${variantData.yearEnd || 'Now'})`);
           } else {
-            console.log(`    Found Variant: ${variant.name}`);
+            let variantUpdated = false;
+            if (variant.yearEnd !== variantData.yearEnd) {
+              variant.yearEnd = variantData.yearEnd;
+              variantUpdated = true;
+            }
+            if (variantUpdated) {
+              await variant.save();
+              console.log(`    Updated Variant: ${variant.name}`);
+            } else {
+              console.log(`    Found Variant: ${variant.name}`);
+            }
           }
 
           // 4. Create Flattened "Vehicle" entries for each year in the range

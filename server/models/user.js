@@ -36,6 +36,12 @@ const userSchema = new mongoose.Schema({
     min: 0,
     max: 100,
   },
+  shopWideDiscountPercent: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 90,
+  },
   // Password reset fields
   resetToken: {
     type: String,

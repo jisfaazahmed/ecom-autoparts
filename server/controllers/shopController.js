@@ -31,6 +31,7 @@ exports.getMyShop = async (req, res) => {
       businessRegistration: vendor.businessRegistration,
       logoUrl: vendor.logoUrl,
       commissionRate: vendor.commissionRate,
+      shopWideDiscountPercent: vendor.shopWideDiscountPercent || 0,
       createdAt: vendor.createdAt,
       updatedAt: vendor.updatedAt
     };
@@ -73,6 +74,7 @@ exports.getShop = async (req, res) => {
       businessRegistration: vendor.businessRegistration,
       logoUrl: vendor.logoUrl,
       commissionRate: vendor.commissionRate,
+      shopWideDiscountPercent: vendor.shopWideDiscountPercent || 0,
       createdAt: vendor.createdAt,
       updatedAt: vendor.updatedAt
     };
@@ -99,6 +101,8 @@ exports.updateMyShop = async (req, res) => {
       address,
       businessRegistration,
       logoUrl
+      ,
+      shopWideDiscountPercent
     } = req.body;
 
     const updateData = {};
@@ -108,6 +112,13 @@ exports.updateMyShop = async (req, res) => {
     if (address !== undefined) updateData.address = address;
     if (businessRegistration !== undefined) updateData.businessRegistration = businessRegistration;
     if (logoUrl !== undefined) updateData.logoUrl = logoUrl;
+    if (shopWideDiscountPercent !== undefined) {
+      const discount = Number(shopWideDiscountPercent);
+      if (!Number.isFinite(discount) || discount < 0 || discount > 90) {
+        return res.status(400).json({ message: 'shopWideDiscountPercent must be between 0 and 90' });
+      }
+      updateData.shopWideDiscountPercent = discount;
+    }
     if (Object.keys(updateData).length === 0) {
       updateData.updatedAt = new Date();
     }
@@ -134,6 +145,7 @@ exports.updateMyShop = async (req, res) => {
       businessRegistration: vendor.businessRegistration,
       logoUrl: vendor.logoUrl,
       commissionRate: vendor.commissionRate,
+      shopWideDiscountPercent: vendor.shopWideDiscountPercent || 0,
       createdAt: vendor.createdAt,
       updatedAt: vendor.updatedAt
     };

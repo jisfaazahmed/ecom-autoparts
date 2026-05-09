@@ -86,7 +86,7 @@ exports.getVendorRefunds = async (req, res) => {
 
 exports.getAdminRefunds = async (req, res) => {
     try {
-        const role = String(req.user?.role || '').toLowerCase();
+        const role = String(req.user?.role || '').toLowerCase().replace(/_/g, '');
         if (!['admin', 'superadmin'].includes(role)) {
             return res.status(403).json({
                 success: false,
@@ -151,7 +151,7 @@ exports.vendorReviewRefund = async (req, res) => {
 
 exports.approveOrRejectRefund = async (req, res) => {
     try {
-        const role = String(req.user?.role || '').toLowerCase();
+        const role = String(req.user?.role || '').toLowerCase().replace(/_/g, '');
         if (!['admin', 'superadmin'].includes(role)) {
             return res.status(403).json({
                 success: false,

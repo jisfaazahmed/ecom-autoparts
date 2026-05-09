@@ -1,5 +1,6 @@
 const Product = require('../models/product');
 const Vehicle = require('../models/vehicle');
+const VehicleVariant = require('../models/vehicleVariant.model');
 const Review = require('../models/review.model');
 const VendorProduct = require('../models/vendorProduct');
 const mongoose = require('mongoose');
@@ -11,6 +12,21 @@ const normalizeRole = (role) => {
   return 'customer';
 };
 
+const toPercent = (value) => {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return 0;
+  if (n < 0) return 0;
+  if (n > 90) return 90;
+  return n;
+};
+
+const applyDiscount = (price, percent) => {
+  const base = Number(price || 0);
+  const pct = toPercent(percent);
+  const discounted = base - (base * pct) / 100;
+  return Number(discounted.toFixed(2));
+};
+
 const mapProduct = (productDoc) => {
   const product = productDoc?.toJSON ? productDoc.toJSON() : productDoc;
   if (!product) return null;
@@ -18,6 +34,11 @@ const mapProduct = (productDoc) => {
   const categoryObj = product.category && typeof product.category === 'object' ? product.category : null;
   const sellerObj = product.createdBy && typeof product.createdBy === 'object' ? product.createdBy : null;
   const compatibleVehicles = Array.isArray(product.compatibleVehicles) ? product.compatibleVehicles : [];
+  const productDiscountPercent = toPercent(product.productDiscountPercent);
+  const shopDiscountPercent = toPercent(sellerObj?.shopWideDiscountPercent);
+  const effectiveDiscountPercent = Math.max(productDiscountPercent, shopDiscountPercent);
+  const originalPrice = Number(product.price || 0);
+  const discountedPrice = applyDiscount(originalPrice, effectiveDiscountPercent);
 
   const categoryId = categoryObj
     ? String(categoryObj._id || categoryObj.id || '')
@@ -33,7 +54,14 @@ const mapProduct = (productDoc) => {
     imageUrl: product.imageUrl || product.image || '',
     image_url: product.image_url || product.image || '',
     categoryId,
+    originalPrice,
+    price: discountedPrice,
+    productDiscountPercent,
+    shopDiscountPercent,
+    effectiveDiscountPercent,
+    hasDiscount: effectiveDiscountPercent > 0,
     compatibleVariants: compatibleVehicles.map((vehicle) => String(vehicle?._id || vehicle?.id || vehicle || '')),
+    featured: !!product.featured,
     shopId,
     shop: sellerObj
       ? {
@@ -77,6 +105,66 @@ const mapReview = (reviewDoc) => {
         }
       : undefined,
   };
+};
+
+const resolveCompatibleVehicleIds = async (compatibleVariants) => {
+  if (!Array.isArray(compatibleVariants)) return [];
+
+  const normalizedIds = [...new Set(compatibleVariants.map((id) => String(id)))];
+  if (normalizedIds.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+    throw new Error('INVALID_COMPATIBLE_VARIANTS');
+  }
+
+  if (normalizedIds.length === 0) return [];
+
+  const directVehicles = await Vehicle.find({ _id: { $in: normalizedIds } }).select('_id');
+  const directVehicleIdSet = new Set(directVehicles.map((v) => String(v._id)));
+  const unresolvedVariantIds = normalizedIds.filter((id) => !directVehicleIdSet.has(id));
+
+  if (unresolvedVariantIds.length === 0) {
+    return [...directVehicleIdSet];
+  }
+
+  const variants = await VehicleVariant.find({ _id: { $in: unresolvedVariantIds } })
+    .populate({
+      path: 'model',
+      select: 'name brand',
+      populate: { path: 'brand', select: 'name' },
+    });
+
+  if (variants.length !== unresolvedVariantIds.length) {
+    throw new Error('INVALID_COMPATIBLE_VARIANTS');
+  }
+
+  const mappedVehicleIds = new Set([...directVehicleIdSet]);
+  const currentYear = new Date().getFullYear();
+
+  for (const variant of variants) {
+    const modelDoc = variant.model;
+    const brandDoc = modelDoc?.brand;
+    const makeName = brandDoc?.name;
+    const modelName = modelDoc?.name;
+
+    if (!makeName || !modelName) {
+      throw new Error('INVALID_COMPATIBLE_VARIANTS');
+    }
+
+    const yearEnd = variant.yearEnd || currentYear;
+    const matchedVehicles = await Vehicle.find({
+      make: makeName,
+      model: modelName,
+      submodel: variant.name,
+      year: { $gte: variant.yearStart, $lte: yearEnd },
+    }).select('_id');
+
+    if (!matchedVehicles.length) {
+      throw new Error('INVALID_COMPATIBLE_VARIANTS');
+    }
+
+    matchedVehicles.forEach((vehicle) => mappedVehicleIds.add(String(vehicle._id)));
+  }
+
+  return [...mappedVehicleIds];
 };
 
 exports.checkStock = async (req, res) => {
@@ -131,7 +219,7 @@ exports.checkStock = async (req, res) => {
 // 1. CREATE PRODUCT (Sellers & Admins)
 exports.createProduct = async (req, res) => {
   try {
-    const { name, sku, price, stock, categoryId, compatibleVariants, description, imageUrl, shopId } = req.body;
+    const { name, sku, price, stock, categoryId, compatibleVariants, description, imageUrl, shopId, productDiscountPercent } = req.body;
     const requester = getRequester(req);
 
     if (!['admin', 'superadmin'].includes(requester.role)) {
@@ -146,14 +234,13 @@ exports.createProduct = async (req, res) => {
       return res.status(400).json({ message: 'Product name and category are required' });
     }
 
-    // Map compatibleVariants to vehicleIds
+    // Map compatibleVariants (variant IDs or vehicle IDs) to vehicle IDs.
     let vehicleIds = [];
-    if (compatibleVariants && Array.isArray(compatibleVariants)) {
-      vehicleIds = compatibleVariants;
-      const count = await Vehicle.countDocuments({ _id: { $in: vehicleIds } });
-      if (count !== vehicleIds.length && process.env.NODE_ENV !== 'test') {
-        return res.status(400).json({ message: 'One or more Vehicle Variant IDs are invalid.' });
+    if (compatibleVariants !== undefined) {
+      if (!Array.isArray(compatibleVariants)) {
+        return res.status(400).json({ message: 'compatibleVariants must be an array' });
       }
+      vehicleIds = await resolveCompatibleVehicleIds(compatibleVariants);
     }
 
     // Default status to 'Pending' for sellers. Super Admin could theoretially approve immediately, 
@@ -171,6 +258,7 @@ exports.createProduct = async (req, res) => {
       sku: sku || 'SKU-' + Date.now(),
       price: price || 0,
       stock: stock || 0,
+      productDiscountPercent: toPercent(productDiscountPercent),
       image: imageUrl,
       category: categoryId || null,
       compatibleVehicles: vehicleIds,
@@ -183,7 +271,7 @@ exports.createProduct = async (req, res) => {
 
     const savedProduct = await Product.findById(newProduct._id)
       .populate('category', 'name')
-      .populate('createdBy', 'name shopName email status role');
+      .populate('createdBy', 'name shopName email status role shopWideDiscountPercent');
 
     res.status(201).json(mapProduct(savedProduct));
   } catch (err) {
@@ -207,6 +295,7 @@ exports.updateProduct = async (req, res) => {
       description,
       imageUrl,
       isActive,
+      productDiscountPercent,
     } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -233,12 +322,7 @@ exports.updateProduct = async (req, res) => {
       if (!Array.isArray(compatibleVariants)) {
         return res.status(400).json({ message: 'compatibleVariants must be an array' });
       }
-
-      const count = await Vehicle.countDocuments({ _id: { $in: compatibleVariants } });
-      if (count !== compatibleVariants.length && process.env.NODE_ENV !== 'test') {
-        return res.status(400).json({ message: 'One or more Vehicle Variant IDs are invalid.' });
-      }
-      product.compatibleVehicles = compatibleVariants;
+      product.compatibleVehicles = await resolveCompatibleVehicleIds(compatibleVariants);
     }
 
     if (name !== undefined) product.name = name;
@@ -249,17 +333,27 @@ exports.updateProduct = async (req, res) => {
     if (imageUrl !== undefined) product.image = imageUrl;
     if (categoryId !== undefined) product.category = categoryId;
     if (isActive !== undefined) product.isActive = !!isActive;
+    if (productDiscountPercent !== undefined) {
+      const discount = Number(productDiscountPercent);
+      if (!Number.isFinite(discount) || discount < 0 || discount > 90) {
+        return res.status(400).json({ message: 'productDiscountPercent must be between 0 and 90' });
+      }
+      product.productDiscountPercent = discount;
+    }
 
     await product.save();
 
     const updated = await Product.findById(product._id)
       .populate('category', 'name')
-      .populate('createdBy', 'name shopName email status role')
+      .populate('createdBy', 'name shopName email status role shopWideDiscountPercent')
       .populate('compatibleVehicles', 'year make model');
 
     res.json(mapProduct(updated));
   } catch (err) {
     console.error(err);
+    if (err?.message === 'INVALID_COMPATIBLE_VARIANTS') {
+      return res.status(400).json({ message: 'One or more Vehicle Variant IDs are invalid.' });
+    }
     res.status(500).json({ message: 'Server Error', error: err.message });
   }
 };
@@ -299,6 +393,9 @@ exports.deleteProduct = async (req, res) => {
     res.status(204).send();
   } catch (err) {
     console.error(err);
+    if (err?.message === 'INVALID_COMPATIBLE_VARIANTS') {
+      return res.status(400).json({ message: 'One or more Vehicle Variant IDs are invalid.' });
+    }
     res.status(500).json({ message: 'Server Error', error: err.message });
   }
 };
@@ -319,8 +416,39 @@ exports.updateProductStatus = async (req, res) => {
 
     const product = await Product.findByIdAndUpdate(id, { status }, { new: true })
       .populate('category', 'name')
-      .populate('createdBy', 'name shopName email status role')
+      .populate('createdBy', 'name shopName email status role shopWideDiscountPercent')
       .populate('compatibleVehicles', 'year make model');
+    if (!product) return res.status(404).json({ message: 'Product not found' });
+
+    res.json(mapProduct(product));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server Error', error: err.message });
+  }
+};
+
+// 1.2 UPDATE FEATURED FLAG (Super Admin Only)
+exports.updateProductFeatured = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { featured } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+    if (typeof featured !== 'boolean') {
+      return res.status(400).json({ message: 'featured must be a boolean' });
+    }
+
+    const product = await Product.findByIdAndUpdate(
+      id,
+      { featured },
+      { new: true }
+    )
+      .populate('category', 'name')
+      .populate('createdBy', 'name shopName email status role shopWideDiscountPercent')
+      .populate('compatibleVehicles', 'year make model submodel');
+
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
     res.json(mapProduct(product));
@@ -379,7 +507,7 @@ exports.getProducts = async (req, res) => {
 
     const products = await Product.find(query)
       .populate('category', 'name')
-      .populate('createdBy', 'name shopName email status role')
+      .populate('createdBy', 'name shopName email status role shopWideDiscountPercent')
       .populate('compatibleVehicles', 'year make model'); // Show car names in result
 
     res.json(products.map(mapProduct));
@@ -422,7 +550,7 @@ exports.getSuperAdminProducts = async (req, res) => {
 
     const products = await Product.find(query)
       .populate('category', 'name')
-      .populate('createdBy', 'name shopName email status role')
+      .populate('createdBy', 'name shopName email status role shopWideDiscountPercent')
       .populate('compatibleVehicles', 'year make model');
 
     res.json(products.map(mapProduct));
@@ -434,26 +562,26 @@ exports.getSuperAdminProducts = async (req, res) => {
 
 exports.getFeaturedProducts = async (req, res) => {
   try {
-    const products = await Product.find({ featured: true, isActive: true })
-      .sort({ rating: -1 })
+    const products = await Product.find({
+      featured: true,
+      isActive: true,
+      status: 'Approved',
+    })
+      .sort({ updatedAt: -1, createdAt: -1 })
       .limit(8);
+    
+    const hydrated = await Product.populate(products, [
+      { path: 'category', select: 'name' },
+      { path: 'createdBy', select: 'name shopName email status role shopWideDiscountPercent' },
+      { path: 'compatibleVehicles', select: 'year make model submodel' },
+    ]);
 
-    // Transform to include 'id' field from '_id'
-    const transformedProducts = products.map(p => {
-      const obj = p.toJSON ? p.toJSON() : p.toObject();
-      return { ...obj, id: obj._id };
-    });
-
-    res.json({
-      success: true,
-      count: transformedProducts.length,
-      products: transformedProducts
-    });
+    res.json(hydrated.map(mapProduct));
   } catch (err) {
     console.error(err);
-    res.status(500).json({ 
-      success: false,
-      message: 'Server error' 
+    res.status(500).json({
+      message: 'Server error',
+      error: err.message,
     });
   }
 };
@@ -483,7 +611,7 @@ exports.getProductById = async (req, res) => {
 
     const product = await Product.findById(req.params.id)
       .populate('category', 'name')
-      .populate('createdBy', 'name shopName email status role')
+      .populate('createdBy', 'name shopName email status role shopWideDiscountPercent')
       .populate('compatibleVehicles', 'year make model');
     
     if (!product) {

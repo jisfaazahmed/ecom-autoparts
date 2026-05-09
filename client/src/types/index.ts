@@ -26,6 +26,8 @@ export interface Product {
   sku: string;
   specifications?: Record<string, string>;
   isActive?: boolean;
+  originalPrice?: number;
+  effectiveDiscountPercent?: number;
 }
 
 export interface CartItem {

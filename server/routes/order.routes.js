@@ -5,6 +5,7 @@ const { verifyToken, attachUserIfPresent } = require('../middleware/authMiddlewa
 //customer (guest checkout allowed)
 router.post('/', attachUserIfPresent, orderController.createOrder);
 router.get('/my_orders', verifyToken, orderController.getAllOrders);
+router.get('/admin/all', verifyToken, orderController.getPlatformOrders);
 
 // Guest order recovery (for newly registered users)
 router.post('/recover-guest', verifyToken, orderController.recoverGuestOrders);

@@ -21,8 +21,10 @@ const Deals: React.FC = () => {
           api.getProducts({ isActive: true, limit: 1000 }),
           api.getPublicActiveCoupons(6),
         ]);
-        // Filter products with stock > 10 as "deals"
-        const dealProducts = (response.data || []).filter(p => p.stock > 10);
+        // Only discounted products should appear on the deals page.
+        const dealProducts = (response.data || []).filter(
+          (p) => (p.effectiveDiscountPercent || 0) > 0 && p.stock > 0
+        );
         setProducts(dealProducts);
         setCoupons(activeCoupons);
       } catch (error) {
@@ -45,6 +47,8 @@ const Deals: React.FC = () => {
     name: p.name,
     description: p.description || '',
     price: p.price,
+    originalPrice: p.originalPrice || p.price,
+    effectiveDiscountPercent: p.effectiveDiscountPercent || 0,
     image: p.imageUrl || '/placeholder.svg',
     category: p.category?.name || 'Uncategorized',
     brand: '',
@@ -95,16 +99,20 @@ const Deals: React.FC = () => {
             HOT <span className="text-primary">DEALS</span>
           </h1>
           <p className="text-muted-foreground max-w-md mx-auto">
-            Don't miss out on these incredible savings. Shop now while supplies last!
+            Only products with active seller discounts are shown here. Grab these price drops before they end.
           </p>
         </motion.div>
 
         {/* Deal Highlights */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
           {[
-            { icon: Percent, title: 'Up to 30% Off', desc: 'On select performance parts' },
-            { icon: Tag, title: 'Bundle Deals', desc: 'Save more when you buy together' },
-            { icon: Clock, title: 'Flash Sales', desc: 'New deals every week' },
+            {
+              icon: Percent,
+              title: products.length ? `Up to ${Math.round(Math.max(...products.map((p) => p.effectiveDiscountPercent || 0)))}% Off` : 'Seller Discounts',
+              desc: 'Shop-wide and product-level markdowns',
+            },
+            { icon: Tag, title: `${products.length} Discounted Products`, desc: 'Filtered live from active seller offers' },
+            { icon: Clock, title: 'Limited Time Savings', desc: 'Deals update whenever sellers change discounts' },
           ].map((item, i) => (
             <motion.div
               key={i}

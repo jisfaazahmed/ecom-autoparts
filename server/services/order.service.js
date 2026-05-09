@@ -48,7 +48,7 @@ class OrderService {
         return aliases[value] || value;
     }
 
-    buildSubOrders(orderItemDocs, enrichedItems) {
+    buildSubOrders(orderItemDocs, enrichedItems, commissionRateByVendor = new Map()) {
         const grouped = new Map();
 
         orderItemDocs.forEach((itemDoc, index) => {
@@ -77,6 +77,8 @@ class OrderService {
         });
 
         return Array.from(grouped.values()).map(group => ({
+            commissionRate: Number(commissionRateByVendor.get(String(group.vendor)) || 0),
+            commissionAmount: Number(((group.subtotal * Number(commissionRateByVendor.get(String(group.vendor)) || 0)) / 100).toFixed(2)),
             vendor: group.vendor,
             items: group.items,
             status: group.status,
@@ -105,6 +107,8 @@ class OrderService {
             shippingCharge,
             taxAmount,
             discountAmount,
+            commissionRate: Number(groupedSubOrder.commissionRate || 0),
+            commissionAmount: Number(groupedSubOrder.commissionAmount || 0),
             totalAmount: subtotal + shippingCharge + taxAmount - discountAmount,
             shippingAddress: mainOrder.shippingAddress,
             shippingMethod: mainOrder.shippingMethod || 'standard',
@@ -263,7 +267,15 @@ class OrderService {
                 }))
             );
 
-            const subOrders = this.buildSubOrders(orderItemDocs, enrichedItems);
+            const vendorIds = [...new Set(enrichedItems.map((item) => String(item.resolvedVendorId || '')).filter(Boolean))];
+            const vendorDocs = await User.find({ _id: { $in: vendorIds } }).select('_id commissionRate');
+            const commissionRateByVendor = new Map(
+                vendorDocs.map((vendor) => [String(vendor._id), Number(vendor.commissionRate || 0)])
+            );
+            const subOrders = this.buildSubOrders(orderItemDocs, enrichedItems, commissionRateByVendor);
+            const commissionAmount = Number(
+                subOrders.reduce((sum, subOrder) => sum + Number(subOrder.commissionAmount || 0), 0).toFixed(2)
+            );
 
             const order = new Order({
                 user: userId,
@@ -274,6 +286,7 @@ class OrderService {
                 shippingCharges: shippingCharge,
                 taxAmount: taxAmount,
                 discountAmount,
+                commissionAmount,
                 couponDiscount: discountAmount,
                 couponCode: couponResult?.coupon?.code || null,
                 couponId: couponResult?.coupon?._id || null,
