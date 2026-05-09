@@ -278,6 +278,7 @@ exports.changePassword = async (req, res) => {
   }
 };
 
+
 // PUT /auth/profile - Update user profile
 exports.updateProfile = async (req, res) => {
   try {
@@ -301,6 +302,38 @@ exports.updateProfile = async (req, res) => {
 
     const roleLower = (user.role || '').toLowerCase().replace('_', '');
     res.status(200).json({
+
+exports.registerSeller = async (req, res) => {
+  try {
+    req.body.role = 'ADMIN';
+    return exports.register(req, res);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Server error');
+  }
+};
+
+exports.updateProfile = async (req, res) => {
+  try {
+    const { name, email } = req.body;
+    const userId = req.user.id;
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    if (name) user.name = name;
+    if (email) {
+      const normalizedEmail = String(email).trim().toLowerCase();
+      const emailExists = await User.findOne({ email: normalizedEmail, _id: { $ne: userId } });
+      if (emailExists) return res.status(400).json({ message: 'Email already in use' });
+      user.email = normalizedEmail;
+    }
+
+    await user.save();
+    
+    const roleLower = (user.role || '').toLowerCase().replace('_', '');
+    res.json({
+
       message: 'Profile updated successfully',
       user: {
         id: user.id,
@@ -308,6 +341,7 @@ exports.updateProfile = async (req, res) => {
         fullName: user.name,
         role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer',
         status: user.status,
+
         phone: user.phone,
         address: user.address,
         createdAt: user.createdAt,
@@ -316,5 +350,14 @@ exports.updateProfile = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Error updating profile' });
+
+        shopName: user.shopName,
+        createdAt: user.createdAt
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Server error');
+
   }
 };
