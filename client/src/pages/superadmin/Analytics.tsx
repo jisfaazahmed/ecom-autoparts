@@ -8,12 +8,12 @@ import { api, ApiOrder, ApiShop, ApiProduct, ApiCategory } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatLKR, formatLKRCompact } from '@/lib/currency';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend } from 'recharts';
-import { mockOrders, mockShops, mockProducts, mockCategories } from '@/data/analyticsMockData';
+// Use live data via API; remove mock fallbacks
 
 const SuperAdminAnalytics: React.FC = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState('30d');
+  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | '1y'>('30d');
 
   const [totalSales, setTotalSales] = useState(0);
   const [totalCommission, setTotalCommission] = useState(0);
@@ -23,85 +23,80 @@ const SuperAdminAnalytics: React.FC = () => {
   const [salesByMonth, setSalesByMonth] = useState<{ month: string; sales: number; commission: number; orders: number }[]>([]);
   const [topCategories, setTopCategories] = useState<{ name: string; value: number }[]>([]);
 
+  useEffect(() => { fetchAnalytics(); }, [timeRange]);
+
+  const getDateRange = (range: '7d' | '30d' | '90d' | '1y') => {
+    const endDate = new Date();
+    const startDate = new Date();
+
+    switch (range) {
+      case '7d':
+        startDate.setDate(endDate.getDate() - 7);
+        break;
+      case '30d':
+        startDate.setDate(endDate.getDate() - 30);
+        break;
+      case '90d':
+        startDate.setDate(endDate.getDate() - 90);
+        break;
+      case '1y':
+        startDate.setFullYear(endDate.getFullYear() - 1);
+        break;
+    }
+
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(23, 59, 59, 999);
+
+    return {
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+    };
+  };
+
   const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     try {
-      let ordersData: ApiOrder[] = [];
-      let shopsData: ApiShop[] = [];
-      let productsData: ApiProduct[] = [];
-      let categoriesData: ApiCategory[] = [];
+      const data = await api.getSuperAdminAnalytics({ range: timeRange });
 
-      try {
-        const [orders, shops, products, categories] = await Promise.all([
-          api.getOrders().catch(() => ({ data: [] })),
-          api.getShops().catch(() => ({ data: [] })),
-          api.getProducts().catch(() => ({ data: [] })),
-          api.getCategories().catch(() => [])
-        ]);
+      setTotalVendors(data.totalVendors || 0);
+      setTotalSales(data.totalSales || 0);
+      setTotalCommission(data.totalCommission || 0);
+      setTotalOrders(data.totalOrders || 0);
 
-        ordersData = orders?.data || [];
-        shopsData = shops?.data || [];
-        productsData = products?.data || [];
-        categoriesData = categories || [];
-      } catch (e) {
-        console.error('Failed to fetch from API, using mock data', e);
-      }
+      const st = data.ordersByStatus || {};
+      setOrdersByStatus([
+        { name: 'Pending', value: st['pending'] || 0, color: 'hsl(38, 92%, 50%)' },
+        { name: 'Processing', value: st['processing'] || 0, color: 'hsl(190, 100%, 50%)' },
+        { name: 'Shipped', value: st['shipped'] || 0, color: 'hsl(270, 100%, 60%)' },
+        { name: 'Delivered', value: st['delivered'] || 0, color: 'hsl(142, 76%, 36%)' },
+        { name: 'Cancelled', value: st['cancelled'] || 0, color: 'hsl(0, 72%, 51%)' },
+      ]);
 
-      // Use mockup data if real data is insufficient for a professional-looking dashboard
-      const ordersToUse = ordersData.length > 0 ? ordersData : mockOrders;
-      const shopsToUse = shopsData.length > 0 ? shopsData : mockShops;
-      const productsToUse = productsData.length > 0 ? productsData : mockProducts;
-      // Note: categoriesData might be used for product category mapping
+      setSalesByMonth(data.salesByMonth || []);
 
-      if (ordersToUse) {
-        setTotalSales(ordersToUse.reduce((sum: number, o: ApiOrder) => sum + (o.totalAmount || 0), 0));
-        setTotalCommission(ordersToUse.reduce((sum: number, o: ApiOrder) => sum + (o.commissionAmount || 0), 0));
-        setTotalOrders(ordersToUse.length);
+      const categories = await api.getCategories().catch(() => []);
+      const categoryNameMap = new Map((categories || []).map((cat: any) => [String(cat.id), String(cat.name)]));
 
-        const statusCounts: Record<string, number> = {};
-        ordersToUse.forEach((o: ApiOrder) => { statusCounts[o.status] = (statusCounts[o.status] || 0) + 1; });
-        setOrdersByStatus([
-          { name: 'Pending', value: statusCounts['pending'] || 0, color: 'hsl(38, 92%, 50%)' },
-          { name: 'Processing', value: statusCounts['processing'] || 0, color: 'hsl(190, 100%, 50%)' },
-          { name: 'Shipped', value: statusCounts['shipped'] || 0, color: 'hsl(270, 100%, 60%)' },
-          { name: 'Delivered', value: statusCounts['delivered'] || 0, color: 'hsl(142, 76%, 36%)' },
-          { name: 'Cancelled', value: statusCounts['cancelled'] || 0, color: 'hsl(0, 72%, 51%)' },
-        ]);
+      const categoryColors = ['hsl(190, 100%, 50%)', 'hsl(270, 100%, 60%)', 'hsl(330, 100%, 60%)', 'hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)'];
+      const topCats = (data.topCategories || []).map((c, idx) => ({
+        name: categoryNameMap.get(c.categoryId) || (c.categoryId === 'null' ? 'Uncategorized' : 'Other'),
+        value: c.earnings,
+        color: categoryColors[idx % categoryColors.length],
+      }));
 
-        const monthlyData: Record<string, { sales: number; commission: number; orders: number }> = {};
-        const now = new Date();
-        for (let i = 5; i >= 0; i--) {
-          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-          monthlyData[d.toLocaleString('default', { month: 'short' })] = { sales: 0, commission: 0, orders: 0 };
-        }
-        ordersToUse.forEach((o: ApiOrder) => {
-          const key = new Date(o.createdAt).toLocaleString('default', { month: 'short' });
-          if (monthlyData[key]) {
-            monthlyData[key].sales += o.totalAmount || 0;
-            monthlyData[key].commission += o.commissionAmount || 0;
-            monthlyData[key].orders += 1;
-          }
-        });
-        setSalesByMonth(Object.entries(monthlyData).map(([month, data]) => ({ month, ...data })));
-      }
+      setTopCategories(topCats);
 
-      setTotalVendors(shopsToUse.filter((s: ApiShop) => s.status === 'approved' || s.status === 'active').length);
-
-      if (productsToUse) {
-        const categoryCounts: Record<string, number> = {};
-        productsToUse.forEach((p: ApiProduct) => {
-          const catName = p.category?.name || 'Uncategorized';
-          categoryCounts[catName] = (categoryCounts[catName] || 0) + 1;
-        });
-        setTopCategories(Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, value]) => ({ name, value })));
-      }
-    } catch (error: unknown) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
+    } catch (error: any) {
+      console.error('Analytics fetch error:', error);
+      toast({ title: 'Error', description: error.message || 'Failed to load analytics', variant: 'destructive' });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [toast]);
+  }, [timeRange, toast]);
 
-  useEffect(() => { fetchAnalytics(); }, [fetchAnalytics, timeRange]);
+  useEffect(() => {
+    fetchAnalytics();
+  }, [fetchAnalytics]);
 
 
   const stats = [
@@ -110,8 +105,6 @@ const SuperAdminAnalytics: React.FC = () => {
     { label: 'Total Orders', value: totalOrders.toLocaleString(), icon: ShoppingBag, change: '+24%', positive: true, color: 'text-purple-400' },
     { label: 'Active Vendors', value: totalVendors.toLocaleString(), icon: Users, change: '+3', positive: true, color: 'text-warning' },
   ];
-
-  const categoryColors = ['hsl(190, 100%, 50%)', 'hsl(270, 100%, 60%)', 'hsl(330, 100%, 60%)', 'hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)'];
 
   if (loading) return <AdminLayout><div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></AdminLayout>;
 
@@ -208,10 +201,10 @@ const SuperAdminAnalytics: React.FC = () => {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={topCategories} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(240, 10%, 18%)" />
-                    <XAxis type="number" stroke="hsl(215, 20%, 55%)" fontSize={12} />
+                    <XAxis type="number" stroke="hsl(215, 20%, 55%)" fontSize={12} tickFormatter={(v) => formatLKRCompact(v)} />
                     <YAxis type="category" dataKey="name" stroke="hsl(215, 20%, 55%)" width={80} fontSize={12} />
-                    <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} />
-                    <Bar dataKey="value" radius={[0, 4, 4, 0]} name="Products">{topCategories.map((_, index) => <Cell key={`cell-${index}`} fill={categoryColors[index % categoryColors.length]} />)}</Bar>
+                    <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} formatter={(value: number) => formatLKR(value)} />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]} name="Earnings">{topCategories.map((_, index) => <Cell key={`cell-${index}`} fill={topCategories[index]?.color} />)}</Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>

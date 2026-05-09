@@ -55,69 +55,33 @@ const SuperAdminDashboard: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [shopsData, refundsData, categories] = await Promise.all([
+      const [shopsData, refundsData, categories, analyticsData] = await Promise.all([
         api.getShops(),
         api.getAdminRefunds({ limit: 200 }),
         api.getCategories(),
+        api.getSuperAdminAnalytics({ range: '1y' })
       ]);
 
       setShops(shopsData.data);
       setPendingRefunds((refundsData.refunds || []).filter((refund) => String(refund.status || '').toLowerCase() === 'requested').length);
 
-      const vendorIds = (shopsData.data || [])
-        .filter((shop: Shop) => ['approved', 'active'].includes(String(shop.status || '').toLowerCase()))
-        .map((shop: Shop) => shop.id)
-        .filter(Boolean);
+      setTotalSales(analyticsData.totalSales || 0);
 
-      const [vendorMetrics, vendorSeries, vendorBreakdowns] = await Promise.all([
-        Promise.all(vendorIds.map((vendorId: string) => api.getVendorAnalytics(vendorId, { range: '30d' }).catch(() => null))),
-        Promise.all(vendorIds.map((vendorId: string) => api.getVendorTimeSeriesAnalytics(vendorId, { range: '1y', granularity: 'monthly' }).catch(() => ({ timeSeries: [] })))),
-        Promise.all(vendorIds.map((vendorId: string) => api.getVendorEarningsBreakdown(vendorId, { range: '30d' }).catch(() => ({ byCategory: [] })))),
-      ]);
-
-      const aggregatedSales = vendorMetrics.reduce((sum: number, metric: any) => {
-        return sum + Number(metric?.salesMetrics?.totalRevenue || 0);
-      }, 0);
-      setTotalSales(aggregatedSales);
-
-      const monthlyRevenue: Record<string, number> = {};
-      vendorSeries.forEach((series: any) => {
-        (series?.timeSeries || []).forEach((point: any) => {
-          const period = String(point?.period || '');
-          if (!period) return;
-          monthlyRevenue[period] = (monthlyRevenue[period] || 0) + Number(point?.revenue || 0);
-        });
-      });
-
-      const sortedPeriods = Object.keys(monthlyRevenue).sort();
-      setSalesData(sortedPeriods.map((period) => {
-        const sales = monthlyRevenue[period];
-        return {
-          month: toMonthLabel(period),
-          sales,
-          commission: sales * 0.1,
-        };
+      const salesSeries = (analyticsData.salesByMonth || []).map(item => ({
+        month: toMonthLabel(item.month),
+        sales: item.sales,
+        commission: item.commission
       }));
-
-      const categoryMap: Record<string, number> = {};
-      vendorBreakdowns.forEach((breakdown: any) => {
-        (breakdown?.byCategory || []).forEach((entry: any) => {
-          const key = String(entry?.category || 'Other');
-          categoryMap[key] = (categoryMap[key] || 0) + Number(entry?.earnings || 0);
-        });
-      });
+      setSalesData(salesSeries);
 
       const categoryNameById = new Map((categories || []).map((cat: any) => [String(cat.id), String(cat.name)]));
-      const totalCategoryEarnings = Object.values(categoryMap).reduce((sum, value) => sum + value, 0);
-      const topCategories = Object.entries(categoryMap)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
-        .map(([categoryId, earnings], index) => ({
-          name: categoryNameById.get(categoryId) || (categoryId === 'null' ? 'Uncategorized' : 'Other'),
-          value: totalCategoryEarnings > 0 ? Math.round((earnings / totalCategoryEarnings) * 100) : 0,
-          color: chartColors[index % chartColors.length],
-        }))
-        .filter((entry) => entry.value > 0);
+      const totalCategoryEarnings = (analyticsData.topCategories || []).reduce((sum, c) => sum + (c.earnings || 0), 0);
+      
+      const topCategories = (analyticsData.topCategories || []).map((c, index) => ({
+        name: categoryNameById.get(c.categoryId) || (c.categoryId === 'null' ? 'Uncategorized' : 'Other'),
+        value: totalCategoryEarnings > 0 ? Math.round(((c.earnings || 0) / totalCategoryEarnings) * 100) : 0,
+        color: chartColors[index % chartColors.length]
+      })).filter(entry => entry.value > 0);
 
       setCategoryData(topCategories);
     } catch (error: any) {

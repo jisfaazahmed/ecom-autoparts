@@ -3,6 +3,9 @@ const Vehicle = require('../models/vehicle');
 const Review = require('../models/review.model');
 const VendorProduct = require('../models/vendorProduct');
 const mongoose = require('mongoose');
+const NotificationService = require('../services/notification.service');
+const User = require('../models/user');
+
 
 const normalizeRole = (role) => {
   const normalized = String(role || '').toLowerCase().replace('_', '');
@@ -184,6 +187,15 @@ exports.createProduct = async (req, res) => {
     const savedProduct = await Product.findById(newProduct._id)
       .populate('category', 'name')
       .populate('createdBy', 'name shopName email status role');
+
+    // Notify Super Admin if created by a vendor (role ADMIN)
+    if (requester.role === 'admin') {
+      const vendor = await User.findById(requester.id);
+      if (vendor) {
+        NotificationService.notifySuperAdminProductAdded(savedProduct, vendor).catch(err => console.error('Error notifying super admin product added:', err));
+      }
+    }
+
 
     res.status(201).json(mapProduct(savedProduct));
   } catch (err) {

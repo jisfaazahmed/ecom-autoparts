@@ -2,6 +2,8 @@ const User = require('../models/user')
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const emailService = require('../services/email.service');
+const NotificationService = require('../services/notification.service');
 
 exports.register = async (req, res) => {
   try {
@@ -33,6 +35,14 @@ exports.register = async (req, res) => {
     });
 
     await user.save();
+
+    // Notify Super Admin based on role
+    if (normalizedRole === 'ADMIN') {
+      NotificationService.notifySuperAdminVendorApplied(user).catch(err => console.error('Error notifying super admin vendor application:', err));
+    } else if (normalizedRole === 'CUSTOMER') {
+      NotificationService.notifySuperAdminCustomerSignup(user).catch(err => console.error('Error notifying super admin customer signup:', err));
+    }
+
 
     const payload = { user: { id: user.id, role: user.role } };
     jwt.sign(payload, process.env.JWT_SECRET || 'secret123', { expiresIn: '1d' }, (err, token) => {
@@ -159,11 +169,9 @@ exports.forgotPassword = async (req, res) => {
     user.resetTokenExpiry = resetTokenExpiry;
     await user.save();
 
-    // TODO: Send email with reset link
-    // For now, return token for testing (in production, send via email)
     const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/reset-password?token=${resetToken}`;
     
-    console.log(`Password reset link for ${normalizedEmail}: ${resetLink}`);
+    await emailService.sendPasswordReset(normalizedEmail, resetLink);
 
     res.status(200).json({ 
       message: 'Password reset link has been sent to your email',
@@ -270,6 +278,31 @@ exports.changePassword = async (req, res) => {
   }
 };
 
+
+// PUT /auth/profile - Update user profile
+exports.updateProfile = async (req, res) => {
+  try {
+    const { name, fullName, phone, address } = req.body;
+    const userId = req.user?.id || req.user?._id;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (name || fullName) user.name = name || fullName;
+    if (phone) user.phone = phone;
+    if (address) user.address = address;
+
+    await user.save();
+
+    const roleLower = (user.role || '').toLowerCase().replace('_', '');
+    res.status(200).json({
+
 exports.registerSeller = async (req, res) => {
   try {
     req.body.role = 'ADMIN';
@@ -300,6 +333,7 @@ exports.updateProfile = async (req, res) => {
     
     const roleLower = (user.role || '').toLowerCase().replace('_', '');
     res.json({
+
       message: 'Profile updated successfully',
       user: {
         id: user.id,
@@ -307,6 +341,16 @@ exports.updateProfile = async (req, res) => {
         fullName: user.name,
         role: roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer',
         status: user.status,
+
+        phone: user.phone,
+        address: user.address,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error updating profile' });
+
         shopName: user.shopName,
         createdAt: user.createdAt
       }
@@ -314,5 +358,6 @@ exports.updateProfile = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).send('Server error');
+
   }
 };

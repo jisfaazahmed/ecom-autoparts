@@ -113,7 +113,8 @@ class PaymentService {
     async processCardPayment(payment, cardDetails, order) {
         const amountInCents = Math.round(payment.amount * 100);
 
-        const paymentIntent = await stripe.paymentIntents.create({
+        const receiptEmail = String(cardDetails.email || '').trim();
+        const stripePayload = {
             amount: amountInCents,
             currency: payment.currency.toLowerCase(),
             payment_method_types: ['card'],
@@ -123,8 +124,13 @@ class PaymentService {
                 userId: payment.user.toString()
             },
             description: `Payment for Order ${order.orderNumber}`,
-            receipt_email: cardDetails.email
-        });
+        };
+
+        if (receiptEmail) {
+            stripePayload.receipt_email = receiptEmail;
+        }
+
+        const paymentIntent = await stripe.paymentIntents.create(stripePayload);
 
         payment.provider = {
             name: 'stripe',

@@ -146,6 +146,7 @@ export interface ApiOrder {
   stripePaymentId?: string;
   stripeSessionId?: string;
   transactionId?: string;
+  guestInvoiceToken?: string;
   couponId?: string;
   discountAmount?: number;
   commissionAmount?: number;
@@ -976,6 +977,49 @@ class ApiClient {
     };
   }
 
+  async downloadInvoice(orderId: string, options?: { guestToken?: string }): Promise<boolean> {
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    const guestToken = options?.guestToken;
+
+    if (guestToken) {
+      headers['x-guest-invoice-token'] = guestToken;
+    } else if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const endpoint = guestToken
+      ? `${API_BASE}/orders/${orderId}/invoice/guest`
+      : `${API_BASE}/orders/${orderId}/invoice`;
+
+    const resp = await fetch(endpoint, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!resp.ok) {
+      let message = 'Failed to download invoice';
+      try {
+        const data = await resp.json();
+        message = data.message || message;
+      } catch (error) {
+        void error;
+      }
+      throw new Error(message);
+    }
+
+    const blob = await resp.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `invoice-${orderId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+    return true;
+  }
+
   async createOrder(data: {
     items: { productId: string; quantity: number }[];
     shippingAddress: string;
@@ -989,13 +1033,18 @@ class ApiClient {
     couponCode?: string;
     notes?: string;
   }): Promise<ApiOrder> {
-    const response = await this.request<ApiOrder | { order?: ApiOrder; data?: ApiOrder }>('/orders', {
+    const response = await this.request<ApiOrder | { order?: ApiOrder; data?: ApiOrder; guestInvoiceToken?: string }>('/orders', {
       method: 'POST',
       body: JSON.stringify(data),
     });
 
     const rawOrder = (response as any)?.order || (response as any)?.data || response;
-    return this.normalizeOrder(rawOrder);
+    const normalizedOrder = this.normalizeOrder(rawOrder);
+    const guestInvoiceToken = (response as any)?.guestInvoiceToken;
+    if (guestInvoiceToken) {
+      normalizedOrder.guestInvoiceToken = guestInvoiceToken;
+    }
+    return normalizedOrder;
   }
 
   async updateOrderStatus(id: string, status: string, trackingNumber?: string): Promise<ApiOrder> {
@@ -1267,6 +1316,25 @@ class ApiClient {
     return this.request<any>(`/vendors/${vendorId}/analytics/earnings?${searchParams.toString()}`);
   }
 
+  // ============ SYSTEM ANALYTICS ============
+
+  async getSuperAdminAnalytics(params?: {
+    range?: '7d' | '30d' | '90d' | '1y';
+  }): Promise<{
+    totalSales: number;
+    totalCommission: number;
+    totalOrders: number;
+    totalVendors: number;
+    ordersByStatus: Record<string, number>;
+    salesByMonth: Array<{ month: string; sales: number; commission: number; orders: number }>;
+    topCategories: Array<{ categoryId: string; earnings: number }>;
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params?.range) searchParams.set('range', params.range);
+    const response = await this.request<{ success: boolean; data: any }>(`/admin-analytics/superadmin?${searchParams.toString()}`);
+    return response.data;
+  }
+
   // ============ SETTLEMENT / PAYOUT ============
 
   async getSettlementSummary(vendorId: string): Promise<any> {
@@ -1277,12 +1345,26 @@ class ApiClient {
     status?: string;
     page?: number;
     limit?: number;
+    startDate?: string;
+    endDate?: string;
   }): Promise<any> {
     const searchParams = new URLSearchParams();
     if (params?.status) searchParams.set('status', params.status);
     if (params?.page) searchParams.set('page', String(params.page));
     if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
     return this.request<any>(`/vendors/${vendorId}/settlements?${searchParams.toString()}`);
+  }
+
+  async getVendorSettlementRangeSummary(vendorId: string, params?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{ totalSettlements: number; totalCommission: number; totalPayable: number; totalOrderAmount: number; totalRefunded: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
+    return this.request<{ totalSettlements: number; totalCommission: number; totalPayable: number; totalOrderAmount: number; totalRefunded: number }>(`/vendors/${vendorId}/settlements/summary?${searchParams.toString()}`);
   }
 
   async getSettlementDetails(settlementId: string): Promise<any> {
@@ -1515,7 +1597,7 @@ class ApiClient {
     return response.data || response;
   }
 
-  async createPaymentIntent(data: { orderId: string; mockScenario?: 'requires_action' | 'fail_once' | 'always_fail' }): Promise<{
+  async createPaymentIntent(data: { orderId: string; email?: string; mockScenario?: 'requires_action' | 'fail_once' | 'always_fail' }): Promise<{
     paymentIntentId: string;
     clientSecret: string;
     amount: number;

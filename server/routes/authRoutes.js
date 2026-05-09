@@ -46,7 +46,6 @@ const { verifyToken } = require('../middleware/authMiddleware');
  * description: User already exists
  */
 router.post('/register', authController.register);
-router.post('/register/seller', authController.registerSeller);
 
 /**
  * @swagger
