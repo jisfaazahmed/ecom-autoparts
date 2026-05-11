@@ -234,6 +234,14 @@ export interface ApiVehicleVariant {
   created_at?: string;
 }
 
+export interface ApiResolvedVehicle {
+  id: string;
+  year: number;
+  make: string;
+  model: string;
+  submodel?: string;
+}
+
 export interface ApiUserVehicle {
   id: string;
   userId: string;
@@ -272,6 +280,12 @@ export interface AuthResponse {
   user: ApiUser;
   accessToken: string;
   refreshToken: string;
+}
+
+export interface StartRegisterResponse {
+  message: string;
+  verificationId: string;
+  expiresInMinutes?: number;
 }
 
 export interface StockCheckResult {
@@ -539,6 +553,8 @@ class ApiClient {
       // If no refresh token or refresh failed, clear tokens and redirect
       localStorage.removeItem('auth_token');
       localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/auth/customer?redirect=' + window.location.pathname;
       throw new Error('Session expired, please login again.');
@@ -596,8 +612,12 @@ class ApiClient {
   logout() {
     this.accessToken = null;
     this.refreshToken = null;
+    // Clear all auth keys (new + legacy) so refresh can't restore a session.
+    localStorage.removeItem('auth_token');
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
   }
 
   isAuthenticated(): boolean {
@@ -616,14 +636,14 @@ class ApiClient {
     return response;
   }
 
-  async register(data: {
+  async startRegister(data: {
     email: string;
     password: string;
     fullName: string;
     phone?: string;
-  }): Promise<AuthResponse> {
+  }): Promise<StartRegisterResponse> {
     const normalizedEmail = data.email.trim().toLowerCase();
-    const response = await this.request<AuthResponse>('/auth/register', {
+    return this.request<StartRegisterResponse>('/auth/register/start', {
       method: 'POST',
       body: JSON.stringify({
         name: data.fullName,
@@ -632,8 +652,54 @@ class ApiClient {
         role: 'CUSTOMER',
       }),
     });
+  }
+
+  async startRegisterSeller(data: {
+    email: string;
+    password: string;
+    fullName: string;
+    phone?: string;
+    shopName: string;
+    shopDescription?: string;
+    businessRegistration?: string;
+  }): Promise<StartRegisterResponse> {
+    const normalizedEmail = data.email.trim().toLowerCase();
+    return this.request<StartRegisterResponse>('/auth/register/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: data.fullName,
+        email: normalizedEmail,
+        password: data.password,
+        role: 'ADMIN',
+        shopName: data.shopName,
+      }),
+    });
+  }
+
+  async verifyRegisterOtp(data: { verificationId: string; otp: string }): Promise<AuthResponse> {
+    const response = await this.request<AuthResponse>('/auth/register/verify', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
     this.setTokens(response.accessToken, response.refreshToken);
     return response;
+  }
+
+  async resendRegisterOtp(data: { verificationId: string }): Promise<StartRegisterResponse> {
+    return this.request<StartRegisterResponse>('/auth/register/resend', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Backward-compatible wrappers: perform start phase only
+  async register(data: {
+    email: string;
+    password: string;
+    fullName: string;
+    phone?: string;
+  }): Promise<any> {
+    return this.startRegister(data);
   }
 
   async registerSeller(data: {
@@ -644,20 +710,8 @@ class ApiClient {
     shopName: string;
     shopDescription?: string;
     businessRegistration?: string;
-  }): Promise<AuthResponse> {
-    const normalizedEmail = data.email.trim().toLowerCase();
-    const response = await this.request<AuthResponse>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: data.fullName,
-        email: normalizedEmail,
-        password: data.password,
-        role: 'ADMIN',
-        shopName: data.shopName,
-      }),
-    });
-    this.setTokens(response.accessToken, response.refreshToken);
-    return response;
+  }): Promise<any> {
+    return this.startRegisterSeller(data);
   }
 
   async getCurrentUser(): Promise<ApiUser> {
@@ -1435,6 +1489,20 @@ class ApiClient {
 
   async getAllVehicleVariants(): Promise<ApiVehicleVariant[]> {
     return this.request<ApiVehicleVariant[]>('/vehicles/variants/all');
+  }
+
+  async resolveVehicle(params: {
+    year: number;
+    make: string;
+    model: string;
+    submodel?: string;
+  }): Promise<ApiResolvedVehicle> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('year', String(params.year));
+    searchParams.set('make', params.make);
+    searchParams.set('model', params.model);
+    if (params.submodel) searchParams.set('submodel', params.submodel);
+    return this.request<ApiResolvedVehicle>(`/vehicles/resolve?${searchParams.toString()}`);
   }
 
   async createVehicleBrand(data: { name: string; logoUrl?: string }): Promise<ApiVehicleBrand> {

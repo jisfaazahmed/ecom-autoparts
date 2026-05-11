@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { Vehicle } from '@/types';
 
 interface CartItem {
   id: string;
@@ -26,7 +27,7 @@ interface CartItem {
 
 interface StoreState {
   cart: CartItem[];
-  userVehicle: any | null;
+  userVehicle: Vehicle | null;
   vehicleRefreshKey: number;
   addToCart: (item: CartItem) => void;
   removeFromCart: (id: string) => void;
@@ -34,7 +35,7 @@ interface StoreState {
   clearCart: () => void;
   getCartTotal: () => number;
   getCartCount: () => number;
-  setUserVehicle: (vehicle: any | null) => void;
+  setUserVehicle: (vehicle: Vehicle | null) => void;
   triggerVehicleRefresh: () => void;
 }
 

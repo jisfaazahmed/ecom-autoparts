@@ -30,11 +30,13 @@ const signupSchema = z.object({
 
 const SellerAuth: React.FC = () => {
   const navigate = useNavigate();
-  const { signIn, signUpSeller, user, role } = useAuth();
+  const { signIn, signUpSeller, verifySignupOtp, resendSignupOtp, user, role } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [pendingVerificationId, setPendingVerificationId] = useState<string | null>(null);
+  const [otp, setOtp] = useState('');
 
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [signupForm, setSignupForm] = useState({
@@ -114,7 +116,7 @@ const SellerAuth: React.FC = () => {
 
     setLoading(true);
     
-    const { error } = await signUpSeller({
+    const { error, verificationId } = await signUpSeller({
       email: signupForm.email.trim(),
       password: signupForm.password,
       fullName: signupForm.fullName,
@@ -135,13 +137,54 @@ const SellerAuth: React.FC = () => {
       return;
     }
 
+    if (verificationId) {
+      setPendingVerificationId(verificationId);
+      toast({
+        title: 'Verify your email',
+        description: 'We sent a 6-digit OTP to your email address.',
+      });
+    }
+    setLoading(false);
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pendingVerificationId) return;
+
+    setLoading(true);
+    const { error } = await verifySignupOtp({ verificationId: pendingVerificationId, otp });
+    setLoading(false);
+
+    if (error) {
+      toast({
+        title: 'Verification Failed',
+        description: error.message || 'Invalid or expired OTP.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     toast({
       title: 'Application Submitted',
       description: 'Your seller application is pending approval.',
     });
     navigate('/admin');
+  };
 
+  const handleResendOtp = async () => {
+    if (!pendingVerificationId) return;
+    setLoading(true);
+    const { error } = await resendSignupOtp({ verificationId: pendingVerificationId });
     setLoading(false);
+    if (error) {
+      toast({
+        title: 'Could not resend',
+        description: error.message || 'Please try again shortly.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    toast({ title: 'OTP resent', description: 'Check your email for the new code.' });
   };
 
   return (
@@ -230,7 +273,8 @@ const SellerAuth: React.FC = () => {
             </TabsContent>
 
             <TabsContent value="register">
-              <form onSubmit={handleSignup} className="space-y-4">
+              {!pendingVerificationId ? (
+                <form onSubmit={handleSignup} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="signup-name">Full Name *</Label>
@@ -378,7 +422,47 @@ const SellerAuth: React.FC = () => {
                 <p className="text-xs text-muted-foreground text-center">
                   By registering, you agree to our Terms of Service. Your shop will be reviewed within 24-48 hours.
                 </p>
-              </form>
+                </form>
+              ) : (
+                <form onSubmit={handleVerifyOtp} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="seller-otp">Email OTP</Label>
+                    <Input
+                      id="seller-otp"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="Enter 6-digit code"
+                      value={otp}
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Enter the code sent to <span className="font-medium">{signupForm.email}</span>.
+                    </p>
+                  </div>
+
+                  <Button type="submit" className="w-full" disabled={loading || otp.length !== 6}>
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Verify & Submit
+                  </Button>
+
+                  <Button type="button" variant="outline" className="w-full" onClick={handleResendOtp} disabled={loading}>
+                    Resend code
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full"
+                    onClick={() => {
+                      setPendingVerificationId(null);
+                      setOtp('');
+                    }}
+                    disabled={loading}
+                  >
+                    Back
+                  </Button>
+                </form>
+              )}
             </TabsContent>
           </Tabs>
 

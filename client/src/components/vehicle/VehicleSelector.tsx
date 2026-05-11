@@ -187,6 +187,9 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
         variant: saved.variant?.name || vinDecoded.trim || 'Base',
         year: saved.year,
         vin,
+        brandId: saved.brandId || saved.brand?.id,
+        modelId: saved.modelId || saved.model?.id,
+        variantId: saved.variantId || saved.variant?.id,
       };
 
       setUserVehicle(vehicle);
@@ -235,6 +238,9 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
         model: selectedModelData.name,
         variant: selectedVariantData.name,
         year: parseInt(selectedYear),
+        brandId: selectedBrand,
+        modelId: selectedModel,
+        variantId: selectedVariant,
       };
 
       setUserVehicle(vehicle);

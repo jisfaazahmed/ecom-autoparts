@@ -5,6 +5,9 @@ export interface Vehicle {
   variant: string;
   year: number;
   vin?: string;
+  brandId?: string;
+  modelId?: string;
+  variantId?: string;
 }
 
 export interface Product {

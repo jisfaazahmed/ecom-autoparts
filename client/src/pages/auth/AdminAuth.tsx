@@ -83,31 +83,42 @@ const AdminAuth: React.FC = () => {
     }
 
     setLoading(true);
-    const { error } = await signIn(loginForm.email, loginForm.password);
-    
-    if (error) {
-      setLoading(false);
-      return;
-    }
-    
-    // Check role after sign in - the useAuth hook will update the role
-    // We need to fetch the current user to verify superadmin access
-    const currentUser = await api.getCurrentUser();
-    const userRoles = currentUser?.userRoles?.map(r => r.role) || [];
-    
-    if (!userRoles.includes('superadmin')) {
-      await signOut();
-      setLoading(false);
+    try {
+      const { error } = await signIn(loginForm.email, loginForm.password);
+
+      if (error) {
+        toast({
+          title: 'Login Failed',
+          description: error.message || 'Invalid credentials.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      // Check role after sign in - fetch current user to verify superadmin access
+      const currentUser = await api.getCurrentUser();
+      const userRoles = currentUser?.userRoles?.map((r) => r.role) || [];
+
+      if (!userRoles.includes('superadmin')) {
+        await signOut();
+        toast({
+          title: 'Access Denied',
+          description: 'This portal is for Super Administrators only.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      navigate('/superadmin');
+    } catch (err: any) {
       toast({
-        title: 'Access Denied',
-        description: 'This portal is for Super Administrators only.',
+        title: 'Login Failed',
+        description: err?.message || 'Unable to sign in right now.',
         variant: 'destructive',
       });
-      return;
+    } finally {
+      setLoading(false);
     }
-    
-    navigate('/superadmin');
-    setLoading(false);
   };
 
   return (

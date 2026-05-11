@@ -49,7 +49,7 @@ const Index: React.FC = () => {
   }, []);
 
   const features = [
-    { icon: Zap, title: 'Fast Shipping', desc: 'Free delivery on orders $99+' },
+    { icon: Zap, title: 'Fast Shipping', desc: 'Free delivery on orders over LKR 50,000' },
     { icon: Shield, title: 'OEM Quality', desc: 'Certified authentic parts' },
     { icon: Truck, title: 'Easy Returns', desc: '30-day hassle-free returns' },
     { icon: Star, title: 'Expert Support', desc: '24/7 technical assistance' },
