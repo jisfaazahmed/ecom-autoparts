@@ -937,10 +937,14 @@ class OrderService {
                 await NotificationService.notifyOrderCreated(order);
             } else if (event === 'order_confirmed') {
                 await NotificationService.notifyOrderConfirmed(order);
-            } else if (event === 'order_shipped') {
+            } else if (event === 'order_shipped' || event === 'shipped') {
                 await NotificationService.notifyOrderShipped(order, order.trackingNumber, order.courierPartner);
-            } else if (event === 'order_delivered') {
+            } else if (event === 'order_delivered' || event === 'delivered') {
                 await NotificationService.notifyOrderDelivered(order);
+            } else if (event === 'processing_started' || event === 'processing') {
+                await NotificationService.notifyOrderProcessing(order);
+            } else if (event === 'out_for_delivery') {
+                await NotificationService.notifyOrderOutForDelivery(order);
             } else if (event === 'payment_failed') {
                 await NotificationService.notifyPaymentFailed(order);
             } else if (event === 'payment_success') {

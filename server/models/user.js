@@ -70,6 +70,20 @@ const userSchema = new mongoose.Schema({
       },
     },
   },
+  notificationPreferences: {
+    orderUpdates: {
+      inApp: { type: Boolean, default: true },
+      email: { type: Boolean, default: true }
+    },
+    promotions: {
+      inApp: { type: Boolean, default: true },
+      email: { type: Boolean, default: false }
+    },
+    security: {
+      inApp: { type: Boolean, default: true },
+      email: { type: Boolean, default: true }
+    }
+  },
   createdAt: {
     type: Date,
     default: Date.now,

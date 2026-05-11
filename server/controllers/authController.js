@@ -2,6 +2,8 @@ const User = require('../models/user')
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const emailService = require('../services/email.service');
+const NotificationService = require('../services/notification.service');
 
 exports.register = async (req, res) => {
   try {
@@ -33,6 +35,14 @@ exports.register = async (req, res) => {
     });
 
     await user.save();
+
+    // Notify Super Admin based on role
+    if (normalizedRole === 'ADMIN') {
+      NotificationService.notifySuperAdminVendorApplied(user).catch(err => console.error('Error notifying super admin vendor application:', err));
+    } else if (normalizedRole === 'CUSTOMER') {
+      NotificationService.notifySuperAdminCustomerSignup(user).catch(err => console.error('Error notifying super admin customer signup:', err));
+    }
+
 
     const payload = { user: { id: user.id, role: user.role } };
     jwt.sign(payload, process.env.JWT_SECRET || 'secret123', { expiresIn: '1d' }, (err, token) => {
@@ -159,11 +169,9 @@ exports.forgotPassword = async (req, res) => {
     user.resetTokenExpiry = resetTokenExpiry;
     await user.save();
 
-    // TODO: Send email with reset link
-    // For now, return token for testing (in production, send via email)
     const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/reset-password?token=${resetToken}`;
     
-    console.log(`Password reset link for ${normalizedEmail}: ${resetLink}`);
+    await emailService.sendPasswordReset(normalizedEmail, resetLink);
 
     res.status(200).json({ 
       message: 'Password reset link has been sent to your email',

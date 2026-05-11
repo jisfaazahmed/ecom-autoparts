@@ -1002,7 +1002,8 @@ class ApiClient {
       try {
         const data = await resp.json();
         message = data.message || message;
-      } catch {}
+      } 
+      catch {}
       throw new Error(message);
     }
 
@@ -1314,6 +1315,25 @@ class ApiClient {
     return this.request<any>(`/vendors/${vendorId}/analytics/earnings?${searchParams.toString()}`);
   }
 
+  // ============ SYSTEM ANALYTICS ============
+
+  async getSuperAdminAnalytics(params?: {
+    range?: '7d' | '30d' | '90d' | '1y';
+  }): Promise<{
+    totalSales: number;
+    totalCommission: number;
+    totalOrders: number;
+    totalVendors: number;
+    ordersByStatus: Record<string, number>;
+    salesByMonth: Array<{ month: string; sales: number; commission: number; orders: number }>;
+    topCategories: Array<{ categoryId: string; earnings: number }>;
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params?.range) searchParams.set('range', params.range);
+    const response = await this.request<{ success: boolean; data: any }>(`/admin-analytics/superadmin?${searchParams.toString()}`);
+    return response.data;
+  }
+
   // ============ SETTLEMENT / PAYOUT ============
 
   async getSettlementSummary(vendorId: string): Promise<any> {
@@ -1324,12 +1344,26 @@ class ApiClient {
     status?: string;
     page?: number;
     limit?: number;
+    startDate?: string;
+    endDate?: string;
   }): Promise<any> {
     const searchParams = new URLSearchParams();
     if (params?.status) searchParams.set('status', params.status);
     if (params?.page) searchParams.set('page', String(params.page));
     if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
     return this.request<any>(`/vendors/${vendorId}/settlements?${searchParams.toString()}`);
+  }
+
+  async getVendorSettlementRangeSummary(vendorId: string, params?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{ totalSettlements: number; totalCommission: number; totalPayable: number; totalOrderAmount: number; totalRefunded: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
+    return this.request<{ totalSettlements: number; totalCommission: number; totalPayable: number; totalOrderAmount: number; totalRefunded: number }>(`/vendors/${vendorId}/settlements/summary?${searchParams.toString()}`);
   }
 
   async getSettlementDetails(settlementId: string): Promise<any> {

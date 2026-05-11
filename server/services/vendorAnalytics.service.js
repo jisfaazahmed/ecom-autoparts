@@ -70,7 +70,7 @@ class VendorAnalyticsService {
             const dailySales = await SubOrder.aggregate([
                 {
                     $match: {
-                        seller: mongoose.Types.ObjectId(vendorId),
+                        seller: new mongoose.Types.ObjectId(vendorId),
                         createdAt: { $gte: startDate, $lte: endDate },
                         status: { $ne: 'cancelled' }
                     }
@@ -94,7 +94,7 @@ class VendorAnalyticsService {
             const previousRevenue = await SubOrder.aggregate([
                 {
                     $match: {
-                        seller: mongoose.Types.ObjectId(vendorId),
+                        seller: new mongoose.Types.ObjectId(vendorId),
                         createdAt: { $gte: previousStartDate, $lt: startDate },
                         status: { $ne: 'cancelled' }
                     }
@@ -167,7 +167,7 @@ class VendorAnalyticsService {
             const topProducts = await SubOrder.aggregate([
                 {
                     $match: {
-                        seller: mongoose.Types.ObjectId(vendorId),
+                        seller: new mongoose.Types.ObjectId(vendorId),
                         createdAt: { $gte: startDate, $lte: endDate }
                     }
                 },
@@ -329,7 +329,7 @@ class VendorAnalyticsService {
             const timeSeries = await SubOrder.aggregate([
                 {
                     $match: {
-                        seller: mongoose.Types.ObjectId(vendorId),
+                        seller: new mongoose.Types.ObjectId(vendorId),
                         createdAt: { $gte: startDate, $lte: endDate },
                         status: { $ne: 'cancelled' }
                     }
@@ -371,7 +371,7 @@ class VendorAnalyticsService {
             const byCategory = await SubOrder.aggregate([
                 {
                     $match: {
-                        seller: mongoose.Types.ObjectId(vendorId),
+                        seller: new mongoose.Types.ObjectId(vendorId),
                         createdAt: { $gte: startDate, $lte: endDate },
                         status: { $ne: 'cancelled' }
                     }

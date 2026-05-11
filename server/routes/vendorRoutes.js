@@ -15,6 +15,7 @@ router.patch('/:id/commission', vendorController.updateVendorCommission);
 router.get('/:id/analytics', vendorController.getVendorAnalytics);
 router.get('/:id/analytics/timeseries', vendorController.getTimeSeriesAnalytics);
 router.get('/:id/analytics/earnings', vendorController.getEarningsBreakdown);
+router.get('/:id/settlements/summary', vendorController.getVendorSettlementRangeSummary);
 
 // ========== SETTLEMENT / PAYOUT ENDPOINTS ==========
 router.get('/:id/settlement/summary', vendorController.getSettlementSummary);
