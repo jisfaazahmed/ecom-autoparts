@@ -32,13 +32,13 @@ services:
       - MONGO_PASSWORD=password
       - MONGO_DB=ecom-autoparts
       - CLIENT_URL=http://localhost:3000
-      # SMTP (set real values to send signup OTP emails)
-      - SMTP_HOST=smtp.gmail.com
-      - SMTP_PORT=587
-      - SMTP_SECURE=false
-      - SMTP_USER=automatrix365@gmail.com
-      - SMTP_PASS=mxunykupzmyichgm
-      - EMAIL_FROM=AutoMatrix <automatrix365@gmail.com>
+      # SMTP values are loaded from root .env (never commit real secrets)
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_SECURE=${SMTP_SECURE}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - EMAIL_FROM=${EMAIL_FROM}
     volumes:
       - ./server:/app
       - /app/node_modules
