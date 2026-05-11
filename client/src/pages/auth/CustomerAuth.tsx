@@ -25,11 +25,15 @@ const signupSchema = z.object({
 const CustomerAuth: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signIn, signUp, user, role, signOut } = useAuth();
+    const { signIn, signUp, verifySignupOtp, resendSignupOtp, user, signOut } = useAuth();
+  
+  const role = user?.role;
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [pendingVerificationId, setPendingVerificationId] = useState<string | null>(null);
+  const [otp, setOtp] = useState('');
 
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   const [signupForm, setSignupForm] = useState({
@@ -101,15 +105,68 @@ const CustomerAuth: React.FC = () => {
     }
 
     setLoading(true);
-    const { error } = await signUp(signupForm.email, signupForm.password, {
-      full_name: signupForm.fullName,
+    const { error, verificationId } = await signUp({
+      email: signupForm.email,
+      password: signupForm.password,
+      fullName: signupForm.fullName,
       phone: signupForm.phone,
     });
     setLoading(false);
     
-    if (!error) {
-      navigate('/');
+    if (error) {
+      toast({
+        title: 'Signup Failed',
+        description: error.message || 'Unable to create account.',
+        variant: 'destructive',
+      });
+      return;
     }
+
+    if (verificationId) {
+      setPendingVerificationId(verificationId);
+      toast({
+        title: 'Check your email',
+        description: 'We sent a 6-digit OTP to verify your email.',
+      });
+      return;
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pendingVerificationId) return;
+
+    setLoading(true);
+    const { error } = await verifySignupOtp({ verificationId: pendingVerificationId, otp });
+    setLoading(false);
+
+    if (error) {
+      toast({
+        title: 'Verification Failed',
+        description: error.message || 'Invalid or expired OTP.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const from = (location.state)?.from?.pathname || '/shop';
+    navigate(from);
+  };
+
+  const handleResendOtp = async () => {
+    if (!pendingVerificationId) return;
+    setLoading(true);
+    const { error } = await resendSignupOtp({ verificationId: pendingVerificationId });
+    setLoading(false);
+    if (error) {
+      toast({
+        title: 'Could not resend',
+        description: error.message || 'Please try again shortly.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    toast({ title: 'OTP resent', description: 'Check your email for the new code.' });
   };
 
   return (
@@ -204,7 +261,8 @@ const CustomerAuth: React.FC = () => {
             </TabsContent>
 
             <TabsContent value="signup">
-              <form onSubmit={handleSignup} className="space-y-4">
+              {!pendingVerificationId ? (
+                <form onSubmit={handleSignup} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="signup-name">Full Name *</Label>
                   <div className="relative">
@@ -264,7 +322,47 @@ const CustomerAuth: React.FC = () => {
                   {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                   Create Account
                 </Button>
-              </form>
+                </form>
+              ) : (
+                <form onSubmit={handleVerifyOtp} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-otp">Email OTP</Label>
+                    <Input
+                      id="signup-otp"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="Enter 6-digit code"
+                      value={otp}
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Enter the code sent to <span className="font-medium">{signupForm.email}</span>.
+                    </p>
+                  </div>
+
+                  <Button type="submit" className="w-full" disabled={loading || otp.length !== 6}>
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Verify & Continue
+                  </Button>
+
+                  <Button type="button" variant="outline" className="w-full" onClick={handleResendOtp} disabled={loading}>
+                    Resend code
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="w-full"
+                    onClick={() => {
+                      setPendingVerificationId(null);
+                      setOtp('');
+                    }}
+                    disabled={loading}
+                  >
+                    Back
+                  </Button>
+                </form>
+              )}
             </TabsContent>
           </Tabs>
 

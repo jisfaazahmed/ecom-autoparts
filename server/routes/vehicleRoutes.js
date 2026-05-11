@@ -10,6 +10,7 @@ const { verifyToken, isSuperAdmin } = require('../middleware/authMiddleware');
 router.get('/years', vehicleController.getYears);
 router.get('/makes', vehicleController.getMakes);
 router.get('/models', vehicleController.getModels);
+router.get('/resolve', vehicleController.resolveVehicle);
 
 // ===== Registration Number Lookup =====
 router.get('/lookup/:registrationNumber', regcheckController.lookupRegistration);

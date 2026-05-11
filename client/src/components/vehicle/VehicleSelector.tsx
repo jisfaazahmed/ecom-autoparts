@@ -261,6 +261,9 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
         brand: selectedBrandData.name,
         model: selectedModelData.name,
         year: parseInt(selectedYear),
+        brandId: selectedBrand,
+        modelId: selectedModel,
+        variantId: selectedVariant,
       };
 
       setUserVehicle(vehicle);

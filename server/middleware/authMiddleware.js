@@ -1,8 +1,16 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/user');
 
-// 1. Verify Token (Is user logged in?)
-exports.verifyToken = (req, res, next) => {
+function buildMockUser() {
+  return {
+    _id: process.env.MOCK_AUTH_USER_ID || '000000000000000000000001',
+    id: process.env.MOCK_AUTH_USER_ID || '000000000000000000000001',
+    role: process.env.MOCK_AUTH_ROLE || 'customer',
+    email: process.env.MOCK_AUTH_EMAIL || 'mock-customer@example.com',
+  };
+}
+
+function decodeAuthToken(req) {
   const authHeader = req.header('Authorization');
   const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
   const token = bearerToken || req.header('x-auth-token');

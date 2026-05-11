@@ -90,6 +90,65 @@ const Shop: React.FC = () => {
     setSelectedCategory(categoryFromUrl);
   }, [searchFromUrl, categoryFromUrl]);
 
+  const [resolvedVehicleId, setResolvedVehicleId] = useState<string | null>(null);
+  const [vehicleResolveLoading, setVehicleResolveLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolve = async () => {
+      if (!userVehicle) {
+        setResolvedVehicleId(null);
+        return;
+      }
+
+      const make = String(userVehicle.brand || '').trim();
+      const model = String(userVehicle.model || '').trim();
+      const submodel = String(userVehicle.variant || '').trim();
+      const year = Number(userVehicle.year);
+
+      if (!make || !model || !Number.isFinite(year)) {
+        setResolvedVehicleId(null);
+        return;
+      }
+
+      setVehicleResolveLoading(true);
+      try {
+        const resolved = await api.resolveVehicle({
+          year,
+          make,
+          model,
+          submodel: submodel || undefined,
+        });
+        if (!cancelled) setResolvedVehicleId(resolved?.id || null);
+      } catch {
+        if (!cancelled) setResolvedVehicleId(null);
+      } finally {
+        if (!cancelled) setVehicleResolveLoading(false);
+      }
+    };
+
+    resolve();
+    return () => {
+      cancelled = true;
+    };
+  }, [userVehicle]);
+
+  const isProductCompatible = (product: ApiProduct) => {
+    // No resolved vehicle => don't block buying / don't show "Not Compatible".
+    if (!resolvedVehicleId) return true;
+
+    const variants = product.compatibleVariants;
+    // If vendor didn't select any compatibility variants, treat as universal-fit.
+    if (!Array.isArray(variants) || variants.length === 0) return true;
+
+    // Backend exposes compatibleVariants as Vehicle IDs.
+    if (variants.includes(resolvedVehicleId)) return true;
+
+    // Fallback: some older records may store a string key; keep a loose check.
+    return variants.some((v) => String(v).includes(resolvedVehicleId));
+  };
+
   const mapToProductCard = (p: ApiProduct) => {
     // Build human-readable list of compatible vehicles from model data
     const vehicleStrings: string[] = [];
@@ -142,7 +201,10 @@ const Shop: React.FC = () => {
       (p) => p.price >= priceRange[0] && p.price <= priceRange[1]
     );
 
-    // Compatibility filter — when showCompatibleOnly is on, server already returns only matching products so no extra client-side filter needed.
+    // Compatibility filter
+    if (showCompatibleOnly && resolvedVehicleId) {
+      filtered = filtered.filter((p) => isProductCompatible(p));
+    }
 
     // Sorting
     switch (sortBy) {
@@ -158,7 +220,7 @@ const Shop: React.FC = () => {
     }
 
     return filtered;
-  }, [products, search, selectedCategory, priceRange, sortBy]);
+  }, [products, search, selectedCategory, priceRange, sortBy, showCompatibleOnly, resolvedVehicleId]);
 
   const {
     paginatedItems: paginatedProducts,
@@ -167,17 +229,6 @@ const Shop: React.FC = () => {
     goToPage,
   } = usePagination(filteredProducts, { itemsPerPage: 12 });
 
-  const isProductCompatible = (product: ApiProduct) => {
-    if (!userVehicle) return true;
-    // Check model-based compatibility
-    const models = product.compatibleVehicleModels;
-    if (!models || models.length === 0) return true;
-    return models.some((m) => {
-      const brandMatch = m.brandName?.toLowerCase() === userVehicle.brand.toLowerCase();
-      const modelMatch = m.name?.toLowerCase() === userVehicle.model.toLowerCase();
-      return brandMatch && modelMatch;
-    });
-  };
 
   const FilterContent = () => (
     <div className="space-y-6">

@@ -12,9 +12,9 @@ const { verifyToken } = require('../middleware/authMiddleware');
 
 /**
  * @swagger
- * /api/auth/register:
+ * /api/auth/register/start:
  * post:
- * summary: Register a new user
+ * summary: Start registration (sends email OTP)
  * tags: [Auth]
  * requestBody:
  * required: true
@@ -41,10 +41,68 @@ const { verifyToken } = require('../middleware/authMiddleware');
  * description: Only required if role is ADMIN
  * responses:
  * 201:
- * description: Registration successful
+ * description: OTP sent
  * 400:
- * description: User already exists
+ * description: Validation error
  */
+router.post('/register/start', authController.registerStart);
+
+/**
+ * @swagger
+ * /api/auth/register/verify:
+ * post:
+ * summary: Verify email OTP and complete registration
+ * tags: [Auth]
+ * requestBody:
+ * required: true
+ * content:
+ * application/json:
+ * schema:
+ * type: object
+ * required:
+ * - verificationId
+ * - otp
+ * properties:
+ * verificationId:
+ * type: string
+ * otp:
+ * type: string
+ * responses:
+ * 200:
+ * description: Registration verified, tokens returned
+ * 400:
+ * description: Invalid or expired OTP
+ * 429:
+ * description: Too many attempts
+ */
+router.post('/register/verify', authController.registerVerify);
+
+/**
+ * @swagger
+ * /api/auth/register/resend:
+ * post:
+ * summary: Resend email OTP for registration
+ * tags: [Auth]
+ * requestBody:
+ * required: true
+ * content:
+ * application/json:
+ * schema:
+ * type: object
+ * required:
+ * - verificationId
+ * properties:
+ * verificationId:
+ * type: string
+ * responses:
+ * 200:
+ * description: OTP resent
+ * 429:
+ * description: Too many requests
+ */
+router.post('/register/resend', authController.registerResend);
+
+// Legacy endpoints kept for compatibility (now instruct clients to use /register/start)
 router.post('/register', authController.register);
 router.post('/register/seller', authController.registerSeller);
 

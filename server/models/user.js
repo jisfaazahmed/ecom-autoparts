@@ -33,6 +33,39 @@ const userSchema = new mongoose.Schema({
     enum: ['ACTIVE', 'PENDING', 'REJECTED', 'SUSPENDED'],
     default: 'ACTIVE',
   },
+  // Email verification for signup/login (separate from wallet OTP)
+  emailVerification: {
+    codeHash: {
+      type: String,
+      default: null,
+    },
+    expiresAt: {
+      type: Date,
+      default: null,
+    },
+    attempts: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    lastSentAt: {
+      type: Date,
+      default: null,
+    },
+    sendCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    sendWindowStartAt: {
+      type: Date,
+      default: null,
+    },
+    verifiedAt: {
+      type: Date,
+      default: null,
+    },
+  },
   shopName: {
     type: String, // Only for Vendors
   },
