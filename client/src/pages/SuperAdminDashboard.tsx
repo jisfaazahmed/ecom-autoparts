@@ -63,11 +63,12 @@ const SuperAdminDashboard: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [shopsData, refundsData, categories, ordersData] = await Promise.all([
+      const [shopsData, refundsData, categories, ordersData, productsData] = await Promise.all([
         api.getShops(),
         api.getAdminRefunds({ limit: 200 }),
         api.getCategories(),
         api.getPlatformOrders({ limit: 500 }).catch(() => ({ data: [] })),
+        api.getSuperAdminProducts({ limit: 1000 }).catch(() => ({ data: [] })),
       ]);
 
       const shopList = shopsData.data || [];
@@ -76,6 +77,20 @@ const SuperAdminDashboard: React.FC = () => {
       setPendingRefunds(requestedRefunds.length);
 
       const orders = ordersData.data || [];
+      const products = productsData.data || [];
+      const productCategoryById = new Map<string, string>();
+      products.forEach((product: any) => {
+        const productId = String(product?.id || product?._id || '');
+        if (!productId) return;
+        const categoryId = String(
+          product?.categoryId ||
+          product?.category?._id ||
+          product?.category?.id ||
+          product?.category ||
+          ''
+        );
+        if (categoryId) productCategoryById.set(productId, categoryId);
+      });
       const commissionRateByVendor = new Map(
         shopList.map((shop: Shop) => [String(shop.id), Number(shop.commissionRate ?? 10)])
       );
@@ -168,13 +183,29 @@ const SuperAdminDashboard: React.FC = () => {
 
       const categoryMap: Record<string, number> = {};
       orders.forEach((order: any) => {
-        const subOrders = Array.isArray(order?.subOrders) ? order.subOrders : [];
-        subOrders.forEach((sub: any) => {
-          const categoryKey = String(sub?.category || 'Other');
-          categoryMap[categoryKey] = (categoryMap[categoryKey] || 0) + Number(sub?.subtotal || sub?.totalAmount || 0);
+        const items = Array.isArray(order?.items) ? order.items : [];
+        items.forEach((item: any) => {
+          const itemProduct = item?.product;
+          const itemProductId = String(itemProduct?._id || itemProduct?.id || item?.productId || item?.product || '');
+          const categoryKey = String(
+            itemProduct?.category?._id ||
+            itemProduct?.category?.id ||
+            itemProduct?.category ||
+            productCategoryById.get(itemProductId) ||
+            'Other'
+          );
+          const itemAmount = Number(
+            item?.totalPrice ||
+            item?.finalPrice ||
+            (Number(item?.price || item?.unitPrice || 0) * Number(item?.quantity || 0)) ||
+            0
+          );
+          categoryMap[categoryKey] = (categoryMap[categoryKey] || 0) + itemAmount;
         });
       });
-      const categoryNameById = new Map((categories || []).map((cat: any) => [String(cat.id), String(cat.name)]));
+      const categoryNameById = new Map(
+        (categories || []).map((cat: any) => [String(cat?.id || cat?._id), String(cat?.name || 'Uncategorized')])
+      );
       const totalCategoryEarnings = Object.values(categoryMap).reduce((sum, value) => sum + value, 0);
       const topCategories = Object.entries(categoryMap)
         .sort((a, b) => b[1] - a[1])
@@ -269,6 +300,7 @@ const SuperAdminDashboard: React.FC = () => {
                   <AreaChart data={salesData}>
                     <defs>
                       <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(190, 100%, 50%)" stopOpacity={0.3} /><stop offset="95%" stopColor="hsl(190, 100%, 50%)" stopOpacity={0} /></linearGradient>
+                      <linearGradient id="commissionGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0.3} /><stop offset="95%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0} /></linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(240, 10%, 18%)" />
                     <XAxis dataKey="month" stroke="hsl(215, 20%, 55%)" fontSize={12} />
@@ -278,6 +310,7 @@ const SuperAdminDashboard: React.FC = () => {
                       formatter={(value: number) => formatLKR(value)}
                     />
                     <Area type="monotone" dataKey="sales" stroke="hsl(190, 100%, 50%)" fill="url(#salesGradient)" strokeWidth={2} />
+                    <Area type="monotone" dataKey="commission" stroke="hsl(142, 76%, 36%)" fill="url(#commissionGradient)" strokeWidth={2} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>

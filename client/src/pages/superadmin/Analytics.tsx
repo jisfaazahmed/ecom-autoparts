@@ -72,6 +72,16 @@ const SuperAdminAnalytics: React.FC = () => {
     return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
 
+  const mapOrderStatusToBucket = (order: ApiOrder) => {
+    const raw = String((order as any)?.overallStatus || order.status || 'pending').toLowerCase();
+    if (['pending', 'confirmed'].includes(raw)) return 'pending';
+    if (['processing', 'accepted', 'packed', 'ready_to_ship', 'out_for_delivery', 'partially_shipped'].includes(raw)) return 'processing';
+    if (['shipped'].includes(raw)) return 'shipped';
+    if (['delivered', 'partially_delivered'].includes(raw)) return 'delivered';
+    if (['cancelled', 'refunded', 'return_requested', 'returned'].includes(raw)) return 'cancelled';
+    return 'pending';
+  };
+
   const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     try {
@@ -82,7 +92,7 @@ const SuperAdminAnalytics: React.FC = () => {
 
       try {
         const [orders, shops, products, categories] = await Promise.all([
-          api.getPlatformOrders({ limit: 200 }).catch(() => ({ data: [] })),
+          api.getPlatformOrders({ limit: 500 }).catch(() => ({ data: [] })),
           api.getShops().catch(() => ({ data: [] })),
           api.getSuperAdminProducts({ limit: 500 }).catch(() => ({ data: [] })),
           api.getCategories().catch(() => [])
@@ -163,7 +173,7 @@ const SuperAdminAnalytics: React.FC = () => {
 
         const statusCounts: Record<string, number> = {};
         scopedOrders.forEach((o: ApiOrder) => {
-          const key = String(o.status || o.overallStatus || 'pending').toLowerCase();
+          const key = mapOrderStatusToBucket(o);
           statusCounts[key] = (statusCounts[key] || 0) + 1;
         });
         setOrdersByStatus([
@@ -190,16 +200,34 @@ const SuperAdminAnalytics: React.FC = () => {
 
       setTotalVendors(shopsToUse.filter((s: ApiShop) => s.status === 'approved' || s.status === 'active').length);
 
-      if (productsToUse.length > 0) {
-        const categoryNameById = new Map((categoriesData || []).map((c) => [String(c.id), String(c.name)]));
-        const categoryCounts: Record<string, number> = {};
-        productsToUse.forEach((p: ApiProduct) => {
-          const categoryId = String((p as any)?.categoryId || (p as any)?.category?.id || (p as any)?.category?._id || '');
-          const catName = p.category?.name || categoryNameById.get(categoryId) || 'Uncategorized';
-          categoryCounts[catName] = (categoryCounts[catName] || 0) + 1;
+      const categoryNameById = new Map((categoriesData || []).map((c: any) => [String(c?.id || c?._id), String(c?.name || 'Uncategorized')]));
+      const productCategoryById = new Map<string, string>();
+      productsToUse.forEach((p: ApiProduct) => {
+        const productId = String((p as any)?.id || (p as any)?._id || '');
+        if (!productId) return;
+        const categoryId = String((p as any)?.categoryId || (p as any)?.category?.id || (p as any)?.category?._id || (p as any)?.category || '');
+        if (categoryId) productCategoryById.set(productId, categoryId);
+      });
+
+      const categoryCounts: Record<string, number> = {};
+      scopedOrders.forEach((order: ApiOrder) => {
+        const items = Array.isArray((order as any)?.items) ? (order as any).items : [];
+        items.forEach((item: any) => {
+          const itemProduct = item?.product;
+          const itemProductId = String(itemProduct?._id || itemProduct?.id || item?.productId || item?.product || '');
+          const categoryId = String(
+            itemProduct?.category?._id ||
+            itemProduct?.category?.id ||
+            itemProduct?.category ||
+            productCategoryById.get(itemProductId) ||
+            ''
+          );
+          const categoryName = itemProduct?.category?.name || categoryNameById.get(categoryId) || 'Uncategorized';
+          const quantity = Number(item?.quantity || 1);
+          categoryCounts[categoryName] = (categoryCounts[categoryName] || 0) + (Number.isFinite(quantity) && quantity > 0 ? quantity : 1);
         });
-        setTopCategories(Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, value]) => ({ name, value })));
-      }
+      });
+      setTopCategories(Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, value]) => ({ name, value })));
     } catch (error: unknown) {
       toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
     }
@@ -283,7 +311,7 @@ const SuperAdminAnalytics: React.FC = () => {
             <CardContent>
               <div className="h-[180px] lg:h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart><Pie data={ordersByStatus.filter(s => s.value > 0)} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" strokeWidth={0}>{ordersByStatus.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} /></PieChart>
+                  <PieChart><Pie data={ordersByStatus.filter(s => s.value > 0)} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" strokeWidth={0}>{ordersByStatus.filter(s => s.value > 0).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} /></PieChart>
                 </ResponsiveContainer>
               </div>
               <div className="space-y-2 mt-4">{ordersByStatus.map(item => (<div key={item.name} className="flex items-center justify-between text-sm"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} /><span className="text-muted-foreground">{item.name}</span></div><span className="font-medium">{item.value}</span></div>))}</div>
