@@ -734,7 +734,8 @@ export default function Checkout() {
       setWalletPendingOrderId(null);
       setWalletMockOtpHint(null);
       setWalletOtp('');
-      const guestToken = (order as any).guestInvoiceToken || null;
+
+      const guestToken = (order as any).guestInvoiceToken || null;t
       skipEmptyCartRedirect.current = true;
       clearCart();
       toast.success('Wallet payment completed successfully!');
