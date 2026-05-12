@@ -1596,12 +1596,11 @@ class ApiClient {
     return response.data || response;
   }
 
-  async createPaymentIntent(data: { orderId: string; email?: string; mockScenario?: 'requires_action' | 'fail_once' | 'always_fail' }): Promise<{
+  async createPaymentIntent(data: { orderId: string; email?: string }): Promise<{
     paymentIntentId: string;
     clientSecret: string;
     amount: number;
     currency: string;
-    mockMode?: boolean;
     requiresAction?: boolean;
     nextAction?: any;
   }> {
@@ -1610,7 +1609,6 @@ class ApiClient {
       clientSecret: string;
       amount: number;
       currency: string;
-      mockMode?: boolean;
       requiresAction?: boolean;
       nextAction?: any;
       data?: {
@@ -1618,7 +1616,6 @@ class ApiClient {
         clientSecret: string;
         amount: number;
         currency: string;
-        mockMode?: boolean;
         requiresAction?: boolean;
         nextAction?: any;
       };
@@ -1686,21 +1683,12 @@ class ApiClient {
     return response.data || response;
   }
 
-  async topupWalletMock(amount: number): Promise<{ balance: number }> {
-    const response = await this.request<any>('/payments/wallet/topup-mock', {
-      method: 'POST',
-      body: JSON.stringify({ amount }),
-    });
-    return response.data || response;
-  }
-
   async payWithWallet(data: { orderId: string; otp?: string }): Promise<{
     orderId?: string;
     paymentId?: string;
     paymentStatus?: string;
     balance?: number;
     requiresOtp?: boolean;
-    mockOtp?: string;
     expiresAt?: string;
   }> {
     const response = await this.request<any>('/payments/wallet/pay', {

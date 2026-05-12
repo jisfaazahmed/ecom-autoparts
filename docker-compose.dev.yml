@@ -10,12 +10,13 @@ services:
       - MONGO_INITDB_ROOT_USERNAME=root
       - MONGO_INITDB_ROOT_PASSWORD=password
       - MONGO_INITDB_DATABASE=ecom-autoparts
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+    # healthcheck temporarily disabled for local dev to avoid startup hangs
+    # healthcheck:
+    #  test: ["CMD-SHELL", "mongosh --quiet --username $$MONGO_INITDB_ROOT_USERNAME --password $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\" | grep 1"]
+    #  interval: 10s
+    #  timeout: 5s
+    #  retries: 5
+    #  start_period: 30s
 
   server:
     build: ./server
@@ -38,7 +39,7 @@ services:
       - /app/node_modules
     depends_on:
       mongo:
-        condition: service_healthy
+        condition: service_started
 
   client:
     build: ./client

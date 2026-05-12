@@ -36,7 +36,6 @@ interface ShippingForm {
 
 const DEFAULT_SHIPPING_COST = 500;
 const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as string | undefined;
-const useStripeMock = (import.meta.env.VITE_USE_STRIPE_MOCK as string | undefined) === 'true';
 const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
 
 const ZONE_1_CITIES = ['colombo'];
@@ -78,33 +77,6 @@ type ConfirmInlineCardFn = (
   clientSecret: string,
   billing: { name: string; email: string; phone: string }
 ) => Promise<string>;
-
-interface MockCardInput {
-  cardNumber: string;
-  cardHolder: string;
-  expiry: string;
-  cvc: string;
-}
-
-function formatCardNumber(value: string) {
-  const digits = value.replace(/\D/g, '').slice(0, 16);
-  return digits.replace(/(.{4})/g, '$1 ').trim();
-}
-
-function formatExpiry(value: string) {
-  const digits = value.replace(/\D/g, '').slice(0, 4);
-  if (digits.length < 3) return digits;
-  return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-}
-
-function validateMockCard(card: MockCardInput): string | null {
-  const number = card.cardNumber.replace(/\s/g, '');
-  if (number.length !== 16) return 'Enter a valid 16-digit card number';
-  if (!card.cardHolder.trim()) return 'Card holder name is required';
-  if (!/^\d{2}\/\d{2}$/.test(card.expiry)) return 'Enter expiry in MM/YY format';
-  if (!/^\d{3,4}$/.test(card.cvc)) return 'Enter a valid CVC';
-  return null;
-}
 
 function InlineCardForm({
   onReady,
@@ -272,12 +244,6 @@ export default function Checkout() {
   const [step, setStep] = useState(1);
   const [paymentMethod, setPaymentMethod] = useState<'stripe' | 'wallet' | 'cod'>('stripe');
   const [confirmInlineCard, setConfirmInlineCard] = useState<ConfirmInlineCardFn | null>(null);
-  const [mockCard, setMockCard] = useState<MockCardInput>({
-    cardNumber: '4242 4242 4242 4242',
-    cardHolder: '',
-    expiry: '12/34',
-    cvc: '123',
-  });
   const [loading, setLoading] = useState(false);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [shippingError, setShippingError] = useState<string | null>(null);
@@ -291,7 +257,6 @@ export default function Checkout() {
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletOtp, setWalletOtp] = useState('');
   const [walletPendingOrderId, setWalletPendingOrderId] = useState<string | null>(null);
-  const [walletMockOtpHint, setWalletMockOtpHint] = useState<string | null>(null);
   
   const [savedAddresses, setSavedAddresses] = useState<ApiAddress[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>('new');
@@ -536,23 +501,14 @@ export default function Checkout() {
       return;
     }
 
-    const isMockInline = useStripeMock && !stripePromise;
-    if (!isMockInline && !stripePromise) {
+    if (!stripePromise) {
       toast.error('Stripe card form is not configured. Set VITE_STRIPE_PUBLISHABLE_KEY first.');
       return;
     }
 
-    if (!isMockInline && !confirmInlineCard) {
+    if (!confirmInlineCard) {
       toast.error('Card form is not ready. Please wait and try again.');
       return;
-    }
-
-    if (isMockInline) {
-      const validation = validateMockCard(mockCard);
-      if (validation) {
-        toast.error(validation);
-        return;
-      }
     }
 
     setLoading(true);
@@ -577,7 +533,6 @@ export default function Checkout() {
       });
 
       const orderId = order.id || order._id;
-      const guestToken = (order as any).guestInvoiceToken || null;
       if (!orderId) {
         throw new Error('Order created but order ID was not returned');
       }
@@ -587,20 +542,16 @@ export default function Checkout() {
         email: form.email,
       });
 
-      const paymentIntentId = isMockInline
-        ? paymentIntent.paymentIntentId
-        : await confirmInlineCard!(paymentIntent.clientSecret, {
-            name: form.fullName,
-            email: form.email,
-            phone: form.phone,
-          });
+      const paymentIntentId = await confirmInlineCard!(paymentIntent.clientSecret, {
+        name: form.fullName,
+        email: form.email,
+        phone: form.phone,
+      });
 
-      if (isMockInline) {
-        await api.confirmPaymentIntent({
-          orderId,
-          paymentIntentId,
-        });
-      }
+      await api.confirmPaymentIntent({
+        orderId,
+        paymentIntentId,
+      });
 
       skipEmptyCartRedirect.current = true;
       clearCart();
@@ -725,21 +676,18 @@ export default function Checkout() {
 
       if (walletResult.requiresOtp) {
         setWalletPendingOrderId(orderId);
-        setWalletMockOtpHint(walletResult.mockOtp || null);
-        toast.info('OTP sent. Please enter OTP to confirm wallet payment.');
+        toast.info('OTP sent to your email. Please enter it to confirm wallet payment.');
         return;
       }
 
       setWalletBalance(Number(walletResult.balance || walletBalance));
       setWalletPendingOrderId(null);
-      setWalletMockOtpHint(null);
       setWalletOtp('');
 
-      const guestToken = (order as any).guestInvoiceToken || null;t
       skipEmptyCartRedirect.current = true;
       clearCart();
       toast.success('Wallet payment completed successfully!');
-      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&method=wallet${guestToken ? `&guest_token=${encodeURIComponent(guestToken)}` : ''}`);
+      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&method=wallet`);
     } catch (error) {
       console.error('Wallet checkout error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to process wallet payment');
@@ -1114,7 +1062,7 @@ export default function Checkout() {
                           <p className="text-sm font-semibold">Card Processing</p>
                           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
                             <ShieldCheck className="h-3.5 w-3.5" />
-                            {useStripeMock ? 'Stripe mock API' : 'PCI-ready flow'}
+                            PCI-ready flow
                           </div>
                         </div>
                         <div className="flex items-start space-x-3 rounded-lg border border-border/70 bg-background/70 p-4">
@@ -1122,27 +1070,16 @@ export default function Checkout() {
                           <div>
                             <div className="font-medium">In-page card form</div>
                             <div className="text-xs text-muted-foreground">
-                              {useStripeMock
-                                ? 'Mock card flow enabled for development with Stripe-like behavior.'
-                                : 'Enter card details directly in checkout without leaving your site.'}
+                              Enter card details directly in checkout without leaving your site.
                             </div>
                           </div>
                         </div>
 
-                        {!stripePromise && !useStripeMock && (
+                        {!stripePromise && (
                           <Alert>
                             <AlertCircle className="h-4 w-4" />
                             <AlertDescription>
                               Set <strong>VITE_STRIPE_PUBLISHABLE_KEY</strong> in client environment to enable inline card form.
-                            </AlertDescription>
-                          </Alert>
-                        )}
-
-                        {!stripePromise && useStripeMock && (
-                          <Alert>
-                            <AlertCircle className="h-4 w-4" />
-                            <AlertDescription>
-                              Mock mode is active. This simulates card processing via your Stripe mock backend.
                             </AlertDescription>
                           </Alert>
                         )}
@@ -1165,9 +1102,6 @@ export default function Checkout() {
                               placeholder="6-digit OTP"
                               inputMode="numeric"
                             />
-                            {walletMockOtpHint && (
-                              <p className="text-xs text-muted-foreground">Mock OTP: {walletMockOtpHint}</p>
-                            )}
                           </>
                         )}
                       </div>
@@ -1269,55 +1203,6 @@ export default function Checkout() {
                       </div>
                     )}
 
-                    {paymentMethod === 'stripe' && !stripePromise && useStripeMock && (
-                      <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-background p-5 space-y-4">
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-semibold">Mock Card Details</p>
-                          <span className="text-xs text-primary font-medium">Sandbox</span>
-                        </div>
-
-                        <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-                          <p className="text-xs text-muted-foreground mb-1">Card Number</p>
-                          <Input
-                            value={mockCard.cardNumber}
-                            onChange={(e) => setMockCard((prev) => ({ ...prev, cardNumber: formatCardNumber(e.target.value) }))}
-                            placeholder="4242 4242 4242 4242"
-                            inputMode="numeric"
-                          />
-                        </div>
-
-                        <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-                          <p className="text-xs text-muted-foreground mb-1">Card Holder</p>
-                          <Input
-                            value={mockCard.cardHolder}
-                            onChange={(e) => setMockCard((prev) => ({ ...prev, cardHolder: e.target.value }))}
-                            placeholder="John Driver"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-                            <p className="text-xs text-muted-foreground mb-1">Expiry</p>
-                            <Input
-                              value={mockCard.expiry}
-                              onChange={(e) => setMockCard((prev) => ({ ...prev, expiry: formatExpiry(e.target.value) }))}
-                              placeholder="MM/YY"
-                              inputMode="numeric"
-                            />
-                          </div>
-                          <div className="rounded-lg border border-border/70 bg-background px-4 py-3">
-                            <p className="text-xs text-muted-foreground mb-1">CVC</p>
-                            <Input
-                              value={mockCard.cvc}
-                              onChange={(e) => setMockCard((prev) => ({ ...prev, cvc: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
-                              placeholder="123"
-                              inputMode="numeric"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
                     {paymentMethod === 'wallet' && (
                       <div className="rounded-xl border border-emerald-300/40 bg-emerald-50/40 p-5 space-y-3">
                         <p className="text-sm font-medium">Wallet balance: {formatLKR(walletBalance)}</p>
@@ -1331,9 +1216,6 @@ export default function Checkout() {
                               placeholder="Enter OTP"
                               inputMode="numeric"
                             />
-                            {walletMockOtpHint && (
-                              <p className="text-xs text-muted-foreground">Mock OTP: {walletMockOtpHint}</p>
-                            )}
                           </>
                         )}
                       </div>

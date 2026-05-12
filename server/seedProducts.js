@@ -13,6 +13,7 @@ const config = require('./config/config');
 const Category = require('./models/category');
 const Product = require('./models/product');
 const Vehicle = require('./models/vehicle');
+const User = require('./models/user');
 
 async function seedProducts() {
   const { MONGO_IP, MONGO_PORT, MONGO_USER, MONGO_PASSWORD, MONGO_DB } = config;
@@ -50,6 +51,16 @@ async function seedProducts() {
     const vehicleIds = sampleVehicle ? [sampleVehicle._id] : [];
     if (sampleVehicle) console.log('Found sample vehicle for compatibility linkage:', sampleVehicle.searchString);
 
+    const productOwner = await User.findOne({
+      role: { $in: ['SUPER_ADMIN', 'ADMIN'] },
+      status: 'ACTIVE',
+    }).select('_id name email role');
+    if (productOwner) {
+      console.log(`Using product owner: ${productOwner.name} (${productOwner.email}, ${productOwner.role})`);
+    } else {
+      console.warn('No active admin/super-admin found. Seeded products will not have a vendor owner.');
+    }
+
     // 2. Define some easy-to-recognize sample products
     const sampleProducts = [
       {
@@ -57,45 +68,54 @@ async function seedProducts() {
         description: 'Sample brake pad set for testing cart and checkout.',
         price: 3500,
         stock: 25,
-        partNumber: 'TEST-BRAKE-001',
+        sku: 'TEST-BRAKE-001',
         image: '',
         category: category._id,
         compatibleVehicles: vehicleIds,
         isActive: true,
+        status: 'Approved',
+        createdBy: productOwner?._id,
       },
       {
         name: 'Test Engine Oil 5W-30',
         description: 'Sample engine oil product for testing.',
         price: 4200,
         stock: 40,
-        partNumber: 'TEST-OIL-002',
+        sku: 'TEST-OIL-002',
         image: '',
         category: category._id,
         compatibleVehicles: [],
         isActive: true,
+        status: 'Approved',
+        createdBy: productOwner?._id,
       },
       {
         name: 'Test Air Filter',
         description: 'Sample air filter for testing search and orders.',
         price: 2800,
         stock: 30,
-        partNumber: 'TEST-FILTER-003',
+        sku: 'TEST-FILTER-003',
         image: '',
         category: category._id,
         compatibleVehicles: [],
         isActive: true,
+        status: 'Approved',
+        createdBy: productOwner?._id,
       },
     ];
 
-    const partNumbers = sampleProducts.map((p) => p.partNumber);
+    const skus = sampleProducts.map((p) => p.sku);
 
     // 3. Remove any previous copies of these test products
-    await Product.deleteMany({ partNumber: { $in: partNumbers } });
+    await Product.deleteMany({ sku: { $in: skus } });
 
     // 4. Insert the fresh sample products
-    await Product.insertMany(sampleProducts);
+    const inserted = await Product.insertMany(sampleProducts);
 
     console.log(`Inserted ${sampleProducts.length} sample products.`);
+    inserted.forEach(p => {
+      console.log(`  - ${p.name} (sku: ${p.sku}, createdBy: ${p.createdBy})`);
+    });
     process.exit(0);
   } catch (err) {
     console.error('Product seed failed:', err.message || err);
