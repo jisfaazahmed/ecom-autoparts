@@ -935,6 +935,9 @@ class OrderService {
 
             if (event === 'order_placed' || event === 'order Placed') {
                 await NotificationService.notifyOrderCreated(order);
+                if (order.couponCode) {
+                    await NotificationService.notifySuperAdminCouponUsed(order);
+                }
             } else if (event === 'order_confirmed') {
                 await NotificationService.notifyOrderConfirmed(order);
             } else if (event === 'order_shipped' || event === 'shipped') {
