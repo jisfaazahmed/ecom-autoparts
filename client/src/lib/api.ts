@@ -1002,9 +1002,8 @@ class ApiClient {
       try {
         const data = await resp.json();
         message = data.message || message;
-      } catch (error) {
-        void error;
-      }
+      } 
+      catch {}
       throw new Error(message);
     }
 
