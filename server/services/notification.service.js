@@ -16,7 +16,7 @@ class NotificationService {
                 }
                 
                 // Also send a direct email to the configured ADMIN_EMAIL if it's different
-                const configAdminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER;
+                const configAdminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER || process.env.EMAIL_USER || process.env.SUPER_ADMIN_EMAIL;
                 if (configAdminEmail && !superAdmins.some(a => a.email === configAdminEmail)) {
                     const template = this._getTemplate(type, data);
                     if (template.emailFunc && emailService[template.emailFunc]) {
@@ -139,6 +139,12 @@ class NotificationService {
                 priority: 'low',
                 emailFunc: 'sendAdminCustomerSignupAlert'
             },
+            admin_coupon_used: {
+                title: 'Coupon Used',
+                message: `Coupon "${data.couponCode}" was used in order #${data.orderNumber} for a discount of Rs.${data.discountAmount}`,
+                priority: 'normal',
+                emailFunc: 'sendAdminCouponUsedAlert'
+            },
             vendor_application_approved: {
                 title: 'Vendor Application Approved!',
                 message: `Congratulations! Your vendor application for "${data.shopName}" has been approved. You can now start adding products.`,
@@ -153,12 +159,12 @@ class NotificationService {
             },
             refund_initiated: {
                 title: 'Refund Initiated',
-                message: `Refund of ₹${data.refundAmount} initiated for order #${data.orderNumber}.`,
+                message: `Refund of Rs.${data.refundAmount} initiated for order #${data.orderNumber}.`,
                 priority: 'high'
             },
             refund_completed: {
                 title: 'Refund Completed',
-                message: `Refund of ₹${data.refundAmount} completed for order #${data.orderNumber}.`,
+                message: `Refund of Rs.${data.refundAmount} completed for order #${data.orderNumber}.`,
                 priority: 'high'
             },
             payment_failed: {
@@ -168,7 +174,7 @@ class NotificationService {
             },
             payment_success: {
                 title: 'Payment Successful',
-                message: `Payment of ₹${data.paymentAmount} received for order #${data.orderNumber}.`,
+                message: `Payment of Rs.${data.paymentAmount} received for order #${data.orderNumber}.`,
                 priority: 'high'
             }
         };
@@ -486,6 +492,19 @@ class NotificationService {
             });
         } catch (error) {
             console.error('Error notifying super admin customer signup:', error);
+        }
+    }
+
+    static async notifySuperAdminCouponUsed(order) {
+        try {
+            await this.createNotification(null, 'admin_coupon_used', {
+                orderId: order._id,
+                orderNumber: order.orderNumber,
+                couponCode: order.couponCode,
+                discountAmount: order.couponDiscount || order.discountAmount || 0
+            });
+        } catch (error) {
+            console.error('Error notifying super admin coupon used:', error);
         }
     }
 

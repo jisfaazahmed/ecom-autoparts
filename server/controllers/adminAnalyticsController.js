@@ -78,6 +78,26 @@ exports.getSuperAdminAnalytics = async (req, res) => {
         const distinctOrderSet = new Set(subOrders.map(so => so.order.toString()));
         const totalOrders = distinctOrderSet.size;
 
+        // Calculate Average Order Value (AOV)
+        const aov = totalOrders > 0 ? (totalSales / totalOrders) : 0;
+
+        // Fetch Total Refunds from the Refund model
+        const refunds = await Refund.aggregate([
+            {
+                $match: {
+                    createdAt: { $gte: startDate, $lte: endDate },
+                    status: { $in: ['COMPLETED', 'refund_completed'] }
+                }
+            },
+            {
+                $group: {
+                    _id: null,
+                    totalRefundAmount: { $sum: '$amount' }
+                }
+            }
+        ]);
+        const totalRefunds = refunds.length > 0 ? refunds[0].totalRefundAmount : 0;
+
         const salesByMonth = Object.keys(monthlyAggr).sort().map(month => ({
             month,
             sales: monthlyAggr[month].sales,
@@ -115,7 +135,7 @@ exports.getSuperAdminAnalytics = async (req, res) => {
             {
                 $group: {
                     _id: '$productDetails.category',
-                    earnings: { $sum: '$itemDetails.total' }
+                    earnings: { $sum: { $ifNull: ['$itemDetails.total', '$itemDetails.finalPrice'] } }
                 }
             },
             { $sort: { earnings: -1 } },
@@ -127,6 +147,43 @@ exports.getSuperAdminAnalytics = async (req, res) => {
             earnings: c.earnings
         }));
 
+        // 4. Top Performing Vendors logic
+        const topVendorsData = await SubOrder.aggregate([
+            {
+                $match: {
+                    createdAt: { $gte: startDate, $lte: endDate },
+                    status: { $ne: 'cancelled' }
+                }
+            },
+            {
+                $group: {
+                    _id: '$seller',
+                    sales: { $sum: '$totalAmount' },
+                    orders: { $sum: 1 }
+                }
+            },
+            { $sort: { sales: -1 } },
+            { $limit: 5 },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: '_id',
+                    foreignField: '_id',
+                    as: 'vendorDetails'
+                }
+            },
+            { $unwind: '$vendorDetails' },
+            {
+                $project: {
+                    vendorId: '$_id',
+                    shopName: '$vendorDetails.shopName',
+                    name: '$vendorDetails.name',
+                    sales: 1,
+                    orders: 1
+                }
+            }
+        ]);
+
         res.json({
             success: true,
             data: {
@@ -134,9 +191,12 @@ exports.getSuperAdminAnalytics = async (req, res) => {
                 totalCommission,
                 totalOrders,
                 totalVendors,
+                aov,
+                totalRefunds,
                 ordersByStatus: ordersByStatusMap,
                 salesByMonth,
-                topCategories
+                topCategories,
+                topVendors: topVendorsData
             }
         });
 
