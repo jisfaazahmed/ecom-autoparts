@@ -17,7 +17,7 @@ import AdminLayout from '@/components/layout/AdminLayout';
 import { ImageUpload } from '@/components/ui/image-upload';
 import PaginationControls from '@/components/common/PaginationControls';
 import { useAuth } from '@/hooks/useAuth';
-import { api, ApiProduct, ApiCategory, ApiVehicleVariant } from '@/lib/api';
+import { api, ApiProduct, ApiCategory, ApiVehicleModel } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatLKR } from '@/lib/currency';
 import { usePagination } from '@/hooks/usePagination';
@@ -29,7 +29,7 @@ const emptyProduct = {
   stock: '',
   sku: '',
   category_id: '',
-  compatible_variants: [] as string[],
+  compatible_models: [] as string[],
   image_url: '',
 };
 
@@ -39,7 +39,7 @@ const AdminProducts: React.FC = () => {
 
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [categories, setCategories] = useState<ApiCategory[]>([]);
-  const [variants, setVariants] = useState<ApiVehicleVariant[]>([]);
+  const [models, setModels] = useState<ApiVehicleModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -59,14 +59,14 @@ const AdminProducts: React.FC = () => {
     if (!shop?.id) return;
     setLoading(true);
     try {
-      const [productsRes, categoriesRes, variantsRes] = await Promise.all([
+      const [productsRes, categoriesRes, modelsRes] = await Promise.all([
         api.getProducts({ shop: shop.id }),
         api.getCategories(),
-        api.getAllVehicleVariants(),
+        api.getAllVehicleModels(),
       ]);
       setProducts(productsRes.data || []);
       setCategories(categoriesRes || []);
-      setVariants(variantsRes || []);
+      setModels(modelsRes || []);
     } catch (error) {
       console.error('Error fetching data:', error);
     }
@@ -82,7 +82,7 @@ const AdminProducts: React.FC = () => {
   const openEditDialog = (product: ApiProduct) => {
     setEditingProduct(product);
     // Populate compatible_variant (variant IDs)
-    const variantIds = (product.compatibleVehicleVariants || []).map(v =>
+    const modelIds = (product.compatibleVehicleModels || []).map(v =>
       typeof v === 'string' ? v : v.id
     );
     setFormData({
@@ -92,7 +92,7 @@ const AdminProducts: React.FC = () => {
       stock: product.stock.toString(),
       sku: product.sku || '',
       category_id: product.categoryId || '',
-      compatible_variants: variantIds.length > 0 ? variantIds : (product.compatibleVariants || []),
+      compatible_models: modelIds,
       image_url: product.imageUrl || '',
     });
     setProductDialogOpen(true);
@@ -112,7 +112,7 @@ const AdminProducts: React.FC = () => {
       stock: parseInt(formData.stock) || 0,
       sku: formData.sku || null,
       categoryId: formData.category_id || null,
-      compatibleVariants: formData.compatible_variants.length > 0 ? formData.compatible_variants : undefined,
+      compatibleModels: formData.compatible_models.length > 0 ? formData.compatible_models : undefined,
       imageUrl: formData.image_url || null,
     };
 
@@ -157,12 +157,12 @@ const AdminProducts: React.FC = () => {
     }
   };
 
-  const toggleVariant = (variantId: string) => {
+  const toggleModel = (modelId: string) => {
     setFormData(prev => ({
       ...prev,
-      compatible_variants: prev.compatible_variants.includes(variantId)
-        ? prev.compatible_variants.filter(v => v !== variantId)
-        : [...prev.compatible_variants, variantId],
+      compatible_models: prev.compatible_models.includes(modelId)
+        ? prev.compatible_models.filter(v => v !== modelId)
+        : [...prev.compatible_models, modelId],
     }));
   };
 
@@ -310,16 +310,15 @@ const AdminProducts: React.FC = () => {
               </Select>
             </div>
             <div>
-              <Label>Compatible Vehicles ({formData.compatible_variants.length} selected)</Label>
+              <Label>Compatible Vehicles ({formData.compatible_models.length} selected)</Label>
               <ScrollArea className="h-48 border rounded-lg p-2 mt-2">
-                {variants.map(v => {
-                  const brandName = v.model?.brandName || '';
-                  const modelName = v.model?.name || '';
-                  const label = `${brandName} ${modelName} ${v.name} (${v.yearStart}-${v.yearEnd || 'Present'})`;
+                {models.map(m => {
+                  const brandName = m.brand?.name || '';
+                  const label = `${brandName} ${m.name}`;
                   return (
-                    <div key={v.id} className="flex items-center space-x-2 py-1">
-                      <Checkbox id={`edit-${v.id}`} checked={formData.compatible_variants.includes(v.id)} onCheckedChange={() => toggleVariant(v.id)} />
-                      <label htmlFor={`edit-${v.id}`} className="text-sm cursor-pointer">{label}</label>
+                    <div key={m.id} className="flex items-center space-x-2 py-1">
+                      <Checkbox id={`edit-${m.id}`} checked={formData.compatible_models.includes(m.id)} onCheckedChange={() => toggleModel(m.id)} />
+                      <label htmlFor={`edit-${m.id}`} className="text-sm cursor-pointer">{label}</label>
                     </div>
                   );
                 })}

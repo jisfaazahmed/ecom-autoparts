@@ -64,7 +64,6 @@ const Navbar: React.FC = () => {
         id: vehicle.id,
         brand: vehicle.brand?.name ?? '',
         model: vehicle.model?.name ?? '',
-        variant: vehicle.variant?.name ?? '',
         year: vehicle.year,
         registrationNumber: vehicle.registrationNumber,
       });
@@ -188,7 +187,7 @@ const Navbar: React.FC = () => {
                           {`${v.brand?.name} ${v.model?.name}`}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          {v.year} {v.brand?.name} {v.model?.name} {v.variant?.name}
+                          {v.year} {v.brand?.name} {v.model?.name}
                         </span>
                       </div>
                       {v.isActive && (

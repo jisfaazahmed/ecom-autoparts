@@ -91,11 +91,11 @@ const Shop: React.FC = () => {
   }, [searchFromUrl, categoryFromUrl]);
 
   const mapToProductCard = (p: ApiProduct) => {
-    // Build human-readable list of compatible vehicles from variant data
+    // Build human-readable list of compatible vehicles from model data
     const vehicleStrings: string[] = [];
-    if (p.compatibleVehicleVariants && p.compatibleVehicleVariants.length > 0) {
-      for (const v of p.compatibleVehicleVariants) {
-        const label = [v.brandName, v.modelName, v.name].filter(Boolean).join(' ');
+    if (p.compatibleVehicleModels && p.compatibleVehicleModels.length > 0) {
+      for (const m of p.compatibleVehicleModels) {
+        const label = [m.brandName, m.name].filter(Boolean).join(' ');
         if (label && !vehicleStrings.includes(label)) vehicleStrings.push(label);
       }
     }
@@ -169,14 +169,13 @@ const Shop: React.FC = () => {
 
   const isProductCompatible = (product: ApiProduct) => {
     if (!userVehicle) return true;
-    // Check new variant-based compatibility
-    const variants = product.compatibleVehicleVariants;
-    if (!variants || variants.length === 0) return true;
-    return variants.some((v) => {
-      const brandMatch = v.brandName?.toLowerCase() === userVehicle.brand.toLowerCase();
-      const modelMatch = v.modelName?.toLowerCase() === userVehicle.model.toLowerCase();
-      const yearMatch = userVehicle.year >= v.yearStart && (v.yearEnd === null || userVehicle.year <= v.yearEnd);
-      return brandMatch && modelMatch && yearMatch;
+    // Check model-based compatibility
+    const models = product.compatibleVehicleModels;
+    if (!models || models.length === 0) return true;
+    return models.some((m) => {
+      const brandMatch = m.brandName?.toLowerCase() === userVehicle.brand.toLowerCase();
+      const modelMatch = m.name?.toLowerCase() === userVehicle.model.toLowerCase();
+      return brandMatch && modelMatch;
     });
   };
 

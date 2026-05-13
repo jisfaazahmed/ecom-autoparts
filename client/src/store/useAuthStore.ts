@@ -132,7 +132,6 @@ export const useAuthStore = create<AuthState>()((set, get) => {
           id: active.id,
           brand: active.brand?.name ?? '',
           model: active.model?.name ?? '',
-          variant: active.variant?.name ?? '',
           year: active.year,
           registrationNumber: active.registrationNumber,
         });

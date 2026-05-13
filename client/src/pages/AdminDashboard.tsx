@@ -14,7 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { useAuth } from '@/hooks/useAuth';
-import { api, ApiProduct, ApiOrder, ApiCategory, ApiVehicleVariant } from '@/lib/api';
+import { api, ApiProduct, ApiOrder, ApiCategory, ApiVehicleModel } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatLKR } from '@/lib/currency';
 
@@ -25,12 +25,12 @@ const AdminDashboard: React.FC = () => {
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [orders, setOrders] = useState<ApiOrder[]>([]);
   const [categories, setCategories] = useState<ApiCategory[]>([]);
-  const [variants, setVariants] = useState<ApiVehicleVariant[]>([]);
+  const [models, setModels] = useState<ApiVehicleModel[]>([]);
   const [loading, setLoading] = useState(true);
   const [addProductOpen, setAddProductOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   
-  const [newProduct, setNewProduct] = useState({ name: '', description: '', price: '', stock: '', sku: '', category_id: '', compatible_variants: [] as string[] });
+  const [newProduct, setNewProduct] = useState({ name: '', description: '', price: '', stock: '', sku: '', category_id: '', compatible_models: [] as string[] });
 
   useEffect(() => { if (shop?.id) fetchData(); }, [shop?.id]);
 
@@ -68,11 +68,11 @@ const AdminDashboard: React.FC = () => {
         shopId: shop.id,
         isActive: true,
         categoryId: newProduct.category_id || null,
-        compatibleVariants: newProduct.compatible_variants.length > 0 ? newProduct.compatible_variants : undefined,
+        compatibleModels: newProduct.compatible_models.length > 0 ? newProduct.compatible_models : undefined,
       });
       toast({ title: 'Success', description: 'Product added successfully' });
       setAddProductOpen(false);
-      setNewProduct({ name: '', description: '', price: '', stock: '', sku: '', category_id: '', compatible_variants: [] });
+      setNewProduct({ name: '', description: '', price: '', stock: '', sku: '', category_id: '', compatible_models: [] });
       fetchData();
     } catch (error) {
       toast({ title: 'Error', description: error.message || 'Failed to add product', variant: 'destructive' });
@@ -80,8 +80,8 @@ const AdminDashboard: React.FC = () => {
     setSaving(false);
   };
 
-  const toggleVariant = (variantId: string) => {
-    setNewProduct(prev => ({ ...prev, compatible_variants: prev.compatible_variants.includes(variantId) ? prev.compatible_variants.filter(v => v !== variantId) : [...prev.compatible_variants, variantId] }));
+  const toggleModel = (modelId: string) => {
+    setNewProduct(prev => ({ ...prev, compatible_models: prev.compatible_models.includes(modelId) ? prev.compatible_models.filter(v => v !== modelId) : [...prev.compatible_models, modelId] }));
   };
 
   const updateOrderStatus = async (orderId: string, status: ApiOrder['status']) => {
@@ -162,12 +162,12 @@ const AdminDashboard: React.FC = () => {
                   </Select>
                 </div>
                 <div>
-                  <Label>Compatible Vehicles ({newProduct.compatible_variants.length} selected)</Label>
+                  <Label>Compatible Vehicles ({newProduct.compatible_models.length} selected)</Label>
                   <ScrollArea className="h-48 border rounded-lg p-2 mt-2">
-                    {variants.map(v => (
-                      <div key={v.id} className="flex items-center space-x-2 py-1">
-                        <Checkbox id={v.id} checked={newProduct.compatible_variants.includes(v.id)} onCheckedChange={() => toggleVariant(v.id)} />
-                        <label htmlFor={v.id} className="text-sm cursor-pointer">{v.name} ({v.yearStart}-{v.yearEnd || 'Present'})</label>
+                    {models.map(m => (
+                      <div key={m.id} className="flex items-center space-x-2 py-1">
+                        <Checkbox id={m.id} checked={newProduct.compatible_models.includes(m.id)} onCheckedChange={() => toggleModel(m.id)} />
+                        <label htmlFor={m.id} className="text-sm cursor-pointer">{m.name}</label>
                       </div>
                     ))}
                   </ScrollArea>

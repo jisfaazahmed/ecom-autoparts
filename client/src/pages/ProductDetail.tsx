@@ -302,18 +302,16 @@ const ProductDetail: React.FC = () => {
             </div>
 
             {/* Vehicle Compatibility */}
-            {product.compatibleVehicleVariants && product.compatibleVehicleVariants.length > 0 && (
+            {product.compatibleVehicleModels && product.compatibleVehicleModels.length > 0 && (
               <div className="glass-card rounded-xl p-4 space-y-3">
                 <h3 className="font-semibold flex items-center gap-2">
                   <Car className="h-4 w-4 text-primary" />
                   Vehicle Compatibility
                 </h3>
                 {userVehicle && (() => {
-                  const isCompatible = product.compatibleVehicleVariants!.some((v) =>
-                    v.brandName?.toLowerCase() === userVehicle.brand.toLowerCase() &&
-                    v.modelName?.toLowerCase() === userVehicle.model.toLowerCase() &&
-                    userVehicle.year >= v.yearStart &&
-                    (v.yearEnd === null || userVehicle.year <= v.yearEnd)
+                  const isCompatible = product.compatibleVehicleModels!.some((m) =>
+                    m.brandName?.toLowerCase() === userVehicle.brand.toLowerCase() &&
+                    m.name?.toLowerCase() === userVehicle.model.toLowerCase()
                   );
                   return isCompatible ? (
                     <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
@@ -328,23 +326,11 @@ const ProductDetail: React.FC = () => {
                   );
                 })()}
                 <div className="flex flex-wrap gap-1.5 mt-2">
-                  {(() => {
-                    // Group variants by brand+model and show year ranges
-                    const grouped = new Map<string, { brand: string; model: string; variants: string[] }>();
-                    for (const v of product.compatibleVehicleVariants!) {
-                      const key = `${v.brandName}-${v.modelName}`;
-                      if (!grouped.has(key)) {
-                        grouped.set(key, { brand: v.brandName || '', model: v.modelName || '', variants: [] });
-                      }
-                      const yearRange = v.yearEnd ? `${v.yearStart}-${v.yearEnd}` : `${v.yearStart}+`;
-                      grouped.get(key)!.variants.push(`${v.name} (${yearRange})`);
-                    }
-                    return Array.from(grouped.entries()).map(([key, { brand, model, variants }]) => (
-                      <Badge key={key} variant="outline" className="text-xs">
-                        {brand} {model}: {variants.join(', ')}
-                      </Badge>
-                    ));
-                  })()}
+                  {product.compatibleVehicleModels!.map((m) => (
+                    <Badge key={m.id} variant="outline" className="text-xs">
+                      {m.brandName} {m.name}
+                    </Badge>
+                  ))}
                 </div>
               </div>
             )}

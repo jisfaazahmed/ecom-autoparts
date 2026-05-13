@@ -2,7 +2,6 @@ const Product = require('../models/product');
 const Vehicle = require('../models/vehicle');
 const VehicleBrand = require('../models/vehicleBrand.model');
 const VehicleModel = require('../models/vehicleModel.model');
-const VehicleVariant = require('../models/vehicleVariant.model');
 
 // ── Helper: transform a populated product doc for the frontend ──
 function transformProduct(p) {
@@ -19,38 +18,22 @@ function transformProduct(p) {
     obj.category = { id: obj.categoryId, name: obj.category.name };
   }
 
-  // compatibleVehicles (legacy)
-  // if (Array.isArray(obj.compatibleVehicles)) {
-  //   obj.compatibleVehicles = obj.compatibleVehicles.map((v) => {
-  //     if (v && typeof v === 'object' && v._id) {
-  //       return { id: v._id.toString(), year: v.year, make: v.make, model: v.model };
-  //     }
-  //     return typeof v === 'object' ? v.toString() : v;
-  //   });
-  // }
-
-  // compatibleVehicleVariants (new system)
-  if (Array.isArray(obj.compatibleVehicleVariants)) {
-    obj.compatibleVehicleVariants = obj.compatibleVehicleVariants.map((v) => {
-      if (v && typeof v === 'object' && v._id) {
+  // compatibleVehicleModels (new system — model-level compatibility)
+  if (Array.isArray(obj.compatibleVehicleModels)) {
+    obj.compatibleVehicleModels = obj.compatibleVehicleModels.map((m) => {
+      if (m && typeof m === 'object' && m._id) {
         const mapped = {
-          id: v._id.toString(),
-          name: v.name,
-          yearStart: v.yearStart,
-          yearEnd: v.yearEnd ?? null,
+          id: m._id.toString(),
+          name: m.name,
         };
-        // include populated model → brand info when available
-        if (v.model && typeof v.model === 'object' && v.model._id) {
-          mapped.modelId = v.model._id.toString();
-          mapped.modelName = v.model.name;
-          if (v.model.brand && typeof v.model.brand === 'object' && v.model.brand._id) {
-            mapped.brandId = v.model.brand._id.toString();
-            mapped.brandName = v.model.brand.name;
-          }
+        // include populated brand info when available
+        if (m.brand && typeof m.brand === 'object' && m.brand._id) {
+          mapped.brandId = m.brand._id.toString();
+          mapped.brandName = m.brand.name;
         }
         return mapped;
       }
-      return typeof v === 'object' ? v.toString() : v;
+      return typeof m === 'object' ? m.toString() : m;
     });
   }
 
@@ -64,13 +47,9 @@ function applyPopulates(query) {
     .populate('category', 'name slug')
     .populate('compatibleVehicles', 'year make model')
     .populate({
-      path: 'compatibleVehicleVariants',
-      select: 'name model yearStart yearEnd',
-      populate: {
-        path: 'model',
-        select: 'name brand',
-        populate: { path: 'brand', select: 'name' },
-      },
+      path: 'compatibleVehicleModels',
+      select: 'name brand',
+      populate: { path: 'brand', select: 'name' },
     });
 }
 
@@ -120,7 +99,7 @@ exports.getProducts = async (req, res) => {
       limit = 20,
       make,              // vehicle brand name for compatibility filter
       model: vehicleModel, // vehicle model name for compatibility filter
-      year: vehicleYear,   // vehicle year for compatibility filter
+      year: vehicleYear,   // vehicle year for compatibility filter (unused for matching, kept for API compat)
     } = req.query;
 
     const query = {};
@@ -136,7 +115,7 @@ exports.getProducts = async (req, res) => {
       query.compatibleVehicles = vehicleId;
     }
 
-    // Filter by vehicle make/model/year — uses the new VehicleVariant system
+    // Filter by vehicle make/model — uses the VehicleModel system directly
     if (make && vehicleModel) {
       const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -165,27 +144,8 @@ exports.getProducts = async (req, res) => {
         });
       }
 
-      // Step 3: Find VehicleVariants for that model (optionally filtered by year)
-      const variantQuery = { model: vModel._id };
-      if (vehicleYear) {
-        const yr = Number(vehicleYear);
-        variantQuery.yearStart = { $lte: yr };
-        variantQuery.$or = [
-          { yearEnd: { $gte: yr } },
-          { yearEnd: null },
-        ];
-      }
-      const matchingVariants = await VehicleVariant.find(variantQuery).select('_id');
-      const variantIds = matchingVariants.map((v) => v._id);
-
-      if (variantIds.length > 0) {
-        query.compatibleVehicleVariants = { $in: variantIds };
-      } else {
-        return res.json({
-          products: [],
-          pagination: { page: 1, limit: parseInt(limit, 10) || 20, total: 0, totalPages: 0 },
-        });
-      }
+      // Step 3: Filter products by the matched model ID
+      query.compatibleVehicleModels = vModel._id;
     }
 
     // Filter by active status

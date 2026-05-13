@@ -23,7 +23,7 @@ import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
 import { Vehicle } from '@/types';
 import { toast } from 'sonner';
-import { api, ApiVehicleBrand, ApiVehicleModel, ApiVehicleVariant, ApiRegCheckVehicle } from '@/lib/api';
+import { api, ApiVehicleBrand, ApiVehicleModel, ApiRegCheckVehicle } from '@/lib/api';
 
 interface VehicleSelectorProps {
   trigger?: React.ReactNode;
@@ -42,7 +42,6 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
   // Data from database
   const [brands, setBrands] = useState<ApiVehicleBrand[]>([]);
   const [models, setModels] = useState<ApiVehicleModel[]>([]);
-  const [variants, setVariants] = useState<ApiVehicleVariant[]>([]);
   
   // Registration lookup state
   const [regNumber, setRegNumber] = useState('');
@@ -54,7 +53,6 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
   // Manual selection state
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
-  const [selectedVariant, setSelectedVariant] = useState('');
   const [selectedYear, setSelectedYear] = useState('');
 
   // Fetch brands on mount
@@ -90,53 +88,47 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
     fetchModels();
   }, [selectedBrand]);
 
-  // Fetch variants when model changes
-  useEffect(() => {
-    if (!selectedModel) {
-      setVariants([]);
-      return;
-    }
-    
-    const fetchVariants = async () => {
-      setLoading(true);
-      try {
-        const data = await api.getVehicleVariants(selectedModel);
-        setVariants(data || []);
-      } catch (error) {
-        console.error('Failed to fetch variants:', error);
-      }
-      setLoading(false);
-    };
-    fetchVariants();
-  }, [selectedModel]);
-
   const selectedBrandData = brands.find((b) => b.id === selectedBrand);
   const selectedModelData = models.find((m) => m.id === selectedModel);
-  const selectedVariantData = variants.find((v) => v.id === selectedVariant);
 
-  // Generate years array based on variant
+  // Generate years array (current year down to 2000)
   const getYears = () => {
-    if (!selectedVariantData) return [];
-    const endYear = selectedVariantData.yearEnd || new Date().getFullYear();
+    const currentYear = new Date().getFullYear();
     const years = [];
-    for (let y = selectedVariantData.yearStart; y <= endYear; y++) {
+    for (let y = currentYear; y >= 2000; y--) {
       years.push(y);
     }
     return years;
   };
 
-  // Validate registration number format:
-  // 2-3 letters followed by exactly 4 digits, no other characters.
+  // Validate registration number
   const validateRegNumber = (value: string): string | null => {
-    // Strip spaces and dashes for validation
-    const cleaned = value.replace(/[\s-]/g, '');
-    if (cleaned.length === 0) return 'Please enter a registration number';
-    if (/[^A-Za-z0-9]/.test(cleaned)) return 'Only letters and digits are allowed';
-    const match = cleaned.match(/^([A-Za-z]+)(\d+)$/);
-    if (!match) return 'Format: 2-3 letters followed by 4 digits (e.g., CAB-1234)';
-    const [, letters, digits] = match;
-    if (letters.length < 2 || letters.length > 3) return 'Must start with 2 or 3 letters';
-    if (digits.length !== 4) return 'Must end with exactly 4 digits';
+    const raw = value || '';
+
+    if (raw.trim().length === 0) return 'Please enter a registration number';
+
+    // Only allow letters, digits, spaces and dashes in the input
+    if (/[^A-Za-z0-9\s-]/.test(raw)) return 'Only letters, digits, spaces and \'-\' are allowed';
+
+    // Ensure at most one dash is present
+    const dashCount = (raw.match(/-/g) || []).length;
+    if (dashCount > 1) return 'Only one \"-\" is allowed';
+
+    // Remove spaces and dash for core format validation
+    const cleaned = raw.replace(/[\s-]/g, '');
+
+    // Core pattern: 2-3 letters followed by exactly 4 digits
+    const coreMatch = cleaned.match(/^([A-Za-z]{2,3})(\d{4})$/);
+    if (!coreMatch) {
+      // Provide targeted messages when possible
+      const partial = cleaned.match(/^([A-Za-z]+)(\d+)$/);
+      if (!partial) return 'Format: 2-3 letters followed by 4 digits (e.g., ABC-1234)';
+      const [, letters, digits] = partial;
+      if (letters.length < 2 || letters.length > 3) return 'Must start with 2 or 3 letters';
+      if (digits.length !== 4) return 'Must end with exactly 4 digits';
+      return 'Invalid registration number';
+    }
+
     return null; // valid
   };
 
@@ -145,7 +137,6 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
   const resetSelections = () => {
     setSelectedBrand('');
     setSelectedModel('');
-    setSelectedVariant('');
     setSelectedYear('');
     setRegNumber('');
     setRegVehicle(null);
@@ -208,7 +199,6 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
         registrationNumber: regVehicle.registrationNumber,
         brandId: regVehicle.brand.id,
         modelId: regVehicle.model.id,
-        variantId: regVehicle.variant?.id,
         year: regVehicle.year ?? undefined,
       });
 
@@ -216,7 +206,6 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
         id: saved.id,
         brand: saved.brand?.name || regVehicle.brand.name,
         model: saved.model?.name || regVehicle.model.name,
-        variant: saved.variant?.name || regVehicle.variant?.name || 'Base',
         year: saved.year,
         registrationNumber: regVehicle.registrationNumber,
       };
@@ -242,11 +231,11 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
     setRegVehicle(null);
     setRegNotFound(null);
     setRegNumber('');
-    toast.info('Vehicle declined. You can try another registration number.');
+    toast.info('Vehicle declined');
   };
 
   const handleManualSave = async () => {
-    if (!selectedBrandData || !selectedModelData || !selectedVariantData || !selectedYear) {
+    if (!selectedBrandData || !selectedModelData || !selectedYear) {
       toast.error('Please complete all selections');
       return;
     }
@@ -263,16 +252,14 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
       await api.addUserVehicle({
         brandId: selectedBrand,
         modelId: selectedModel,
-        variantId: selectedVariant,
         year: parseInt(selectedYear),
       });
 
       // Also update local store for compatibility filtering
       const vehicle: Vehicle = {
-        id: `${selectedBrand}-${selectedModel}-${selectedVariant}-${selectedYear}`,
+        id: `${selectedBrand}-${selectedModel}-${selectedYear}`,
         brand: selectedBrandData.name,
         model: selectedModelData.name,
-        variant: selectedVariantData.name,
         year: parseInt(selectedYear),
       };
 
@@ -315,7 +302,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
           <TabsList className="grid w-full grid-cols-2 bg-secondary/50">
             <TabsTrigger value="reg" className="gap-2">
               <Search className="h-4 w-4" />
-              Reg. Number
+              Registration Number
             </TabsTrigger>
             <TabsTrigger value="manual" className="gap-2">
               <Car className="h-4 w-4" />
@@ -342,7 +329,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
                 <p className="text-xs text-destructive">{regError}</p>
               ) : (
                 <p className="text-xs text-muted-foreground">
-                  2–3 letters followed by 4 digits (e.g., CAB-1234)
+                  2–3 letters followed by 4 digits (e.g., ABC-1234)
                 </p>
               )}
             </div>
@@ -380,12 +367,6 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
                       <span className="font-medium">{regVehicle.brand.name}</span>
                       <span className="text-muted-foreground">Model</span>
                       <span className="font-medium">{regVehicle.model.name}</span>
-                      {regVehicle.variant && (
-                        <>
-                          <span className="text-muted-foreground">Variant</span>
-                          <span className="font-medium">{regVehicle.variant.name}</span>
-                        </>
-                      )}
                       {regVehicle.year && (
                         <>
                           <span className="text-muted-foreground">Year</span>
@@ -394,7 +375,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground mt-2">
-                      Is this your vehicle? Accept to save it or decline to cancel.
+                      Click 'Save' to save this vehicle
                     </p>
                   </div>
 
@@ -409,7 +390,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
                       ) : (
                         <>
                           <Check className="h-4 w-4 mr-2" />
-                          Accept
+                          Save
                         </>
                       )}
                     </Button>
@@ -454,7 +435,6 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
               <Select value={selectedBrand} onValueChange={(v) => {
                 setSelectedBrand(v);
                 setSelectedModel('');
-                setSelectedVariant('');
                 setSelectedYear('');
               }}>
                 <SelectTrigger className="bg-secondary/50">
@@ -482,7 +462,6 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
                   <Label>Model</Label>
                   <Select value={selectedModel} onValueChange={(v) => {
                     setSelectedModel(v);
-                    setSelectedVariant('');
                     setSelectedYear('');
                   }}>
                     <SelectTrigger className="bg-secondary/50">
@@ -500,38 +479,9 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
               )}
             </AnimatePresence>
 
-            {/* Variant Selection */}
-            <AnimatePresence>
-              {selectedModel && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="space-y-2"
-                >
-                  <Label>Variant</Label>
-                  <Select value={selectedVariant} onValueChange={(v) => {
-                    setSelectedVariant(v);
-                    setSelectedYear('');
-                  }}>
-                    <SelectTrigger className="bg-secondary/50">
-                      <SelectValue placeholder={loading ? "Loading..." : "Select variant"} />
-                    </SelectTrigger>
-                    <SelectContent className="glass-card">
-                      {variants.map((variant) => (
-                        <SelectItem key={variant.id} value={variant.id}>
-                          {variant.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             {/* Year Selection */}
             <AnimatePresence>
-              {selectedVariant && (
+              {selectedModel && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -580,7 +530,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
               <div>
                 <p className="text-xs text-muted-foreground">Active Vehicle</p>
                 <p className="font-medium text-sm">
-                  {userVehicle.year} {userVehicle.brand} {userVehicle.model} {userVehicle.variant}
+                  {userVehicle.year} {userVehicle.brand} {userVehicle.model}
                 </p>
               </div>
             </div>

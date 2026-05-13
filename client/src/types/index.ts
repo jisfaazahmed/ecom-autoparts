@@ -2,7 +2,6 @@ export interface Vehicle {
   id: string;
   brand: string;
   model: string;
-  variant: string;
   year: number;
   registrationNumber?: string;
 }
@@ -116,16 +115,6 @@ export interface VehicleModel {
   id: string;
   name: string;
   brandId?: string;
-  variants?: VehicleVariant[];
-}
-
-export interface VehicleVariant {
-  id: string;
-  name: string;
-  modelId?: string;
-  yearStart?: number;
-  yearEnd?: number;
-  years?: number[];
 }
 
 export interface Profile {

@@ -42,7 +42,6 @@ const MyVehicle: React.FC = () => {
           id: active.id,
           brand: active.brand?.name ?? '',
           model: active.model?.name ?? '',
-          variant: active.variant?.name ?? '',
           year: active.year,
           registrationNumber: active.registrationNumber,
         });
@@ -74,7 +73,6 @@ const MyVehicle: React.FC = () => {
           id: v.id,
           brand: v.brand?.name ?? '',
           model: v.model?.name ?? '',
-          variant: v.variant?.name ?? '',
           year: v.year,
           registrationNumber: v.registrationNumber,
         });
@@ -207,12 +205,7 @@ const MyVehicle: React.FC = () => {
                           <span>Model:</span>
                           <span className="text-foreground font-medium">{vehicle.model?.name}</span>
                         </div>
-                        {vehicle.variant?.name && (
-                          <div className="flex justify-between">
-                            <span>Variant:</span>
-                            <span className="text-foreground font-medium">{vehicle.variant.name}</span>
-                          </div>
-                        )}
+
                         <div className="flex justify-between">
                           <span>Year:</span>
                           <span className="text-foreground font-medium">{vehicle.year}</span>

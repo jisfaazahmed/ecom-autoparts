@@ -16,10 +16,10 @@ const productSchema = new mongoose.Schema({
     required: true
   },
 
-  // 3. Compatible VehicleVariants
-  compatibleVehicleVariants: [{
+  // 3. Compatible VehicleModels
+  compatibleVehicleModels: [{
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'VehicleVariant'
+    ref: 'VehicleModel'
   }],
 
   // Legacy compatibility field still used by existing routes/controllers.
@@ -44,7 +44,7 @@ const productSchema = new mongoose.Schema({
 
 // Index for fast searching by Category and Vehicle
 productSchema.index({ category: 1, compatibleVehicles: 1 });
-productSchema.index({ category: 1, compatibleVehicleVariants: 1 });
+productSchema.index({ category: 1, compatibleVehicleModels: 1 });
 
 // Text index for search functionality (name, description, partNumber)
 productSchema.index({ name: 'text', description: 'text', partNumber: 'text' });
