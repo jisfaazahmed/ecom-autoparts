@@ -146,26 +146,6 @@ exports.register = async (req, res) => {
     return res.status(400).json({
       message: 'Signup now requires email verification. Use /auth/register/start.',
       code: 'OTP_REQUIRED',
-    // Return token so the frontend can auto-login after registration
-    const payload = { user: { id: user.id, role: user.role } };
-    const roleLower = (user.role || '').toLowerCase().replace('_', '');
-    const mappedRole = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
-
-    jwt.sign(payload, process.env.JWT_SECRET || 'secret123', { expiresIn: '1d' }, (err, token) => {
-      if (err) throw err;
-      res.status(201).json({
-        message: role === 'ADMIN'
-          ? 'Registration successful! Wait for Super Admin approval.'
-          : 'Registration successful!',
-        accessToken: token,
-        refreshToken: token,
-        user: {
-          id: user.id,
-          email: user.email,
-          fullName: user.name,
-          role: mappedRole,
-        },
-      });
     });
   } catch (err) {
     console.error(err);

@@ -104,7 +104,6 @@ const Shop: React.FC = () => {
 
       const make = String(userVehicle.brand || '').trim();
       const model = String(userVehicle.model || '').trim();
-      const submodel = String(userVehicle.variant || '').trim();
       const year = Number(userVehicle.year);
 
       if (!make || !model || !Number.isFinite(year)) {
@@ -117,8 +116,7 @@ const Shop: React.FC = () => {
         const resolved = await api.resolveVehicle({
           year,
           make,
-          model,
-          submodel: submodel || undefined,
+          model
         });
         if (!cancelled) setResolvedVehicleId(resolved?.id || null);
       } catch {
@@ -152,9 +150,9 @@ const Shop: React.FC = () => {
   const mapToProductCard = (p: ApiProduct) => {
     // Build human-readable list of compatible vehicles from model data
     const vehicleStrings: string[] = [];
-    if (p.compatibleVehicleModels && p.compatibleVehicleModels.length > 0) {
-      for (const m of p.compatibleVehicleModels) {
-        const label = [m.brandName, m.name].filter(Boolean).join(' ');
+    if (p.compatibleVehicles && p.compatibleVehicles.length > 0) {
+      for (const m of p.compatibleVehicles) {
+        const label = [m.make, m.model].filter(Boolean).join(' ');
         if (label && !vehicleStrings.includes(label)) vehicleStrings.push(label);
       }
     }
