@@ -556,7 +556,7 @@ export default function Checkout() {
       skipEmptyCartRedirect.current = true;
       clearCart();
       toast.success('Card payment completed successfully!');
-      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId)}${guestToken ? `&guest_token=${encodeURIComponent(guestToken)}` : ''}`);
+      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId)}${order.guestInvoiceToken ? `&guest_token=${encodeURIComponent(order.guestInvoiceToken)}` : ''}`);
     } catch (error) {
       console.error('Inline card checkout error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to process card payment');

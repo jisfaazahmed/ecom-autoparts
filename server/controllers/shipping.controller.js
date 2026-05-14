@@ -101,11 +101,24 @@ module.exports.confirmDelivery = async (req, res) => {
 
 module.exports.trackShipment = async (req, res) => {
     try {
-        const tracking = await shippingService.trackShipment(
-            req.params.trackingNumber
-        );
+        const { trackingNumber } = req.params;
+        
+        if (!trackingNumber || trackingNumber.trim() === '') {
+            return res.status(400).json({
+                success: false,
+                message: 'Tracking number is required'
+            });
+        }
+        
+        const tracking = await shippingService.trackShipment(trackingNumber);
         res.status(200).json(tracking);
     } catch (error) {
+        if (error.message && error.message.includes('not found')) {
+            return res.status(404).json({
+                success: false,
+                message: error.message
+            });
+        }
         res.status(500).json({
             success: false,
             message: error.message

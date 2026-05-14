@@ -448,7 +448,7 @@ module.exports.getInvoice = async (req, res) => {
         const invoiceService = require('../services/invoice.service');
         const orderId = req.params.id;
 
-        const ord = await order.findById(orderId).select('user');
+        const ord = await order.findById(orderId).select('user invoiceUrl');
         if (!ord) return res.status(404).json({ message: 'Order not found' });
 
         const userId = req.user?.id || req.user?._id;
@@ -479,7 +479,7 @@ module.exports.getGuestInvoice = async (req, res) => {
         const orderId = req.params.id;
         const token = req.query?.token || req.header('x-guest-invoice-token');
 
-        const ord = await order.findById(orderId).select('user');
+        const ord = await order.findById(orderId).select('user invoiceUrl');
         if (!ord) return res.status(404).json({ message: 'Order not found' });
 
         if (ord.user) {

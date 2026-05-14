@@ -1159,24 +1159,19 @@ class ApiClient {
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         if (value !== undefined) {
-          if (key === 'status') {
-            const mappedStatus = this.mapShopStatusToVendorStatus(String(value));
-            if (mappedStatus) searchParams.set('status', mappedStatus);
-          } else {
-            searchParams.set(key, String(value));
-          }
+          searchParams.set(key, String(value));
         }
       });
     }
-    const response = await this.request<any>(`/vendors?${searchParams.toString()}`);
-    const vendors = Array.isArray(response) ? response : response?.vendors || response?.data || [];
-    const shops = vendors.map((vendor: any) => this.mapVendorToShop(vendor));
+    // Call consolidated /api/shops endpoint instead of /api/vendors
+    const response = await this.request<{ shops: any[]; pagination: any }>(`/shops?${searchParams.toString()}`);
+    const shops = Array.isArray(response?.shops) ? response.shops : [];
     return {
       data: shops,
-      total: shops.length,
-      page: 1,
-      limit: shops.length,
-      totalPages: 1,
+      total: response?.pagination?.total || shops.length,
+      page: response?.pagination?.page || 1,
+      limit: response?.pagination?.limit || shops.length,
+      totalPages: response?.pagination?.totalPages || 1,
     };
   }
 
@@ -1189,24 +1184,19 @@ class ApiClient {
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         if (value !== undefined) {
-          if (key === 'status') {
-            const mappedStatus = this.mapShopStatusToVendorStatus(String(value));
-            if (mappedStatus) searchParams.set('status', mappedStatus);
-          } else {
-            searchParams.set(key, String(value));
-          }
+          searchParams.set(key, String(value));
         }
       });
     }
-    const response = await this.request<any>(`/vendors?${searchParams.toString()}`);
-    const vendors = Array.isArray(response) ? response : response?.vendors || response?.data || [];
-    const shops = vendors.map((vendor: any) => this.mapVendorToShop(vendor));
+    // Call consolidated /api/shops endpoint instead of /api/vendors
+    const response = await this.request<{ shops: any[]; pagination: any }>(`/shops?${searchParams.toString()}`);
+    const shops = Array.isArray(response?.shops) ? response.shops : [];
     return {
       data: shops,
-      total: shops.length,
-      page: 1,
-      limit: shops.length,
-      totalPages: 1,
+      total: response?.pagination?.total || shops.length,
+      page: response?.pagination?.page || 1,
+      limit: response?.pagination?.limit || shops.length,
+      totalPages: response?.pagination?.totalPages || 1,
     };
   }
 
@@ -1233,18 +1223,18 @@ class ApiClient {
   }
 
   async updateShopStatus(id: string, status: string): Promise<ApiShop> {
-    const vendorStatus = this.mapShopStatusToVendorStatus(status) || status;
-    const response = await this.request<{ vendor?: any }>(`/vendors/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status: vendorStatus }),
+    // Call consolidated /api/shops/:id/status endpoint (returns ApiShop directly)
+    const response = await this.request<ApiShop>(`/shops/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
     });
-    if (response?.vendor) return this.mapVendorToShop(response.vendor);
+    if (response) return response;
     return {
       id,
       name: 'Unnamed Shop',
       description: undefined,
       ownerId: id,
-      status: this.mapVendorStatusToShopStatus(vendorStatus),
+      status: 'pending' as const,
       email: undefined,
       phone: undefined,
       address: undefined,
@@ -1257,17 +1247,18 @@ class ApiClient {
   }
 
   async updateShopCommission(id: string, commissionRate: number): Promise<ApiShop> {
-    const response = await this.request<{ vendor?: any }>(`/vendors/${id}/commission`, {
-      method: 'PATCH',
+    // Call consolidated /api/shops/:id/commission endpoint (returns ApiShop directly)
+    const response = await this.request<ApiShop>(`/shops/${id}/commission`, {
+      method: 'PUT',
       body: JSON.stringify({ commissionRate }),
     });
-    if (response?.vendor) return this.mapVendorToShop(response.vendor);
+    if (response) return response;
     return {
       id,
       name: 'Unnamed Shop',
       description: undefined,
       ownerId: id,
-      status: 'approved',
+      status: 'approved' as const,
       email: undefined,
       phone: undefined,
       address: undefined,

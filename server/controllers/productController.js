@@ -493,6 +493,10 @@ exports.getProductById = async (req, res) => {
     const requester = getRequester(req);
     const requesterId = requester.id ? String(requester.id) : '';
 
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+
     const product = await Product.findById(req.params.id)
       .populate('category', 'name')
       .populate('createdBy', 'name shopName email status role')

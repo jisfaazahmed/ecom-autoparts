@@ -38,6 +38,14 @@ module.exports.getStockSummary = async (req, res) => {
     try {
         const { productId } = req.params;
 
+        const mongoose = require('mongoose');
+        if (!mongoose.Types.ObjectId.isValid(productId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid product ID'
+            });
+        }
+
         const summary = await InventoryReservationService.getStockSummary(productId);
 
         res.status(200).json({
@@ -57,6 +65,14 @@ module.exports.getStockSummary = async (req, res) => {
 module.exports.getAvailableStock = async (req, res) => {
     try {
         const { productId } = req.params;
+
+        const mongoose = require('mongoose');
+        if (!mongoose.Types.ObjectId.isValid(productId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid product ID'
+            });
+        }
 
         const available = await InventoryReservationService.getAvailableStock(productId);
 

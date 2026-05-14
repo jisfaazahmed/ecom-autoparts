@@ -17,6 +17,15 @@ class InvoiceService {
 
         if (!order) throw new Error('Order not found');
 
+        // Return cached invoice if already generated
+        if (order.invoiceUrl && fs.existsSync(order.invoiceUrl)) {
+            return {
+                filePath: order.invoiceUrl,
+                fileName: path.basename(order.invoiceUrl),
+                cached: true
+            };
+        }
+
         const invoicesDir = this.ensureInvoiceDirectory();
         const fileName = `${String(order.orderNumber || order._id).replace(/[^a-zA-Z0-9-_]/g, '_')}.pdf`;
         const filePath = path.join(invoicesDir, fileName);
@@ -25,7 +34,23 @@ class InvoiceService {
             const doc = new PDFDocument({ margin: 40 });
             const stream = fs.createWriteStream(filePath);
 
-            stream.on('finish', () => resolve({ filePath, fileName }));
+            stream.on('finish', async () => {
+                try {
+                    // Save invoice URL to database
+                    await Order.findByIdAndUpdate(
+                        orderId,
+                        {
+                            invoiceUrl: filePath,
+                            invoiceGeneratedAt: new Date()
+                        },
+                        { new: true }
+                    );
+                    resolve({ filePath, fileName });
+                } catch (updateError) {
+                    console.error('Failed to save invoice URL to database:', updateError);
+                    resolve({ filePath, fileName }); // Still resolve even if DB save fails
+                }
+            });
             stream.on('error', reject);
             doc.on('error', reject);
 
@@ -92,6 +117,44 @@ class InvoiceService {
 
             doc.end();
         });
+    }
+
+    async regenerateInvoice(orderId) {
+        // Force regeneration by clearing the cached URL and regenerating
+        await Order.findByIdAndUpdate(
+            orderId,
+            {
+                invoiceUrl: null,
+                invoiceGeneratedAt: null
+            },
+            { new: true }
+        );
+        return this.generateInvoicePdf(orderId);
+    }
+
+    async getInvoiceInfo(orderId) {
+        const order = await Order.findById(orderId).select('invoiceUrl invoiceGeneratedAt');
+        if (!order) throw new Error('Order not found');
+
+        if (order.invoiceUrl && fs.existsSync(order.invoiceUrl)) {
+            const stats = fs.statSync(order.invoiceUrl);
+            return {
+                exists: true,
+                path: order.invoiceUrl,
+                fileName: path.basename(order.invoiceUrl),
+                size: stats.size,
+                generatedAt: order.invoiceGeneratedAt,
+                fileModified: stats.mtime
+            };
+        }
+
+        return {
+            exists: false,
+            path: null,
+            fileName: null,
+            size: 0,
+            generatedAt: null
+        };
     }
 }
 
