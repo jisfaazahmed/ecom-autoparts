@@ -43,7 +43,7 @@ class EmailService {
         const html = `
             <h1>Thank you for your order!</h1>
             <p>Your order #${orderDetails.orderNumber} has been placed successfully.</p>
-            <p>Total Amount: ₹${orderDetails.totalAmount || orderDetails.itemsTotal}</p>
+            <p>Total Amount: Rs${orderDetails.totalAmount || orderDetails.itemsTotal}</p>
             <p>We will notify you when your items are shipped.</p>
         `;
         return this.sendEmail(email, subject, html);

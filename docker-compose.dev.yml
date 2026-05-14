@@ -46,7 +46,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - VITE_API_URL=${VITE_API_URL}
+      - VITE_API_URL=http://127.0.0.1:5000/api
       - VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
     volumes:
       - ./client:/app
