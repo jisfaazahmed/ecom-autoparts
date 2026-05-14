@@ -3,20 +3,22 @@ const nodemailer = require('nodemailer');
 class EmailService {
     constructor() {
         this.transporter = nodemailer.createTransport({
-            host: process.env.EMAIL_HOST || 'smtp.ethereal.email',
-            port: process.env.EMAIL_PORT || 587,
-            secure: process.env.EMAIL_SECURE === 'true',
+            host: process.env.EMAIL_HOST || process.env.SMTP_HOST || 'smtp.ethereal.email',
+            port: process.env.EMAIL_PORT || process.env.SMTP_PORT || 587,
+            secure: process.env.EMAIL_SECURE === 'true' || process.env.SMTP_SECURE === 'true',
             auth: {
-                user: process.env.EMAIL_USER || 'ethereal.user@ethereal.email',
-                pass: process.env.EMAIL_PASS || 'ethereal.pass'
+                user: process.env.EMAIL_USER || process.env.SMTP_USER || 'ethereal.user@ethereal.email',
+                pass: process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || 'ethereal.pass'
             }
         });
     }
 
     async sendEmail(to, subject, html, text = '') {
         try {
+            const fromName = process.env.EMAIL_FROM_NAME || 'Ecom Autoparts';
+            const fromAddress = process.env.EMAIL_FROM_ADDRESS || process.env.SENDER_EMAIL || process.env.EMAIL_FROM || process.env.EMAIL_USER || process.env.SMTP_USER || 'noreply@ecom-autoparts.com';
             const info = await this.transporter.sendMail({
-                from: `"${process.env.EMAIL_FROM_NAME || 'Ecom Autoparts'}" <${process.env.EMAIL_FROM_ADDRESS || 'noreply@ecom-autoparts.com'}>`,
+                from: `"${fromName}" <${fromAddress}>`,
                 to,
                 subject,
                 text,
@@ -156,6 +158,24 @@ class EmailService {
                 <li><strong>Name:</strong> ${customerDetails.customerName}</li>
                 <li><strong>Email:</strong> ${customerDetails.customerEmail}</li>
             </ul>
+        `;
+        return this.sendEmail(email, subject, html);
+    }
+
+    async sendAdminCouponUsedAlert(email, details) {
+        const subject = `Coupon Used: ${details.couponCode} on Order #${details.orderNumber}`;
+        const html = `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #333;">Coupon Used Alert</h2>
+                <p>Hello Admin,</p>
+                <p>A customer has used a coupon code.</p>
+                <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+                    <p><strong>Order Number:</strong> #${details.orderNumber}</p>
+                    <p><strong>Coupon Code:</strong> ${details.couponCode}</p>
+                    <p><strong>Discount Amount:</strong> Rs.${details.discountAmount}</p>
+                </div>
+                <p>You can view the full order details in the admin dashboard.</p>
+            </div>
         `;
         return this.sendEmail(email, subject, html);
     }

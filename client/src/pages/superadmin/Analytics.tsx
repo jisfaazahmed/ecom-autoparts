@@ -21,7 +21,10 @@ const SuperAdminAnalytics: React.FC = () => {
   const [totalVendors, setTotalVendors] = useState(0);
   const [ordersByStatus, setOrdersByStatus] = useState<{ name: string; value: number; color: string }[]>([]);
   const [salesByMonth, setSalesByMonth] = useState<{ month: string; sales: number; commission: number; orders: number }[]>([]);
-  const [topCategories, setTopCategories] = useState<{ name: string; value: number }[]>([]);
+  const [topCategories, setTopCategories] = useState<{ name: string; value: number; color: string }[]>([]);
+  const [aov, setAov] = useState(0);
+  const [totalRefunds, setTotalRefunds] = useState(0);
+  const [topVendors, setTopVendors] = useState<{ shopName: string; name: string; sales: number; orders: number }[]>([]);
 
   useEffect(() => { fetchAnalytics(); }, [timeRange]);
 
@@ -62,6 +65,9 @@ const SuperAdminAnalytics: React.FC = () => {
       setTotalSales(data.totalSales || 0);
       setTotalCommission(data.totalCommission || 0);
       setTotalOrders(data.totalOrders || 0);
+      setAov(data.aov || 0);
+      setTotalRefunds(data.totalRefunds || 0);
+      setTopVendors(data.topVendors || []);
 
       const st = data.ordersByStatus || {};
       setOrdersByStatus([
@@ -103,6 +109,8 @@ const SuperAdminAnalytics: React.FC = () => {
     { label: 'Total Sales', value: formatLKRCompact(totalSales), icon: DollarSign, change: '+18%', positive: true, color: 'text-primary' },
     { label: 'Commission Earned', value: formatLKRCompact(totalCommission), icon: TrendingUp, change: '+12%', positive: true, color: 'text-success' },
     { label: 'Total Orders', value: totalOrders.toLocaleString(), icon: ShoppingBag, change: '+24%', positive: true, color: 'text-purple-400' },
+    { label: 'Average Order Value', value: formatLKRCompact(aov), icon: DollarSign, change: '+5%', positive: true, color: 'text-blue-400' },
+    { label: 'Total Refunds', value: formatLKRCompact(totalRefunds), icon: TrendingUp, change: '-2%', positive: false, color: 'text-destructive' },
     { label: 'Active Vendors', value: totalVendors.toLocaleString(), icon: Users, change: '+3', positive: true, color: 'text-warning' },
   ];
 
@@ -122,7 +130,7 @@ const SuperAdminAnalytics: React.FC = () => {
           </Select>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 mb-8">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 mb-8">
           {stats.map((stat, i) => (
             <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
               <Card className="glass-card">
@@ -207,6 +215,46 @@ const SuperAdminAnalytics: React.FC = () => {
                     <Bar dataKey="value" radius={[0, 4, 4, 0]} name="Earnings">{topCategories.map((_, index) => <Cell key={`cell-${index}`} fill={topCategories[index]?.color} />)}</Bar>
                   </BarChart>
                 </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 mb-6">
+          <Card className="lg:col-span-3 glass-card">
+            <CardHeader><CardTitle className="font-display flex items-center gap-2"><Users className="h-5 w-5 text-primary" />Top Performing Vendors</CardTitle></CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10 text-muted-foreground">
+                      <th className="px-4 py-3 font-medium">Rank</th>
+                      <th className="px-4 py-3 font-medium">Shop Name</th>
+                      <th className="px-4 py-3 font-medium">Vendor Name</th>
+                      <th className="px-4 py-3 font-medium text-right">Total Orders</th>
+                      <th className="px-4 py-3 font-medium text-right">Total Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topVendors.length > 0 ? topVendors.map((vendor, index) => (
+                      <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full ${index === 0 ? 'bg-amber-500/20 text-amber-500' : index === 1 ? 'bg-slate-300/20 text-slate-300' : index === 2 ? 'bg-amber-700/20 text-amber-600' : 'bg-secondary text-muted-foreground'}`}>
+                            {index + 1}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-medium">{vendor.shopName}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{vendor.name}</td>
+                        <td className="px-4 py-3 text-right">{vendor.orders.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right font-medium text-success">{formatLKR(vendor.sales)}</td>
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">No vendor data available for this period</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </CardContent>
           </Card>
