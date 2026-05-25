@@ -86,11 +86,17 @@ export const RefundForm: React.FC<RefundFormProps> = ({
   const [step, setStep] = useState(1);
   const [selectedReason, setSelectedReason] = useState('defective_product');
   const [description, setDescription] = useState('');
+  const [descriptionError, setDescriptionError] = useState(false);
   const [productCondition, setProductCondition] = useState('new_unused');
   const [packaging, setPackaging] = useState('unopened');
   const [accessories, setAccessories] = useState('all_included');
 
   const handleNext = () => {
+    if (step === 1 && !description.trim()) {
+      setDescriptionError(true);
+      return;
+    }
+    setDescriptionError(false);
     if (step < 3) setStep(step + 1);
   };
 
@@ -207,14 +213,17 @@ export const RefundForm: React.FC<RefundFormProps> = ({
 
           <div>
             <Label className="text-slate-300 mb-2 block">
-              Please describe the issue:
+              Please describe the issue: <span className="text-red-400">*</span>
             </Label>
             <Textarea
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => { setDescription(e.target.value); if (e.target.value.trim()) setDescriptionError(false); }}
               placeholder="Provide detailed explanation of the issue..."
-              className="bg-slate-700 border-slate-600 text-slate-200 placeholder:text-slate-500 min-h-24"
+              className={`bg-slate-700 border-slate-600 text-slate-200 placeholder:text-slate-500 min-h-24 ${descriptionError ? 'border-red-500' : ''}`}
             />
+            {descriptionError && (
+              <p className="text-red-400 text-xs mt-1">Please describe the issue before continuing.</p>
+            )}
           </div>
         </div>
       )}
@@ -427,7 +436,7 @@ export const RefundForm: React.FC<RefundFormProps> = ({
         ) : (
           <Button
             onClick={handleSubmit}
-            disabled={isSubmitting || !description}
+            disabled={isSubmitting || !description.trim()}
             className="bg-green-600 hover:bg-green-700 text-white flex-1"
           >
             {isSubmitting ? 'Submitting...' : 'Submit Return Request'}

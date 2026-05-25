@@ -87,9 +87,6 @@ const ReturnsRefunds: React.FC = () => {
   const [orderId, setOrderId] = useState('');
   const [paymentId, setPaymentId] = useState('');
   const [amount, setAmount] = useState('');
-  const [reasonCategory, setReasonCategory] = useState('defective_product');
-  const [reasonDescription, setReasonDescription] = useState('');
-  const [details, setDetails] = useState('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -158,6 +155,7 @@ const ReturnsRefunds: React.FC = () => {
 
       setOrderRefs(mappedOrderRefs);
       setItems(mappedItems);
+      setRefunds(refunds);
     } catch (error) {
       console.error('Failed to load returns data:', error);
       toast.error('Failed to load returns and refunds');
@@ -178,9 +176,6 @@ const ReturnsRefunds: React.FC = () => {
       setOrderId(prefOrderId);
       setPaymentId('');
       setAmount('');
-      setReasonCategory('defective_product');
-      setReasonDescription('');
-      setDetails('');
       setDialogOpen(true);
     }
   }, [location.search]); // Remove dialogOpen from dependencies
@@ -203,9 +198,6 @@ const ReturnsRefunds: React.FC = () => {
     setOrderId(item.orderId);
     setAmount(String(item.item.totalPrice || item.item.unitPrice * item.item.quantity || 0));
     setPaymentId('');
-    setReasonCategory('defective_product');
-    setReasonDescription('');
-    setDetails('');
     setDialogOpen(true);
   };
 
@@ -214,9 +206,6 @@ const ReturnsRefunds: React.FC = () => {
     setOrderId('');
     setPaymentId('');
     setAmount('');
-    setReasonCategory('defective_product');
-    setReasonDescription('');
-    setDetails('');
     setDialogOpen(true);
   };
 
