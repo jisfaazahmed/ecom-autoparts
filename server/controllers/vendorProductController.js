@@ -38,6 +38,11 @@ exports.addOffer = async (req, res) => {
 exports.getOffers = async (req, res) => {
   try {
     const { productId } = req.params;
+    const mongoose = require('mongoose');
+
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
 
     const offers = await VendorProduct.find({ product: productId, isActive: true })
       .populate('vendor', 'shopName') // Show the Shop Name (e.g., "Bob's Brakes")

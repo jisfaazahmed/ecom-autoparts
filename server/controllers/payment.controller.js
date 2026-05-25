@@ -4,23 +4,25 @@ const paymentService = require('../services/payment.service');
 const stripe = require('../config/stripe');
 const OrderTimeline = require('../models/timeline.model');
 const User = require('../models/user');
-
-function isStripeMockMode() {
-  return process.env.NODE_ENV === 'test' || process.env.USE_STRIPE_MOCK === 'true';
-}
+const invoiceService = require('../services/invoice.service');
+const emailService = require('../services/email.service');
 
 function getRequestUserId(req) {
   return req?.user?._id || req?.user?.id || null;
 }
 
 function getRequestUserEmail(req) {
-  return req?.user?.email || null;
+  const email = String(req?.user?.email || '').trim();
+  return email ? email : null;
 }
 
-function getMockScenarioFromRequest(req) {
-  const scenario = String(req?.body?.mockScenario || '').trim().toLowerCase();
-  const allowed = new Set(['requires_action', 'fail_once', 'always_fail']);
-  return allowed.has(scenario) ? scenario : null;
+function getRequestBillingEmail(req) {
+  const bodyEmail = String(req?.body?.email || '').trim();
+  if (bodyEmail) {
+    return bodyEmail;
+  }
+
+  return getRequestUserEmail(req);
 }
 
 async function getOrCreatePaymentForOrder(order, userId, paymentMethod = 'card') {
@@ -138,7 +140,18 @@ async function finalizeSuccessfulCardPayment({ order, paymentIntentId, sessionId
     },
   });
 
+  try {
+    await invoiceService.generateInvoicePdf(order._id);
+  } catch (invoiceError) {
+    console.error(`Invoice generation failed for order ${order.orderNumber}:`, invoiceError);
+  }
+
   return payment;
+}
+
+function withReceiptEmail(payload, email) {
+  const sanitizedEmail = String(email || '').trim();
+  return sanitizedEmail ? { ...payload, receipt_email: sanitizedEmail } : payload;
 }
 
 // Create Stripe checkout session
@@ -180,7 +193,7 @@ exports.createCheckoutSession = async (req, res) => {
             mode: 'payment',
           success_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/payment/success?session_id={CHECKOUT_SESSION_ID}&order_id=${orderId}`,
           cancel_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/payment/cancel?order_id=${orderId}`,
-            customer_email: userEmail,
+            ...(userEmail ? { customer_email: userEmail } : {}),
             metadata: {
                 orderId: orderId.toString(),
                 orderNumber: order.orderNumber,
@@ -215,8 +228,7 @@ exports.createPaymentIntent = async (req, res) => {
   try {
     const { orderId } = req.body;
     const userId = getRequestUserId(req);
-    const userEmail = getRequestUserEmail(req);
-    const mockScenario = getMockScenarioFromRequest(req);
+    const userEmail = getRequestBillingEmail(req);
 
     if (!orderId) {
       return res.status(400).json({
@@ -238,7 +250,7 @@ exports.createPaymentIntent = async (req, res) => {
       });
     }
 
-    const paymentIntent = await stripe.paymentIntents.create({
+    const paymentIntent = await stripe.paymentIntents.create(withReceiptEmail({
       amount: Math.round(order.totalAmount * 100),
       currency: String(order.currency || 'lkr').toLowerCase(),
       automatic_payment_methods: { enabled: true },
@@ -246,21 +258,15 @@ exports.createPaymentIntent = async (req, res) => {
         orderId: order._id.toString(),
         orderNumber: order.orderNumber,
         userId: String(userId),
-        ...(mockScenario ? { mockScenario, mockOtpCode: '123456' } : {}),
       },
-      receipt_email: userEmail,
       description: `Payment for order ${order.orderNumber}`,
-    });
+    }, userEmail));
 
     const payment = await getOrCreatePaymentForOrder(order, userId, 'card');
     payment.status = 'processing';
     payment.gateway = 'stripe';
-    payment.provider = {
-      ...(payment.provider || {}),
-      name: 'stripe',
-      paymentIntentId: paymentIntent.id,
-      transactionId: paymentIntent.id,
-    };
+    payment.transactionId = paymentIntent.id;
+    payment.gatewayTransactionId = paymentIntent.id;
     payment.timeline.push({
       event: 'payment_processing',
       timestamp: new Date(),
@@ -279,7 +285,6 @@ exports.createPaymentIntent = async (req, res) => {
         clientSecret: paymentIntent.client_secret,
         amount: order.totalAmount,
         currency: order.currency || 'LKR',
-        mockMode: isStripeMockMode(),
         requiresAction: paymentIntent.status === 'requires_action',
         nextAction: paymentIntent.next_action || null,
       },
@@ -296,9 +301,9 @@ exports.createPaymentIntent = async (req, res) => {
 // Confirm Stripe PaymentIntent and finalize order/payment records
 exports.confirmPaymentIntent = async (req, res) => {
   try {
-    const { orderId, paymentIntentId, otp } = req.body;
+    const { orderId, paymentIntentId } = req.body;
     const userId = getRequestUserId(req);
-    const userEmail = getRequestUserEmail(req);
+    const userEmail = getRequestBillingEmail(req);
 
     if (!orderId || !paymentIntentId) {
       return res.status(400).json({
@@ -318,16 +323,7 @@ exports.confirmPaymentIntent = async (req, res) => {
     payment.provider.paymentIntentId = paymentIntentId;
     payment.provider.transactionId = paymentIntentId;
 
-    const paymentIntent = isStripeMockMode()
-      ? await stripe.paymentIntents.confirm(paymentIntentId, {
-          payment_method_options: {
-            card: {
-              mock_otp: otp,
-            },
-          },
-          mockOtp: otp,
-        })
-      : await stripe.paymentIntents.retrieve(paymentIntentId);
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
     if (paymentIntent.status !== 'succeeded') {
       const retryCount = await appendRetryAttempt({ payment, paymentIntent });
@@ -481,34 +477,56 @@ async function handleCheckoutSessionCompleted(session) {
 
 // Helper function to handle successful payment intent
 async function handlePaymentIntentSucceeded(paymentIntent) {
-    const payment = await Payment.findOne({ 
-        'provider.paymentIntentId': paymentIntent.id 
+  const paymentIntentId = paymentIntent.id;
+  const payment = await Payment.findOne({
+    $or: [
+      { transactionId: paymentIntentId },
+      { gatewayTransactionId: paymentIntentId },
+    ],
+  });
+
+  if (payment) {
+    payment.status = 'completed';
+    payment.gateway = 'stripe';
+    payment.transactionId = paymentIntentId;
+    payment.gatewayTransactionId = paymentIntentId;
+    payment.timeline.push({
+      event: 'payment_completed',
+      timestamp: new Date(),
+      description: 'Payment intent succeeded',
     });
 
-    if (payment) {
-        payment.status = 'completed';
-        payment.provider = payment.provider || {};
-        payment.provider.chargeId = paymentIntent.charges.data[0]?.id;
-        payment.provider.receiptUrl = paymentIntent.charges.data[0]?.receipt_url;
-        
-        payment.timeline.push({
-            event: 'payment_completed',
-            timestamp: new Date(),
-            description: 'Payment intent succeeded'
-        });
+    await payment.save();
 
-        await payment.save();
-
-        // Update order
-        const order = await Order.findById(payment.order);
-        if (order) {
-            await paymentService.syncOrderAfterPayment(order._id, {
-              paymentStatus: 'completed',
-              transactionId: paymentIntent.id,
-              itemStatus: 'confirmed'
-            });
-        }
+    const order = await Order.findById(payment.order);
+    if (order) {
+      await finalizeSuccessfulCardPayment({
+        order,
+        paymentIntentId,
+        customerEmail: paymentIntent.receipt_email || paymentIntent.customer_email || null,
+      });
     }
+    return;
+  }
+
+  const orderId = paymentIntent?.metadata?.orderId;
+
+  if (!orderId) {
+    console.error(`Payment intent ${paymentIntent.id} is missing order metadata`);
+    return;
+  }
+
+  const order = await Order.findById(orderId);
+  if (!order) {
+    console.error(`Order not found for payment intent ${paymentIntent.id}: ${orderId}`);
+    return;
+  }
+
+  await finalizeSuccessfulCardPayment({
+    order,
+    paymentIntentId: paymentIntent.id,
+    customerEmail: paymentIntent.receipt_email || paymentIntent.customer_email || null,
+  });
 }
 
 // Helper function to handle failed payment
@@ -655,35 +673,6 @@ exports.getWalletBalance = async (req, res) => {
   }
 };
 
-exports.topupWalletMock = async (req, res) => {
-  try {
-    const userId = getRequestUserId(req);
-    const amount = Number(req.body?.amount || 0);
-
-    if (amount <= 0) {
-      return res.status(400).json({ success: false, message: 'Top-up amount must be greater than 0' });
-    }
-
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
-
-    user.wallet = user.wallet || {};
-    user.wallet.balance = Number(user.wallet.balance || 0) + amount;
-    await user.save();
-
-    return res.json({
-      success: true,
-      data: {
-        balance: Number(user.wallet.balance || 0),
-      },
-    });
-  } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
-};
-
 exports.payWithWallet = async (req, res) => {
   try {
     const { orderId, otp } = req.body;
@@ -725,15 +714,25 @@ exports.payWithWallet = async (req, res) => {
       const now = new Date();
 
       if (!otp) {
-        const generatedOtp = isStripeMockMode()
-          ? '654321'
-          : String(Math.floor(100000 + Math.random() * 900000));
+        const generatedOtp = String(Math.floor(100000 + Math.random() * 900000));
 
         user.wallet.otp.code = generatedOtp;
         user.wallet.otp.expiresAt = new Date(now.getTime() + 5 * 60 * 1000);
         user.wallet.otp.lastSentAt = now;
         user.wallet.otp.attempts = 0;
         await user.save();
+
+        await emailService.sendEmail(
+          user.email,
+          'Wallet payment OTP',
+          `
+            <h1>Wallet Payment OTP</h1>
+            <p>Your one-time verification code is <strong>${generatedOtp}</strong>.</p>
+            <p>This code expires in 5 minutes.</p>
+            <p>If you did not request this payment, you can ignore this email.</p>
+          `,
+          `Your wallet payment OTP is ${generatedOtp}. It expires in 5 minutes.`
+        );
 
         return res.status(202).json({
           success: false,
@@ -742,7 +741,6 @@ exports.payWithWallet = async (req, res) => {
           data: {
             orderId: order._id,
             expiresAt: user.wallet.otp.expiresAt,
-            ...(isStripeMockMode() ? { mockOtp: generatedOtp } : {}),
           },
         });
       }
@@ -816,13 +814,13 @@ exports.processRefund = async (req, res) => {
     
     res.json({
       success: true,
-      message: 'Refund initiated successfully',
-      data: payment
+      message: 'Refund processed',
+      data: payment,
     });
   } catch (error) {
     res.status(400).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };
@@ -830,19 +828,16 @@ exports.processRefund = async (req, res) => {
 exports.getPaymentDetails = async (req, res) => {
   try {
     const userId = getRequestUserId(req);
-    const payment = await paymentService.getPaymentDetails(
-      req.params.paymentId,
-      userId
-    );
-    
+    const payment = await paymentService.getPaymentDetails(req.params.paymentId, userId);
+
     res.json({
       success: true,
-      data: payment
+      data: payment,
     });
   } catch (error) {
     res.status(400).json({
       success: false,
-      message: error.message
+      message: error.message,
     });
   }
 };

@@ -29,7 +29,7 @@ import { useToast } from '@/hooks/use-toast';
 import { formatLKR } from '@/lib/currency';
 import { format } from 'date-fns';
 import { Card, CardContent } from '@/components/ui/card';
-
+// Use live coupons via API; remove mock/demo fallbacks
 
 interface Coupon {
   id: string;
@@ -81,17 +81,11 @@ const SuperAdminCoupons: React.FC = () => {
     try {
       const response = await api.getCoupons().catch(() => ({ data: [] }));
       const apiCoupons = (response as { data?: Coupon[] }).data?.filter((c: Coupon) => !c.shopId) || [];
-
-      if (apiCoupons.length > 0) {
-        setCoupons(apiCoupons);
-      } else {
-        // Fallback to mock data if API is empty/fails
-        // Preserve any coupons added/edited in the current session
-        setCoupons(prev => prev.length > 0 ? prev : []);
-      }
+      setCoupons(apiCoupons);
     } catch (error: unknown) {
       console.error('Failed to fetch coupons', error);
-      setCoupons(prev => prev.length > 0 ? prev : []);
+      toast({ title: 'Error', description: 'Failed to load coupons', variant: 'destructive' });
+      setCoupons([]);
     }
     setLoading(false);
   };
@@ -138,31 +132,17 @@ const SuperAdminCoupons: React.FC = () => {
 
     try {
       if (editingCoupon) {
-        if (editingCoupon.id.startsWith('coup') || editingCoupon.id.startsWith('mock')) {
-          // Simulate update for mock data
-          setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? { ...c, ...couponData, discountValue: couponData.discountValue || 0 } : c));
-          toast({ title: 'Updated (Demo)', description: 'Mock coupon updated for demonstration' });
-        } else {
-          await api.updateCoupon(editingCoupon.id, couponData);
-          toast({ title: 'Updated', description: 'Coupon updated successfully' });
-          fetchCoupons();
-        }
+        await api.updateCoupon(editingCoupon.id, couponData);
+        toast({ title: 'Updated', description: 'Coupon updated successfully' });
+        fetchCoupons();
       } else {
         try {
           await api.createCoupon({ ...couponData, isActive: true });
           toast({ title: 'Created', description: 'Coupon created successfully' });
           fetchCoupons();
         } catch (e) {
-          // Simulation for demo mode
-          const newCoupon: Coupon = {
-            ...couponData,
-            id: `mock-${Date.now()}`,
-            usedCount: 0,
-            isActive: true,
-            discountType: formData.discountType // Ensure valid discountType
-          };
-          setCoupons(prev => [newCoupon, ...prev]);
-          toast({ title: 'Created (Demo)', description: 'Created locally for demonstration' });
+          // Creation failed — surface error
+          throw e;
         }
       }
       setDialogOpen(false);
@@ -176,18 +156,11 @@ const SuperAdminCoupons: React.FC = () => {
     if (!couponToDelete) return;
     setSaving(true);
     try {
-      if (couponToDelete.id.startsWith('coup') || couponToDelete.id.startsWith('mock')) {
-        setCoupons(prev => prev.filter(c => c.id !== couponToDelete.id));
-        toast({ title: 'Deleted (Demo)', description: 'Mock coupon removed for demonstration' });
-      } else {
-        await api.deleteCoupon(couponToDelete.id);
-        toast({ title: 'Deleted', description: 'Coupon has been deleted' });
-      }
+      await api.deleteCoupon(couponToDelete.id);
+      toast({ title: 'Deleted', description: 'Coupon has been deleted' });
       setDeleteDialogOpen(false);
       setCouponToDelete(null);
-      if (!couponToDelete.id.startsWith('coup') && !couponToDelete.id.startsWith('mock')) {
-        fetchCoupons();
-      }
+      fetchCoupons();
     } catch (error: unknown) {
       toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to delete coupon', variant: 'destructive' });
     }
@@ -196,14 +169,9 @@ const SuperAdminCoupons: React.FC = () => {
 
   const toggleActive = async (coupon: Coupon) => {
     try {
-      if (coupon.id.startsWith('coup') || coupon.id.startsWith('mock')) {
-        setCoupons(prev => prev.map(c => c.id === coupon.id ? { ...c, isActive: !c.isActive } : c));
-        toast({ title: coupon.isActive ? 'Deactivated (Demo)' : 'Activated (Demo)' });
-      } else {
-        await api.updateCoupon(coupon.id, { isActive: !coupon.isActive });
-        setCoupons(prev => prev.map(c => c.id === coupon.id ? { ...c, isActive: !c.isActive } : c));
-        toast({ title: coupon.isActive ? 'Deactivated' : 'Activated' });
-      }
+      await api.updateCoupon(coupon.id, { isActive: !coupon.isActive });
+      setCoupons(prev => prev.map(c => c.id === coupon.id ? { ...c, isActive: !c.isActive } : c));
+      toast({ title: coupon.isActive ? 'Deactivated' : 'Activated' });
     } catch (error: unknown) {
       toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to toggle coupon status', variant: 'destructive' });
     }

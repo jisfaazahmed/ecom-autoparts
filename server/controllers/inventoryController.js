@@ -38,6 +38,14 @@ module.exports.getStockSummary = async (req, res) => {
     try {
         const { productId } = req.params;
 
+        const mongoose = require('mongoose');
+        if (!mongoose.Types.ObjectId.isValid(productId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid product ID'
+            });
+        }
+
         const summary = await InventoryReservationService.getStockSummary(productId);
 
         res.status(200).json({
@@ -57,6 +65,14 @@ module.exports.getStockSummary = async (req, res) => {
 module.exports.getAvailableStock = async (req, res) => {
     try {
         const { productId } = req.params;
+
+        const mongoose = require('mongoose');
+        if (!mongoose.Types.ObjectId.isValid(productId)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid product ID'
+            });
+        }
 
         const available = await InventoryReservationService.getAvailableStock(productId);
 
@@ -98,7 +114,7 @@ module.exports.releaseExpiredReservations = async (req, res) => {
 module.exports.getProductReservations = async (req, res) => {
     try {
         // Check if user is admin/superadmin
-        const userRole = req.user?.role;
+        const userRole = String(req.user?.role || '').toLowerCase().replace(/_/g, '');
         if (userRole !== 'admin' && userRole !== 'superadmin') {
             return res.status(403).json({
                 success: false,
@@ -108,7 +124,7 @@ module.exports.getProductReservations = async (req, res) => {
 
         const { productId } = req.params;
 
-        const reservations = await InventoryReservationService.getOrderReservations(productId);
+        const reservations = await InventoryReservationService.getProductReservations(productId);
 
         res.status(200).json({
             success: true,

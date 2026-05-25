@@ -104,7 +104,6 @@ router.post('/register/resend', authController.registerResend);
 
 // Legacy endpoints kept for compatibility (now instruct clients to use /register/start)
 router.post('/register', authController.register);
-router.post('/register/seller', authController.registerSeller);
 
 /**
  * @swagger

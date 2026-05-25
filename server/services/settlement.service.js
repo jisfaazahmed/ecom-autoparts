@@ -3,6 +3,7 @@ const Order = require('../models/order.model');
 const Refund = require('../models/refund.model');
 const Settlement = require('../models/settlement.model');
 const User = require('../models/user');
+const mongoose = require('mongoose');
 
 /**
  * Settlement Service - Handles vendor payout calculations and settlement management
@@ -24,9 +25,9 @@ class SettlementService {
 
             // Fetch refunds for these orders
             const refunds = await Refund.find({
-                'order.seller': vendorId,
+                vendor: vendorId,
                 createdAt: { $gte: startDate, $lte: endDate },
-                status: { $in: ['approved', 'refunded'] }
+                status: { $in: ['refund_completed'] }
             });
 
             // Get vendor commission rate
@@ -46,7 +47,8 @@ class SettlementService {
 
             // Sum up refunded amounts
             refunds.forEach(refund => {
-                totalRefunded += refund.refundAmount || 0;
+                const refundValue = Number(refund.refundAmount?.totalRefund ?? refund.amount ?? 0);
+                totalRefunded += Number.isFinite(refundValue) ? refundValue : 0;
             });
 
             // Calculate net order amount
@@ -90,7 +92,7 @@ class SettlementService {
                 subOrders: subOrders.map(so => so._id),
                 refunds: refunds.map(r => ({
                     refundId: r._id,
-                    amount: r.refundAmount,
+                    amount: Number(r.refundAmount?.totalRefund ?? r.amount ?? 0),
                     date: r.createdAt
                 }))
             };
@@ -145,11 +147,20 @@ class SettlementService {
      */
     static async getVendorSettlements(vendorId, options = {}) {
         try {
-            const { page = 1, limit = 10, status } = options;
+            const { page = 1, limit = 10, status, startDate, endDate } = options;
             const skip = (page - 1) * limit;
 
             const query = { vendor: vendorId };
             if (status) query.status = status;
+            if (startDate || endDate) {
+                query.$and = [];
+                if (startDate) {
+                    query.$and.push({ 'settlementPeriod.endDate': { $gte: new Date(startDate) } });
+                }
+                if (endDate) {
+                    query.$and.push({ 'settlementPeriod.startDate': { $lte: new Date(endDate) } });
+                }
+            }
 
             const [settlements, total] = await Promise.all([
                 Settlement.find(query)
@@ -172,6 +183,52 @@ class SettlementService {
             };
         } catch (error) {
             console.error('Error fetching vendor settlements:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Get settlement totals for a vendor within a date range
+     */
+    static async getVendorSettlementRangeSummary(vendorId, startDate, endDate) {
+        try {
+            const query = {
+                vendor: new mongoose.Types.ObjectId(vendorId)
+            };
+
+            if (startDate || endDate) {
+                query.$and = [];
+                if (startDate) {
+                    query.$and.push({ 'settlementPeriod.endDate': { $gte: new Date(startDate) } });
+                }
+                if (endDate) {
+                    query.$and.push({ 'settlementPeriod.startDate': { $lte: new Date(endDate) } });
+                }
+            }
+
+            const result = await Settlement.aggregate([
+                { $match: query },
+                {
+                    $group: {
+                        _id: null,
+                        totalSettlements: { $sum: 1 },
+                        totalCommission: { $sum: '$commission.totalCommission' },
+                        totalPayable: { $sum: '$payableAmount' },
+                        totalOrderAmount: { $sum: '$ordersSummary.totalOrderAmount' },
+                        totalRefunded: { $sum: '$ordersSummary.totalRefunded' }
+                    }
+                }
+            ]);
+
+            return result[0] || {
+                totalSettlements: 0,
+                totalCommission: 0,
+                totalPayable: 0,
+                totalOrderAmount: 0,
+                totalRefunded: 0
+            };
+        } catch (error) {
+            console.error('Error fetching vendor settlement range summary:', error);
             throw error;
         }
     }

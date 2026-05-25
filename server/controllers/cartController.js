@@ -39,8 +39,8 @@ exports.addToCart = async (req, res) => {
       });
     }
 
-    // Check stock availability using inventory service
-    const availableStock = await InventoryReservationService.getAvailableStock(productId);
+    // Check stock availability using user-aware inventory service
+    const availableStock = await InventoryReservationService.getAvailableStockForUser(productId, req.user.id);
     if (availableStock < quantity) {
       return res.status(400).json({ 
         success: false,
@@ -59,6 +59,7 @@ exports.addToCart = async (req, res) => {
       item => item.product.toString() === productId
     );
 
+    let targetQuantity;
     if (existingItemIndex > -1) {
       // Update quantity if item exists
       const newQuantity = cart.items[existingItemIndex].quantity + quantity;
@@ -71,6 +72,7 @@ exports.addToCart = async (req, res) => {
       }
       
       cart.items[existingItemIndex].quantity = newQuantity;
+      targetQuantity = newQuantity;
     } else {
       // Add new item
       cart.items.push({
@@ -78,7 +80,16 @@ exports.addToCart = async (req, res) => {
         quantity,
         price: product.price
       });
+      targetQuantity = quantity;
     }
+
+    await InventoryReservationService.upsertUserReservation(
+      productId,
+      req.user.id,
+      targetQuantity,
+      null,
+      cart._id
+    );
 
     await cart.save();
     await cart.populate('items.product');
@@ -118,8 +129,8 @@ exports.updateCartItem = async (req, res) => {
       });
     }
 
-    // Check stock availability using inventory service
-    const availableStock = await InventoryReservationService.getAvailableStock(productId);
+    // Check stock availability using user-aware inventory service
+    const availableStock = await InventoryReservationService.getAvailableStockForUser(productId, req.user.id);
     if (availableStock < quantity) {
       return res.status(400).json({ 
         success: false,
@@ -149,6 +160,14 @@ exports.updateCartItem = async (req, res) => {
 
     cart.items[itemIndex].quantity = quantity;
     cart.items[itemIndex].price = product.price;
+
+    await InventoryReservationService.upsertUserReservation(
+      productId,
+      req.user.id,
+      quantity,
+      null,
+      cart._id
+    );
 
     await cart.save();
     await cart.populate('items.product');
@@ -185,6 +204,12 @@ exports.removeFromCart = async (req, res) => {
       item => item.product.toString() !== productId
     );
 
+    await InventoryReservationService.releaseUserProductReservation(
+      req.user.id,
+      productId,
+      'cancelled_by_user'
+    );
+
     await cart.save();
     await cart.populate('items.product');
 
@@ -215,6 +240,11 @@ exports.clearCart = async (req, res) => {
     }
 
     cart.items = [];
+
+    await InventoryReservationService.releaseUserReservations(
+      req.user.id,
+      'cancelled_by_user'
+    );
     await cart.save();
 
     res.json({

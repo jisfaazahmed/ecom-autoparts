@@ -138,6 +138,16 @@ const orderSchema = new mongoose.Schema({
         default: 'LKR'
     },
 
+    //Invoice
+    invoiceUrl: {
+        type: String,
+        default: null
+    },
+    invoiceGeneratedAt: {
+        type: Date,
+        default: null
+    },
+
     //Status
     overallStatus: {
         type: String,

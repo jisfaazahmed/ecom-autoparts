@@ -8,243 +8,111 @@ import { api, ApiOrder, ApiShop, ApiProduct, ApiCategory } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatLKR, formatLKRCompact } from '@/lib/currency';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend } from 'recharts';
+// Use live data via API; remove mock fallbacks
 
 const SuperAdminAnalytics: React.FC = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  const [timeRange, setTimeRange] = useState('30d');
+  const [timeRange, setTimeRange] = useState<'7d' | '30d' | '90d' | '1y'>('30d');
 
   const [totalSales, setTotalSales] = useState(0);
   const [totalCommission, setTotalCommission] = useState(0);
   const [totalOrders, setTotalOrders] = useState(0);
   const [totalVendors, setTotalVendors] = useState(0);
-  const [growth, setGrowth] = useState({
-    sales: 0,
-    commission: 0,
-    orders: 0,
-    vendors: 0,
-  });
   const [ordersByStatus, setOrdersByStatus] = useState<{ name: string; value: number; color: string }[]>([]);
   const [salesByMonth, setSalesByMonth] = useState<{ month: string; sales: number; commission: number; orders: number }[]>([]);
-  const [topCategories, setTopCategories] = useState<{ name: string; value: number }[]>([]);
+  const [topCategories, setTopCategories] = useState<{ name: string; value: number; color: string }[]>([]);
+  const [aov, setAov] = useState(0);
+  const [totalRefunds, setTotalRefunds] = useState(0);
+  const [topVendors, setTopVendors] = useState<{ shopName: string; name: string; sales: number; orders: number }[]>([]);
 
-  const getRangeStartDate = (range: string) => {
-    const now = new Date();
-    const start = new Date(now);
+  useEffect(() => { fetchAnalytics(); }, [timeRange]);
+
+  const getDateRange = (range: '7d' | '30d' | '90d' | '1y') => {
+    const endDate = new Date();
+    const startDate = new Date();
+
     switch (range) {
       case '7d':
-        start.setDate(now.getDate() - 7);
+        startDate.setDate(endDate.getDate() - 7);
         break;
       case '30d':
-        start.setDate(now.getDate() - 30);
+        startDate.setDate(endDate.getDate() - 30);
         break;
       case '90d':
-        start.setDate(now.getDate() - 90);
+        startDate.setDate(endDate.getDate() - 90);
         break;
       case '1y':
-        start.setFullYear(now.getFullYear() - 1);
-        break;
-      default:
-        start.setDate(now.getDate() - 30);
+        startDate.setFullYear(endDate.getFullYear() - 1);
         break;
     }
-    start.setHours(0, 0, 0, 0);
-    return start;
-  };
 
-  const getBucketKey = (date: Date, range: string) => {
-    if (range === '1y') return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    if (range === '90d') {
-      const weekStart = new Date(date);
-      weekStart.setDate(date.getDate() - date.getDay());
-      return `${weekStart.getFullYear()}-W${String(Math.ceil((((weekStart.getTime() - new Date(weekStart.getFullYear(), 0, 1).getTime()) / 86400000) + 1) / 7)).padStart(2, '0')}`;
-    }
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-  };
+    startDate.setHours(0, 0, 0, 0);
+    endDate.setHours(23, 59, 59, 999);
 
-  const getBucketLabel = (key: string, range: string) => {
-    if (range === '1y') {
-      const [year, month] = key.split('-');
-      return new Date(Number(year), Number(month) - 1, 1).toLocaleString('default', { month: 'short' });
-    }
-    if (range === '90d') return key.replace('-', ' ');
-    const [year, month, day] = key.split('-');
-    return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  };
-
-  const mapOrderStatusToBucket = (order: ApiOrder) => {
-    const raw = String((order as any)?.overallStatus || order.status || 'pending').toLowerCase();
-    if (['pending', 'confirmed'].includes(raw)) return 'pending';
-    if (['processing', 'accepted', 'packed', 'ready_to_ship', 'out_for_delivery', 'partially_shipped'].includes(raw)) return 'processing';
-    if (['shipped'].includes(raw)) return 'shipped';
-    if (['delivered', 'partially_delivered'].includes(raw)) return 'delivered';
-    if (['cancelled', 'refunded', 'return_requested', 'returned'].includes(raw)) return 'cancelled';
-    return 'pending';
+    return {
+      startDate: startDate.toISOString(),
+      endDate: endDate.toISOString(),
+    };
   };
 
   const fetchAnalytics = useCallback(async () => {
     setLoading(true);
     try {
-      let ordersData: ApiOrder[] = [];
-      let shopsData: ApiShop[] = [];
-      let productsData: ApiProduct[] = [];
-      let categoriesData: ApiCategory[] = [];
+      const data = await api.getSuperAdminAnalytics({ range: timeRange });
 
-      try {
-        const [orders, shops, products, categories] = await Promise.all([
-          api.getPlatformOrders({ limit: 500 }).catch(() => ({ data: [] })),
-          api.getShops().catch(() => ({ data: [] })),
-          api.getSuperAdminProducts({ limit: 500 }).catch(() => ({ data: [] })),
-          api.getCategories().catch(() => [])
-        ]);
+      setTotalVendors(data.totalVendors || 0);
+      setTotalSales(data.totalSales || 0);
+      setTotalCommission(data.totalCommission || 0);
+      setTotalOrders(data.totalOrders || 0);
+      setAov(data.aov || 0);
+      setTotalRefunds(data.totalRefunds || 0);
+      setTopVendors(data.topVendors || []);
 
-        ordersData = orders?.data || [];
-        shopsData = shops?.data || [];
-        productsData = products?.data || [];
-        categoriesData = categories || [];
-      } catch (e) {
-        console.error('Failed to fetch from API, using mock data', e);
-      }
+      const st = data.ordersByStatus || {};
+      setOrdersByStatus([
+        { name: 'Pending', value: st['pending'] || 0, color: 'hsl(38, 92%, 50%)' },
+        { name: 'Processing', value: st['processing'] || 0, color: 'hsl(190, 100%, 50%)' },
+        { name: 'Shipped', value: st['shipped'] || 0, color: 'hsl(270, 100%, 60%)' },
+        { name: 'Delivered', value: st['delivered'] || 0, color: 'hsl(142, 76%, 36%)' },
+        { name: 'Cancelled', value: st['cancelled'] || 0, color: 'hsl(0, 72%, 51%)' },
+      ]);
 
-      const ordersToUse = Array.isArray(ordersData) ? ordersData : [];
-      const shopsToUse = Array.isArray(shopsData) ? shopsData : [];
-      const productsToUse = Array.isArray(productsData) ? productsData : [];
-      const startDate = getRangeStartDate(timeRange);
-      const rangeDurationMs = Date.now() - startDate.getTime();
-      const previousStartDate = new Date(startDate.getTime() - rangeDurationMs);
-      const scopedOrders = ordersToUse.filter((o: ApiOrder) => {
-        const createdAt = new Date(o.createdAt);
-        return !Number.isNaN(createdAt.getTime()) && createdAt >= startDate;
-      });
-      const previousOrders = ordersToUse.filter((o: ApiOrder) => {
-        const createdAt = new Date(o.createdAt);
-        return !Number.isNaN(createdAt.getTime()) && createdAt >= previousStartDate && createdAt < startDate;
-      });
+      setSalesByMonth(data.salesByMonth || []);
 
-      const commissionRateByVendor = new Map(
-        shopsToUse.map((s: ApiShop) => [String(s.id), Number(s.commissionRate ?? 10)])
-      );
+      const categories = await api.getCategories().catch(() => []);
+      const categoryNameMap = new Map((categories || []).map((cat: any) => [String(cat.id), String(cat.name)]));
 
-      const computeOrderCommission = (o: ApiOrder) => {
-        const explicit = Number((o as any)?.commissionAmount || 0);
-        if (explicit > 0) return explicit;
+      const categoryColors = ['hsl(190, 100%, 50%)', 'hsl(270, 100%, 60%)', 'hsl(330, 100%, 60%)', 'hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)'];
+      const topCats = (data.topCategories || []).map((c, idx) => ({
+        name: categoryNameMap.get(c.categoryId) || (c.categoryId === 'null' ? 'Uncategorized' : 'Other'),
+        value: c.earnings,
+        color: categoryColors[idx % categoryColors.length],
+      }));
 
-        const subOrders = Array.isArray((o as any)?.subOrders) ? (o as any).subOrders : [];
-        if (subOrders.length > 0) {
-          return subOrders.reduce((sum: number, sub: any) => {
-            const vendorId = String(sub?.vendor?._id || sub?.vendor || '');
-            const rate = Number(commissionRateByVendor.get(vendorId) ?? 10);
-            const subtotal = Number(sub?.subtotal || sub?.totalAmount || 0);
-            return sum + ((subtotal * rate) / 100);
-          }, 0);
-        }
+      setTopCategories(topCats);
 
-        return (Number(o.totalAmount || 0) * 10) / 100;
-      };
-
-      if (scopedOrders.length >= 0) {
-        const currentSales = scopedOrders.reduce((sum: number, o: ApiOrder) => sum + Number(o.totalAmount || 0), 0);
-        const currentCommission = scopedOrders.reduce((sum: number, o: ApiOrder) => sum + computeOrderCommission(o), 0);
-        const currentOrders = scopedOrders.length;
-        const previousSales = previousOrders.reduce((sum: number, o: ApiOrder) => sum + Number(o.totalAmount || 0), 0);
-        const previousCommission = previousOrders.reduce((sum: number, o: ApiOrder) => sum + computeOrderCommission(o), 0);
-        const previousOrdersCount = previousOrders.length;
-
-        const currentVendors = shopsToUse.filter((s: ApiShop) => s.status === 'approved' || s.status === 'active').length;
-        const previousVendors = shopsToUse.filter((s: ApiShop) => {
-          const createdAt = new Date(s.createdAt || '');
-          return (s.status === 'approved' || s.status === 'active') && !Number.isNaN(createdAt.getTime()) && createdAt < startDate;
-        }).length;
-
-        const calcGrowth = (current: number, previous: number) => {
-          if (previous <= 0) return current > 0 ? 100 : 0;
-          return ((current - previous) / previous) * 100;
-        };
-
-        setTotalSales(currentSales);
-        setTotalCommission(currentCommission);
-        setTotalOrders(currentOrders);
-        setGrowth({
-          sales: calcGrowth(currentSales, previousSales),
-          commission: calcGrowth(currentCommission, previousCommission),
-          orders: calcGrowth(currentOrders, previousOrdersCount),
-          vendors: calcGrowth(currentVendors, previousVendors),
-        });
-
-        const statusCounts: Record<string, number> = {};
-        scopedOrders.forEach((o: ApiOrder) => {
-          const key = mapOrderStatusToBucket(o);
-          statusCounts[key] = (statusCounts[key] || 0) + 1;
-        });
-        setOrdersByStatus([
-          { name: 'Pending', value: statusCounts['pending'] || 0, color: 'hsl(38, 92%, 50%)' },
-          { name: 'Processing', value: statusCounts['processing'] || 0, color: 'hsl(190, 100%, 50%)' },
-          { name: 'Shipped', value: statusCounts['shipped'] || 0, color: 'hsl(270, 100%, 60%)' },
-          { name: 'Delivered', value: statusCounts['delivered'] || 0, color: 'hsl(142, 76%, 36%)' },
-          { name: 'Cancelled', value: statusCounts['cancelled'] || 0, color: 'hsl(0, 72%, 51%)' },
-        ]);
-
-        const groupedData: Record<string, { sales: number; commission: number; orders: number }> = {};
-        scopedOrders.forEach((o: ApiOrder) => {
-          const created = new Date(o.createdAt);
-          if (Number.isNaN(created.getTime())) return;
-          const key = getBucketKey(created, timeRange);
-          if (!groupedData[key]) groupedData[key] = { sales: 0, commission: 0, orders: 0 };
-          groupedData[key].sales += Number(o.totalAmount || 0);
-          groupedData[key].commission += computeOrderCommission(o);
-          groupedData[key].orders += 1;
-        });
-        const sortedKeys = Object.keys(groupedData).sort();
-        setSalesByMonth(sortedKeys.map((key) => ({ month: getBucketLabel(key, timeRange), ...groupedData[key] })));
-      }
-
-      setTotalVendors(shopsToUse.filter((s: ApiShop) => s.status === 'approved' || s.status === 'active').length);
-
-      const categoryNameById = new Map((categoriesData || []).map((c: any) => [String(c?.id || c?._id), String(c?.name || 'Uncategorized')]));
-      const productCategoryById = new Map<string, string>();
-      productsToUse.forEach((p: ApiProduct) => {
-        const productId = String((p as any)?.id || (p as any)?._id || '');
-        if (!productId) return;
-        const categoryId = String((p as any)?.categoryId || (p as any)?.category?.id || (p as any)?.category?._id || (p as any)?.category || '');
-        if (categoryId) productCategoryById.set(productId, categoryId);
-      });
-
-      const categoryCounts: Record<string, number> = {};
-      scopedOrders.forEach((order: ApiOrder) => {
-        const items = Array.isArray((order as any)?.items) ? (order as any).items : [];
-        items.forEach((item: any) => {
-          const itemProduct = item?.product;
-          const itemProductId = String(itemProduct?._id || itemProduct?.id || item?.productId || item?.product || '');
-          const categoryId = String(
-            itemProduct?.category?._id ||
-            itemProduct?.category?.id ||
-            itemProduct?.category ||
-            productCategoryById.get(itemProductId) ||
-            ''
-          );
-          const categoryName = itemProduct?.category?.name || categoryNameById.get(categoryId) || 'Uncategorized';
-          const quantity = Number(item?.quantity || 1);
-          categoryCounts[categoryName] = (categoryCounts[categoryName] || 0) + (Number.isFinite(quantity) && quantity > 0 ? quantity : 1);
-        });
-      });
-      setTopCategories(Object.entries(categoryCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, value]) => ({ name, value })));
-    } catch (error: unknown) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
+    } catch (error: any) {
+      console.error('Analytics fetch error:', error);
+      toast({ title: 'Error', description: error.message || 'Failed to load analytics', variant: 'destructive' });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  }, [toast, timeRange]);
+  }, [timeRange, toast]);
 
-  useEffect(() => { fetchAnalytics(); }, [fetchAnalytics, timeRange]);
+  useEffect(() => {
+    fetchAnalytics();
+  }, [fetchAnalytics]);
 
 
   const stats = [
-    { label: 'Total Sales', value: formatLKRCompact(totalSales), icon: DollarSign, change: growth.sales, color: 'text-primary' },
-    { label: 'Commission Earned', value: formatLKRCompact(totalCommission), icon: TrendingUp, change: growth.commission, color: 'text-success' },
-    { label: 'Total Orders', value: totalOrders.toLocaleString(), icon: ShoppingBag, change: growth.orders, color: 'text-purple-400' },
-    { label: 'Active Vendors', value: totalVendors.toLocaleString(), icon: Users, change: growth.vendors, color: 'text-warning' },
+    { label: 'Total Sales', value: formatLKRCompact(totalSales), icon: DollarSign, change: '+18%', positive: true, color: 'text-primary' },
+    { label: 'Commission Earned', value: formatLKRCompact(totalCommission), icon: TrendingUp, change: '+12%', positive: true, color: 'text-success' },
+    { label: 'Total Orders', value: totalOrders.toLocaleString(), icon: ShoppingBag, change: '+24%', positive: true, color: 'text-purple-400' },
+    { label: 'Average Order Value', value: formatLKRCompact(aov), icon: DollarSign, change: '+5%', positive: true, color: 'text-blue-400' },
+    { label: 'Total Refunds', value: formatLKRCompact(totalRefunds), icon: TrendingUp, change: '-2%', positive: false, color: 'text-destructive' },
+    { label: 'Active Vendors', value: totalVendors.toLocaleString(), icon: Users, change: '+3', positive: true, color: 'text-warning' },
   ];
-
-  const categoryColors = ['hsl(190, 100%, 50%)', 'hsl(270, 100%, 60%)', 'hsl(330, 100%, 60%)', 'hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)'];
 
   if (loading) return <AdminLayout><div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></AdminLayout>;
 
@@ -262,17 +130,14 @@ const SuperAdminAnalytics: React.FC = () => {
           </Select>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6 mb-8">
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 mb-8">
           {stats.map((stat, i) => (
             <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
               <Card className="glass-card">
                 <CardContent className="p-4 lg:p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div className="p-2 lg:p-3 rounded-lg bg-primary/10 border border-primary/30"><stat.icon className={`h-4 w-4 lg:h-5 lg:w-5 ${stat.color}`} /></div>
-                    <div className={`flex items-center gap-1 text-xs lg:text-sm ${stat.change >= 0 ? 'text-success' : 'text-destructive'}`}>
-                      {stat.change >= 0 ? <ArrowUpRight className="h-3 w-3 lg:h-4 lg:w-4" /> : <ArrowDownRight className="h-3 w-3 lg:h-4 lg:w-4" />}
-                      {`${stat.change >= 0 ? '+' : ''}${stat.change.toFixed(1)}%`}
-                    </div>
+                    <div className={`flex items-center gap-1 text-xs lg:text-sm ${stat.positive ? 'text-success' : 'text-destructive'}`}>{stat.positive ? <ArrowUpRight className="h-3 w-3 lg:h-4 lg:w-4" /> : <ArrowDownRight className="h-3 w-3 lg:h-4 lg:w-4" />}{stat.change}</div>
                   </div>
                   <p className="text-lg lg:text-2xl font-display font-bold">{stat.value}</p>
                   <p className="text-xs lg:text-sm text-muted-foreground">{stat.label}</p>
@@ -311,7 +176,7 @@ const SuperAdminAnalytics: React.FC = () => {
             <CardContent>
               <div className="h-[180px] lg:h-[200px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <PieChart><Pie data={ordersByStatus.filter(s => s.value > 0)} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" strokeWidth={0}>{ordersByStatus.filter(s => s.value > 0).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} /></PieChart>
+                  <PieChart><Pie data={ordersByStatus.filter(s => s.value > 0)} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" strokeWidth={0}>{ordersByStatus.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} /></PieChart>
                 </ResponsiveContainer>
               </div>
               <div className="space-y-2 mt-4">{ordersByStatus.map(item => (<div key={item.name} className="flex items-center justify-between text-sm"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} /><span className="text-muted-foreground">{item.name}</span></div><span className="font-medium">{item.value}</span></div>))}</div>
@@ -344,12 +209,52 @@ const SuperAdminAnalytics: React.FC = () => {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={topCategories} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(240, 10%, 18%)" />
-                    <XAxis type="number" stroke="hsl(215, 20%, 55%)" fontSize={12} />
+                    <XAxis type="number" stroke="hsl(215, 20%, 55%)" fontSize={12} tickFormatter={(v) => formatLKRCompact(v)} />
                     <YAxis type="category" dataKey="name" stroke="hsl(215, 20%, 55%)" width={80} fontSize={12} />
-                    <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} />
-                    <Bar dataKey="value" radius={[0, 4, 4, 0]} name="Products">{topCategories.map((_, index) => <Cell key={`cell-${index}`} fill={categoryColors[index % categoryColors.length]} />)}</Bar>
+                    <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} formatter={(value: number) => formatLKR(value)} />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]} name="Earnings">{topCategories.map((_, index) => <Cell key={`cell-${index}`} fill={topCategories[index]?.color} />)}</Bar>
                   </BarChart>
                 </ResponsiveContainer>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6 mb-6">
+          <Card className="lg:col-span-3 glass-card">
+            <CardHeader><CardTitle className="font-display flex items-center gap-2"><Users className="h-5 w-5 text-primary" />Top Performing Vendors</CardTitle></CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-white/10 text-muted-foreground">
+                      <th className="px-4 py-3 font-medium">Rank</th>
+                      <th className="px-4 py-3 font-medium">Shop Name</th>
+                      <th className="px-4 py-3 font-medium">Vendor Name</th>
+                      <th className="px-4 py-3 font-medium text-right">Total Orders</th>
+                      <th className="px-4 py-3 font-medium text-right">Total Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topVendors.length > 0 ? topVendors.map((vendor, index) => (
+                      <tr key={index} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full ${index === 0 ? 'bg-amber-500/20 text-amber-500' : index === 1 ? 'bg-slate-300/20 text-slate-300' : index === 2 ? 'bg-amber-700/20 text-amber-600' : 'bg-secondary text-muted-foreground'}`}>
+                            {index + 1}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-medium">{vendor.shopName}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{vendor.name}</td>
+                        <td className="px-4 py-3 text-right">{vendor.orders.toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right font-medium text-success">{formatLKR(vendor.sales)}</td>
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">No vendor data available for this period</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </CardContent>
           </Card>

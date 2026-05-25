@@ -30,6 +30,8 @@ const shopRoutes = require('./routes/shopRoutes');
 const policyRoutes = require('./routes/policy.routes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
+const adminAnalyticsRoutes = require('./routes/adminAnalytics.routes');
+const userRoutes = require('./routes/user.routes');
 const BackgroundJobs = require('./jobs/backgroundJobs');
 const swaggerUI = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
@@ -59,6 +61,21 @@ app.get("/api/message", (req, res) => {
   res.json({ message: "Hello from Express Backend! working" });
 });
 
+// Health check endpoint
+app.get("/health", (req, res) => {
+  res.json({ status: "OK", timestamp: new Date().toISOString() });
+});
+
+// Root API endpoint
+app.get("/", (req, res) => {
+  res.json({ 
+    name: "E-Commerce Autoparts API",
+    version: "1.0.0",
+    status: "running",
+    documentation: "http://localhost:5000/api-docs"
+  });
+});
+
 // === Use the Routes ===
 app.use('/api/auth', authRoutes);       //   & Register
 app.use('/api/vendors', vendorRoutes);  // Vendor Approval
@@ -68,7 +85,7 @@ app.use('/api/products', productRoutes);
 app.use('/api/offers', vendorProductRoutes);
 app.use('/api/orders', OrderRoutes);  // Order Management
 app.use('/api/cart', cartRoutes);
-app.use('/api/payments', paymentRoutes); 
+app.use('/api/payments', paymentRoutes);
 app.use('/api/shipping', shippingRoutes);
 app.use('/api/refunds', refundRoutes);
 app.use('/api/addresses', addressRoutes);
@@ -78,6 +95,8 @@ app.use('/api/shops', shopRoutes);
 app.use('/api/policies', policyRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/inventory', inventoryRoutes);
+app.use('/api/admin-analytics', adminAnalyticsRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpecs));
 console.log("📄 Documentation available at http://localhost:5000/api-docs");
 

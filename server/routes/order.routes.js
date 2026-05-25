@@ -19,6 +19,12 @@ router.patch('/:id/item-status', verifyToken, orderController.updateOrderStatus)
 //track
 router.get('/track/:trackingNumber', orderController.trackOrder);
 
+// Guest invoice download with signed token
+router.get('/:id/invoice/guest', orderController.getGuestInvoice);
+
+// Invoice download
+router.get('/:id/invoice', verifyToken, orderController.getInvoice);
+
 //customer order details
 router.get('/:id', verifyToken, orderController.getOrderById);
 router.post('/:id/cancel', verifyToken, orderController.cancelOrder)

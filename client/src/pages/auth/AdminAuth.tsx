@@ -28,10 +28,17 @@ const AdminAuth: React.FC = () => {
   const [resetEmail, setResetEmail] = useState('');
   const [resetLoading, setResetLoading] = useState(false);
 
-  // Redirect if already logged in as superadmin
+  // Redirect if already logged in as admin or superadmin
   React.useEffect(() => {
-    if (user && role === 'superadmin') {
+    if (!user || !role) return;
+
+    if (role === 'superadmin') {
       navigate('/superadmin');
+      return;
+    }
+
+    if (role === 'admin') {
+      navigate('/admin');
     }
   }, [user, role, navigate]);
 
@@ -83,42 +90,42 @@ const AdminAuth: React.FC = () => {
     }
 
     setLoading(true);
-    try {
-      const { error } = await signIn(loginForm.email, loginForm.password);
-
-      if (error) {
-        toast({
-          title: 'Login Failed',
-          description: error.message || 'Invalid credentials.',
-          variant: 'destructive',
-        });
-        return;
-      }
-
-      // Check role after sign in - fetch current user to verify superadmin access
-      const currentUser = await api.getCurrentUser();
-      const userRoles = currentUser?.userRoles?.map((r) => r.role) || [];
-
-      if (!userRoles.includes('superadmin')) {
-        await signOut();
-        toast({
-          title: 'Access Denied',
-          description: 'This portal is for Super Administrators only.',
-          variant: 'destructive',
-        });
-        return;
-      }
-
+    const { error } = await signIn(loginForm.email, loginForm.password);
+    
+    if (error) {
+      setLoading(false);
+      return;
+    }
+    
+    // Check role after sign in and route to the correct console.
+    const currentUser = await api.getCurrentUser();
+    const userRoles = currentUser?.userRoles?.map(r => r.role) || [];
+    const normalizedRoles = userRoles.map((value) => String(value || '').toLowerCase());
+    
+    if (normalizedRoles.includes('superadmin')) {
       navigate('/superadmin');
-    } catch (err: any) {
+      setLoading(false);
+      return;
+    }
+
+    if (normalizedRoles.includes('admin')) {
+      navigate('/admin');
+      setLoading(false);
+      return;
+    }
+
+    if (!normalizedRoles.includes('admin') && !normalizedRoles.includes('superadmin')) {
+      await signOut();
+      setLoading(false);
       toast({
-        title: 'Login Failed',
-        description: err?.message || 'Unable to sign in right now.',
+        title: 'Access Denied',
+        description: 'This portal is for administrators only.',
         variant: 'destructive',
       });
-    } finally {
-      setLoading(false);
+      return;
     }
+
+    setLoading(false);
   };
 
   return (
@@ -148,7 +155,7 @@ const AdminAuth: React.FC = () => {
               AUTO<span className="text-primary">MATRIX</span>
             </span>
           </Link>
-          <p className="text-muted-foreground mt-2">Super Admin Portal</p>
+          <p className="text-muted-foreground mt-2">Admin Portal</p>
         </div>
 
         <div className="glass-card rounded-2xl p-8 border border-destructive/20 shadow-2xl">
@@ -251,7 +258,7 @@ const AdminAuth: React.FC = () => {
           )}
 
           <div className="mt-6 text-center text-sm text-muted-foreground">
-            Not an administrator?{' '}
+            Looking for another portal?{' '}
             <Link to="/auth/customer" className="text-primary hover:underline">
               Customer Portal
             </Link>

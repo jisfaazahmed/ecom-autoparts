@@ -1,6 +1,8 @@
 const refundService = require('../services/refund.service');
 const Refund = require('../models/refund.model');
 
+const normalizeRole = (role) => String(role || '').toLowerCase().replace(/_/g, '');
+
 
 exports.createRefundRequest = async (req, res) => {
     try {
@@ -86,7 +88,7 @@ exports.getVendorRefunds = async (req, res) => {
 
 exports.getAdminRefunds = async (req, res) => {
     try {
-        const role = String(req.user?.role || '').toLowerCase().replace(/_/g, '');
+        const role = normalizeRole(req.user?.role);
         if (!['admin', 'superadmin'].includes(role)) {
             return res.status(403).json({
                 success: false,
@@ -151,7 +153,7 @@ exports.vendorReviewRefund = async (req, res) => {
 
 exports.approveOrRejectRefund = async (req, res) => {
     try {
-        const role = String(req.user?.role || '').toLowerCase().replace(/_/g, '');
+        const role = normalizeRole(req.user?.role);
         if (!['admin', 'superadmin'].includes(role)) {
             return res.status(403).json({
                 success: false,

@@ -217,7 +217,7 @@ const Navbar: React.FC = () => {
                   <DropdownMenuItem asChild>
                     <Link to="/auth/admin" className="flex items-center gap-2 text-muted-foreground">
                       <Shield className="h-4 w-4" />
-                      Admin Login
+                      Admin Portal
                     </Link>
                   </DropdownMenuItem>
                 </>
@@ -298,7 +298,7 @@ const Navbar: React.FC = () => {
                     </Link>
                     <Link to="/auth/admin" className="text-lg font-medium transition-colors hover:text-primary text-muted-foreground flex items-center gap-2">
                       <Shield className="h-5 w-5" />
-                      Admin Login
+                      Admin Portal
                     </Link>
                   </>
                 )}

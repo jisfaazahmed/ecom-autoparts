@@ -353,7 +353,7 @@ const Index: React.FC = () => {
                 Join our marketplace and reach thousands of automotive enthusiasts. 
                 Start selling your parts today with our easy vendor onboarding.
               </p>
-              <Link to="/seller/auth">
+              <Link to="/auth/seller">
                 <Button size="lg" className="neon-button px-8">
                   Apply Now
                   <ArrowRight className="ml-2 h-5 w-5" />
@@ -419,7 +419,8 @@ const Index: React.FC = () => {
               <h4 className="font-display font-semibold mb-4">Sellers</h4>
               <ul className="space-y-3">
                 <li><Link to="/auth/seller" className="text-sm text-muted-foreground hover:text-primary transition-colors">Become a Seller</Link></li>
-                <li><Link to="/auth/admin" className="text-sm text-muted-foreground hover:text-primary transition-colors">Seller Login</Link></li>
+                <li><Link to="/auth/seller" className="text-sm text-muted-foreground hover:text-primary transition-colors">Seller Portal</Link></li>
+                <li><Link to="/auth/admin" className="text-sm text-muted-foreground hover:text-primary transition-colors">Admin Portal</Link></li>
                 <li><a href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">Seller Guidelines</a></li>
                 <li><a href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">Commission Rates</a></li>
               </ul>

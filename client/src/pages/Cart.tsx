@@ -13,8 +13,13 @@ const Cart: React.FC = () => {
   const { cart, removeFromCart, updateQuantity, getCartTotal, clearCart } = useStore();
 
   const subtotal = getCartTotal();
-  const shipping = subtotal > 10000 ? 0 : 500;
-  const total = subtotal + shipping;
+  const totalWeight = cart.reduce((sum, item) => {
+    const weight = item?.product?.weight || 0.5;
+    return sum + (weight * item.quantity);
+  }, 0);
+  const shipping = Math.round(300 + (totalWeight * 50) + 300);
+  const taxAmount = Math.round(subtotal * 0.18);
+  const total = subtotal + shipping + taxAmount;
 
   if (cart.length === 0) {
     return (
@@ -168,7 +173,11 @@ const Cart: React.FC = () => {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Shipping</span>
-                    <span>{shipping === 0 ? 'FREE' : formatLKR(shipping)}</span>
+                    <span>{formatLKR(shipping)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Tax (18%)</span>
+                    <span>{formatLKR(taxAmount)}</span>
                   </div>
 
                   <Separator className="bg-border/50" />
@@ -181,11 +190,9 @@ const Cart: React.FC = () => {
                   </div>
                 </div>
 
-                {shipping > 0 && (
-                  <p className="text-xs text-muted-foreground mt-4">
-                    Add {formatLKR(10000 - subtotal)} more for free shipping
-                  </p>
-                )}
+                <p className="text-xs text-muted-foreground mt-4">
+                  Shipping is an estimate; final zone-based charge is calculated at checkout.
+                </p>
 
                 <Link to="/checkout">
                   <Button className="w-full mt-6 neon-button">

@@ -56,7 +56,7 @@ class RefundService {
     }
 
     async creaetRefundRequest(refundData, userId, orderItemId) {
-        try {
+        
             if (!userId) {
                 throw new Error('Customer authentication is required');
             }
@@ -101,9 +101,16 @@ class RefundService {
                 }
             }
 
+            const requestedQuantity = Number(refundData?.quantity || orderItem.quantity || 1);
+            const sanitizedQuantity = Number.isFinite(requestedQuantity)
+                ? Math.max(1, Math.min(Number(orderItem.quantity || 1), Math.floor(requestedQuantity)))
+                : Number(orderItem.quantity || 1);
+
             const refundAmount = await this.calculateRefundAmount(
                 orderItem,
                 refundData,
+                order,
+                sanitizedQuantity,
             );
 
             const requestNumber = await this.generateRequestNumber();
@@ -127,6 +134,7 @@ class RefundService {
                 vendor: vendorId,
                 payment: order.paymentId,
                 refundType: refundData.refundType || 'return',
+                amount: refundAmount.totalRefund,
                 returnReason: refundData.returnReason,
                 productCondition: refundData.productCondition,
                 evidence: refundData.evidence,
@@ -135,9 +143,9 @@ class RefundService {
                     name: orderItem.name,
                     sku: orderItem.product.sku,
                     variant: orderItem.variant,
-                    quantity: refundData.quantity || orderItem.quantity,
+                    quantity: sanitizedQuantity,
                     price: orderItem.price,
-                    totalAmount: orderItem.finalPrice
+                    totalAmount: refundAmount.itemAmount
                 },
                 refundAmount,
                 returnShipping: {
@@ -183,16 +191,30 @@ class RefundService {
             });
 
             return refund;
-        } catch (error) {
-            throw error;
-        }
+        
     }
 
-    async calculateRefundAmount(orderItem, refundData) {
-        const itemAmount = orderItem.finalPrice;
+    async calculateRefundAmount(orderItem, refundData, order = null, refundQuantity = null) {
+        const quantity = Number(orderItem.quantity || 1);
+        const resolvedQuantity = Number.isFinite(refundQuantity)
+            ? Math.max(1, Math.min(quantity, Math.floor(refundQuantity)))
+            : quantity;
 
-        const shippingRefund = ['defective_product', 'wrong_item', 'not_as_described']
-            .includes(refundData.returnReason.category) ? (orderItem.shippingCharge || 0) : 0;
+        const unitPrice = quantity > 0
+            ? Number(orderItem.finalPrice || 0) / quantity
+            : Number(orderItem.price || 0);
+        const itemAmount = Math.round(unitPrice * resolvedQuantity);
+
+        const eligibleForShippingRefund = ['defective_product', 'wrong_item', 'not_as_described']
+            .includes(refundData.returnReason.category);
+        const orderShippingTotal = Number(order?.shippingCharges || 0);
+        const orderItemsTotal = Number(order?.itemsTotal || orderItem.finalPrice || 0);
+        const orderItemRatio = orderItemsTotal > 0 ? Number(orderItem.finalPrice || 0) / orderItemsTotal : 0;
+        const itemShippingShare = Math.round(orderShippingTotal * orderItemRatio);
+        const quantityRatio = quantity > 0 ? resolvedQuantity / quantity : 0;
+        const shippingRefund = eligibleForShippingRefund
+            ? Math.round(itemShippingShare * quantityRatio)
+            : 0;
 
         let deductions = {
             restockingFee: 0,
@@ -413,6 +435,7 @@ class RefundService {
             if (checkData.refundPercentage < 100) {
                 const originalTotal = refund.refundAmount.totalRefund;
                 refund.refundAmount.totalRefund = Math.round(originalTotal * (checkData.refundPercentage / 100));
+                refund.amount = refund.refundAmount.totalRefund;
                 refund.refundAmount.deductions.other = {
                     amount: originalTotal - refund.refundAmount.totalRefund,
                     reason: checkData.deductionReason
@@ -518,6 +541,24 @@ class RefundService {
         }
     }
 
+    async restoreInventoryForRefund(refund) {
+        if (!refund?.orderItem) return;
+
+        const orderItem = await OrderItem.findById(refund.orderItem).select('product quantity status');
+        if (!orderItem) return;
+
+        // Avoid restoring stock multiple times for already-refunded items.
+        if (String(orderItem.status || '').toLowerCase() === 'refunded') {
+            return;
+        }
+
+        const requestedQty = Number(refund?.product?.quantity || orderItem.quantity || 1);
+        const maxQty = Number(orderItem.quantity || requestedQty || 1);
+        const restoreQty = Math.max(1, Math.min(maxQty, requestedQty));
+
+        await InventoryReservationService.restoreStock(orderItem.product, restoreQty);
+    }
+
     async processOriginalPaymentRefund(refund) {
         const payment = await Payment.findById(refund.payment);
 
@@ -542,6 +583,8 @@ class RefundService {
             note: `Refund of LKR ${refund.refundAmount.totalRefund} processed to original payment method`,
             userType: 'system'
         });
+
+        await this.restoreInventoryForRefund(refund);
 
         await refund.save();
 
@@ -1112,6 +1155,8 @@ class RefundService {
             updatedBy: processedBy,
             userType: 'system',
         });
+
+        await this.restoreInventoryForRefund(refund);
 
         if (refund.order) {
             refund.order.paymentStatus = 'refunded';

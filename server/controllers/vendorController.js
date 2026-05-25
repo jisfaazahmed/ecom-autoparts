@@ -2,6 +2,8 @@ const User = require('../models/user');
 const SettlementService = require('../services/settlement.service');
 const VendorAnalyticsService = require('../services/vendorAnalytics.service');
 const Settlement = require('../models/settlement.model');
+const NotificationService = require('../services/notification.service');
+
 
 // GET all vendors (Usage: /api/vendors?status=PENDING)
 exports.getAllVendors = async (req, res) => {
@@ -37,6 +39,12 @@ exports.updateVendorStatus = async (req, res) => {
     ).select('-password');
 
     if (!vendor) return res.status(404).json({ message: 'Vendor not found' });
+
+    // Notify Vendor of the result (Approved or Rejected)
+    if (normalizedStatus === 'ACTIVE' || normalizedStatus === 'REJECTED') {
+      NotificationService.notifyVendorApplicationResult(vendor, normalizedStatus).catch(err => console.error('Error notifying vendor status update:', err));
+    }
+
     res.json({ message: `Vendor status updated to ${normalizedStatus}`, vendor });
   } catch (err) {
     console.error(err);
@@ -141,18 +149,34 @@ exports.getSettlementSummary = async (req, res) => {
 exports.getVendorSettlements = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, page = 1, limit = 10 } = req.query;
+    const { status, page = 1, limit = 10, startDate, endDate } = req.query;
 
     const result = await SettlementService.getVendorSettlements(id, {
       status,
       page: parseInt(page),
-      limit: parseInt(limit)
+      limit: parseInt(limit),
+      startDate,
+      endDate
     });
 
     res.json(result);
   } catch (err) {
     console.error('Error fetching vendor settlements:', err);
     res.status(500).json({ message: 'Error fetching settlements' });
+  }
+};
+
+// GET settlement summary for a vendor in a date range (Usage: GET /api/vendors/:id/settlements/summary?startDate=...&endDate=...)
+exports.getVendorSettlementRangeSummary = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { startDate, endDate } = req.query;
+
+    const summary = await SettlementService.getVendorSettlementRangeSummary(id, startDate, endDate);
+    res.json(summary);
+  } catch (err) {
+    console.error('Error fetching vendor settlement range summary:', err);
+    res.status(500).json({ message: 'Error fetching settlement summary' });
   }
 };
 

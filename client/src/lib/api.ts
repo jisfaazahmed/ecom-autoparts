@@ -153,6 +153,7 @@ export interface ApiOrder {
   stripePaymentId?: string;
   stripeSessionId?: string;
   transactionId?: string;
+  guestInvoiceToken?: string;
   couponId?: string;
   discountAmount?: number;
   commissionAmount?: number;
@@ -1083,6 +1084,48 @@ class ApiClient {
     };
   }
 
+  async downloadInvoice(orderId: string, options?: { guestToken?: string }): Promise<boolean> {
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    const guestToken = options?.guestToken;
+
+    if (guestToken) {
+      headers['x-guest-invoice-token'] = guestToken;
+    } else if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const endpoint = guestToken
+      ? `${API_BASE}/orders/${orderId}/invoice/guest`
+      : `${API_BASE}/orders/${orderId}/invoice`;
+
+    const resp = await fetch(endpoint, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!resp.ok) {
+      let message = 'Failed to download invoice';
+      try {
+        const data = await resp.json();
+        message = data.message || message;
+      } 
+      catch {}
+      throw new Error(message);
+    }
+
+    const blob = await resp.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `invoice-${orderId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+    return true;
+  }
+
   async createOrder(data: {
     items: { productId: string; quantity: number }[];
     shippingAddress: string;
@@ -1096,13 +1139,18 @@ class ApiClient {
     couponCode?: string;
     notes?: string;
   }): Promise<ApiOrder> {
-    const response = await this.request<ApiOrder | { order?: ApiOrder; data?: ApiOrder }>('/orders', {
+    const response = await this.request<ApiOrder | { order?: ApiOrder; data?: ApiOrder; guestInvoiceToken?: string }>('/orders', {
       method: 'POST',
       body: JSON.stringify(data),
     });
 
     const rawOrder = (response as any)?.order || (response as any)?.data || response;
-    return this.normalizeOrder(rawOrder);
+    const normalizedOrder = this.normalizeOrder(rawOrder);
+    const guestInvoiceToken = (response as any)?.guestInvoiceToken;
+    if (guestInvoiceToken) {
+      normalizedOrder.guestInvoiceToken = guestInvoiceToken;
+    }
+    return normalizedOrder;
   }
 
   async updateOrderStatus(id: string, status: string, trackingNumber?: string): Promise<ApiOrder> {
@@ -1218,24 +1266,19 @@ class ApiClient {
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         if (value !== undefined) {
-          if (key === 'status') {
-            const mappedStatus = this.mapShopStatusToVendorStatus(String(value));
-            if (mappedStatus) searchParams.set('status', mappedStatus);
-          } else {
-            searchParams.set(key, String(value));
-          }
+          searchParams.set(key, String(value));
         }
       });
     }
-    const response = await this.request<any>(`/vendors?${searchParams.toString()}`);
-    const vendors = Array.isArray(response) ? response : response?.vendors || response?.data || [];
-    const shops = vendors.map((vendor: any) => this.mapVendorToShop(vendor));
+    // Call consolidated /api/shops endpoint instead of /api/vendors
+    const response = await this.request<{ shops: any[]; pagination: any }>(`/shops?${searchParams.toString()}`);
+    const shops = Array.isArray(response?.shops) ? response.shops : [];
     return {
       data: shops,
-      total: shops.length,
-      page: 1,
-      limit: shops.length,
-      totalPages: 1,
+      total: response?.pagination?.total || shops.length,
+      page: response?.pagination?.page || 1,
+      limit: response?.pagination?.limit || shops.length,
+      totalPages: response?.pagination?.totalPages || 1,
     };
   }
 
@@ -1248,24 +1291,19 @@ class ApiClient {
     if (params) {
       Object.entries(params).forEach(([key, value]) => {
         if (value !== undefined) {
-          if (key === 'status') {
-            const mappedStatus = this.mapShopStatusToVendorStatus(String(value));
-            if (mappedStatus) searchParams.set('status', mappedStatus);
-          } else {
-            searchParams.set(key, String(value));
-          }
+          searchParams.set(key, String(value));
         }
       });
     }
-    const response = await this.request<any>(`/vendors?${searchParams.toString()}`);
-    const vendors = Array.isArray(response) ? response : response?.vendors || response?.data || [];
-    const shops = vendors.map((vendor: any) => this.mapVendorToShop(vendor));
+    // Call consolidated /api/shops endpoint instead of /api/vendors
+    const response = await this.request<{ shops: any[]; pagination: any }>(`/shops?${searchParams.toString()}`);
+    const shops = Array.isArray(response?.shops) ? response.shops : [];
     return {
       data: shops,
-      total: shops.length,
-      page: 1,
-      limit: shops.length,
-      totalPages: 1,
+      total: response?.pagination?.total || shops.length,
+      page: response?.pagination?.page || 1,
+      limit: response?.pagination?.limit || shops.length,
+      totalPages: response?.pagination?.totalPages || 1,
     };
   }
 
@@ -1292,18 +1330,18 @@ class ApiClient {
   }
 
   async updateShopStatus(id: string, status: string): Promise<ApiShop> {
-    const vendorStatus = this.mapShopStatusToVendorStatus(status) || status;
-    const response = await this.request<{ vendor?: any }>(`/vendors/${id}/status`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status: vendorStatus }),
+    // Call consolidated /api/shops/:id/status endpoint (returns ApiShop directly)
+    const response = await this.request<ApiShop>(`/shops/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
     });
-    if (response?.vendor) return this.mapVendorToShop(response.vendor);
+    if (response) return response;
     return {
       id,
       name: 'Unnamed Shop',
       description: undefined,
       ownerId: id,
-      status: this.mapVendorStatusToShopStatus(vendorStatus),
+      status: 'pending' as const,
       email: undefined,
       phone: undefined,
       address: undefined,
@@ -1316,17 +1354,18 @@ class ApiClient {
   }
 
   async updateShopCommission(id: string, commissionRate: number): Promise<ApiShop> {
-    const response = await this.request<{ vendor?: any }>(`/vendors/${id}/commission`, {
-      method: 'PATCH',
+    // Call consolidated /api/shops/:id/commission endpoint (returns ApiShop directly)
+    const response = await this.request<ApiShop>(`/shops/${id}/commission`, {
+      method: 'PUT',
       body: JSON.stringify({ commissionRate }),
     });
-    if (response?.vendor) return this.mapVendorToShop(response.vendor);
+    if (response) return response;
     return {
       id,
       name: 'Unnamed Shop',
       description: undefined,
       ownerId: id,
-      status: 'approved',
+      status: 'approved' as const,
       email: undefined,
       phone: undefined,
       address: undefined,
@@ -1374,6 +1413,25 @@ class ApiClient {
     return this.request<any>(`/vendors/${vendorId}/analytics/earnings?${searchParams.toString()}`);
   }
 
+  // ============ SYSTEM ANALYTICS ============
+
+  async getSuperAdminAnalytics(params?: {
+    range?: '7d' | '30d' | '90d' | '1y';
+  }): Promise<{
+    totalSales: number;
+    totalCommission: number;
+    totalOrders: number;
+    totalVendors: number;
+    ordersByStatus: Record<string, number>;
+    salesByMonth: Array<{ month: string; sales: number; commission: number; orders: number }>;
+    topCategories: Array<{ categoryId: string; earnings: number }>;
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params?.range) searchParams.set('range', params.range);
+    const response = await this.request<{ success: boolean; data: any }>(`/admin-analytics/superadmin?${searchParams.toString()}`);
+    return response.data;
+  }
+
   // ============ SETTLEMENT / PAYOUT ============
 
   async getSettlementSummary(vendorId: string): Promise<any> {
@@ -1384,12 +1442,26 @@ class ApiClient {
     status?: string;
     page?: number;
     limit?: number;
+    startDate?: string;
+    endDate?: string;
   }): Promise<any> {
     const searchParams = new URLSearchParams();
     if (params?.status) searchParams.set('status', params.status);
     if (params?.page) searchParams.set('page', String(params.page));
     if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
     return this.request<any>(`/vendors/${vendorId}/settlements?${searchParams.toString()}`);
+  }
+
+  async getVendorSettlementRangeSummary(vendorId: string, params?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{ totalSettlements: number; totalCommission: number; totalPayable: number; totalOrderAmount: number; totalRefunded: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
+    return this.request<{ totalSettlements: number; totalCommission: number; totalPayable: number; totalOrderAmount: number; totalRefunded: number }>(`/vendors/${vendorId}/settlements/summary?${searchParams.toString()}`);
   }
 
   async getSettlementDetails(settlementId: string): Promise<any> {
@@ -1636,12 +1708,11 @@ class ApiClient {
     return response.data || response;
   }
 
-  async createPaymentIntent(data: { orderId: string; mockScenario?: 'requires_action' | 'fail_once' | 'always_fail' }): Promise<{
+  async createPaymentIntent(data: { orderId: string; email?: string }): Promise<{
     paymentIntentId: string;
     clientSecret: string;
     amount: number;
     currency: string;
-    mockMode?: boolean;
     requiresAction?: boolean;
     nextAction?: any;
   }> {
@@ -1650,7 +1721,6 @@ class ApiClient {
       clientSecret: string;
       amount: number;
       currency: string;
-      mockMode?: boolean;
       requiresAction?: boolean;
       nextAction?: any;
       data?: {
@@ -1658,7 +1728,6 @@ class ApiClient {
         clientSecret: string;
         amount: number;
         currency: string;
-        mockMode?: boolean;
         requiresAction?: boolean;
         nextAction?: any;
       };
@@ -1726,21 +1795,12 @@ class ApiClient {
     return response.data || response;
   }
 
-  async topupWalletMock(amount: number): Promise<{ balance: number }> {
-    const response = await this.request<any>('/payments/wallet/topup-mock', {
-      method: 'POST',
-      body: JSON.stringify({ amount }),
-    });
-    return response.data || response;
-  }
-
   async payWithWallet(data: { orderId: string; otp?: string }): Promise<{
     orderId?: string;
     paymentId?: string;
     paymentStatus?: string;
     balance?: number;
     requiresOtp?: boolean;
-    mockOtp?: string;
     expiresAt?: string;
   }> {
     const response = await this.request<any>('/payments/wallet/pay', {

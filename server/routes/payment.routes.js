@@ -15,7 +15,6 @@ router.post('/create-payment-intent', verifyToken, paymentController.createPayme
 router.post('/confirm-payment-intent', verifyToken, paymentController.confirmPaymentIntent);
 router.post('/retry-payment-intent', verifyToken, paymentController.retryPaymentIntent);
 router.get('/wallet/balance', verifyToken, paymentController.getWalletBalance);
-router.post('/wallet/topup-mock', verifyToken, paymentController.topupWalletMock);
 router.post('/wallet/pay', verifyToken, paymentController.payWithWallet);
 router.post('/initiate/:orderId', verifyToken, paymentController.createPayment);
 router.post('/confirm-card/:paymentId', verifyToken, paymentController.confirmCardPayment);

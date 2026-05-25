@@ -1,12 +1,29 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/user');
 
-function buildMockUser() {
+async function hydrateUserFromDatabase(authUser) {
+  const userId = authUser?.id || authUser?._id || authUser?.userId;
+  if (!userId || !/^[a-fA-F0-9]{24}$/.test(String(userId))) {
+    return authUser;
+  }
+
+  const dbUser = await User.findById(userId).select('role email status shopName commissionRate name createdAt');
+  if (!dbUser) {
+    return null;
+  }
+
   return {
-    _id: process.env.MOCK_AUTH_USER_ID || '000000000000000000000001',
-    id: process.env.MOCK_AUTH_USER_ID || '000000000000000000000001',
-    role: process.env.MOCK_AUTH_ROLE || 'customer',
-    email: process.env.MOCK_AUTH_EMAIL || 'mock-customer@example.com',
+    ...authUser,
+    id: dbUser.id,
+    _id: dbUser._id,
+    userId: dbUser.id,
+    role: dbUser.role,
+    email: dbUser.email,
+    status: dbUser.status,
+    shopName: dbUser.shopName,
+    commissionRate: dbUser.commissionRate,
+    name: dbUser.name,
+    createdAt: dbUser.createdAt,
   };
 }
 
@@ -21,45 +38,34 @@ function decodeAuthToken(req) {
 }
 
 // 1. Verify Token (Is user logged in?)
-exports.verifyToken = (req, res, next) => {
-  const allowMock = process.env.USE_AUTH_MOCK === 'true';
-
+exports.verifyToken = async (req, res, next) => {
   try {
-    const user = decodeAuthToken(req);
-    if (!user) {
-      if (!allowMock) {
-        return res.status(401).json({ message: 'No token, authorization denied' });
-      }
-      req.user = buildMockUser();
-      return next();
+    const tokenUser = decodeAuthToken(req);
+    if (!tokenUser) {
+      return res.status(401).json({ message: 'No token, authorization denied' });
     }
 
-    req.user = user;
+    const hydratedUser = await hydrateUserFromDatabase(tokenUser);
+    if (!hydratedUser) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    req.user = hydratedUser;
     next();
   } catch (err) {
-    if (allowMock) {
-      req.user = buildMockUser();
-      return next();
-    }
     res.status(401).json({ message: 'Token is not valid' });
   }
 };
 
 // Optional authentication for mixed guest/auth endpoints (e.g., COD guest checkout)
-exports.attachUserIfPresent = (req, _res, next) => {
-  const allowMock = process.env.USE_AUTH_MOCK === 'true';
-
+exports.attachUserIfPresent = async (req, _res, next) => {
   try {
-    const user = decodeAuthToken(req);
-    if (user) {
-      req.user = user;
-    } else if (allowMock) {
-      req.user = buildMockUser();
+    const tokenUser = decodeAuthToken(req);
+    if (tokenUser) {
+      req.user = await hydrateUserFromDatabase(tokenUser);
     }
   } catch (_err) {
-    if (allowMock) {
-      req.user = buildMockUser();
-    }
+    // Ignore malformed tokens on optional auth paths.
   }
 
   next();

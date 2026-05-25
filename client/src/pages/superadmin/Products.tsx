@@ -11,6 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { formatLKR } from '@/lib/currency';
 import { usePagination } from '@/hooks/usePagination';
 import AdminLayout from '@/components/layout/AdminLayout';
+import PaginationControls from '@/components/common/PaginationControls';
 import { api, ApiProduct, ApiCategory } from '@/lib/api';
 
 const SuperAdminProducts: React.FC = () => {
@@ -200,6 +201,11 @@ const SuperAdminProducts: React.FC = () => {
               </TableBody>
             </Table>
           </div>
+          {totalPages > 1 && (
+            <div className="p-4 border-t border-border/50 mt-4">
+              <PaginationControls currentPage={currentPage} totalPages={totalPages} onPageChange={goToPage} />
+            </div>
+          )}
         </div>
       </motion.div>
     </AdminLayout>

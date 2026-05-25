@@ -87,14 +87,20 @@ class OrderService {
         }));
     }
 
-    buildSubOrderPayload(mainOrder, groupedSubOrder) {
+    buildSubOrderPayload(mainOrder, groupedSubOrder, financials = {}) {
         const subtotal = Number(groupedSubOrder.subtotal || 0);
         const orderSubtotal = Number(mainOrder.itemsTotal || 0);
         const ratio = orderSubtotal > 0 ? subtotal / orderSubtotal : 0;
 
-        const shippingCharge = Math.round(Number(mainOrder.shippingCharges || 0) * ratio);
-        const taxAmount = Math.round(Number(mainOrder.taxAmount || 0) * ratio);
-        const discountAmount = Math.round(Number(mainOrder.discountAmount || 0) * ratio);
+        const shippingCharge = Number.isFinite(financials.shippingCharge)
+            ? Number(financials.shippingCharge)
+            : Math.round(Number(mainOrder.shippingCharges || 0) * ratio);
+        const taxAmount = Number.isFinite(financials.taxAmount)
+            ? Number(financials.taxAmount)
+            : Math.round(Number(mainOrder.taxAmount || 0) * ratio);
+        const discountAmount = Number.isFinite(financials.discountAmount)
+            ? Number(financials.discountAmount)
+            : Math.round(Number(mainOrder.discountAmount || 0) * ratio);
 
         return {
             order: mainOrder._id,
@@ -123,14 +129,45 @@ class OrderService {
             return [];
         }
 
-        const operations = groupedSubOrders.map((groupedSubOrder) => ({
+        const orderSubtotal = Number(mainOrder.itemsTotal || 0);
+        let remainingShipping = Math.round(Number(mainOrder.shippingCharges || 0));
+        let remainingTax = Math.round(Number(mainOrder.taxAmount || 0));
+        let remainingDiscount = Math.round(Number(mainOrder.discountAmount || 0));
+
+        const payloads = groupedSubOrders.map((groupedSubOrder, index) => {
+            const isLast = index === groupedSubOrders.length - 1;
+            const subtotal = Number(groupedSubOrder.subtotal || 0);
+            const ratio = orderSubtotal > 0 ? subtotal / orderSubtotal : 0;
+
+            const allocatedShipping = isLast
+                ? remainingShipping
+                : Math.round(Number(mainOrder.shippingCharges || 0) * ratio);
+            const allocatedTax = isLast
+                ? remainingTax
+                : Math.round(Number(mainOrder.taxAmount || 0) * ratio);
+            const allocatedDiscount = isLast
+                ? remainingDiscount
+                : Math.round(Number(mainOrder.discountAmount || 0) * ratio);
+
+            remainingShipping -= allocatedShipping;
+            remainingTax -= allocatedTax;
+            remainingDiscount -= allocatedDiscount;
+
+            return this.buildSubOrderPayload(mainOrder, groupedSubOrder, {
+                shippingCharge: allocatedShipping,
+                taxAmount: allocatedTax,
+                discountAmount: allocatedDiscount,
+            });
+        });
+
+        const operations = groupedSubOrders.map((groupedSubOrder, index) => ({
             updateOne: {
                 filter: {
                     order: mainOrder._id,
                     seller: groupedSubOrder.vendor,
                 },
                 update: {
-                    $set: this.buildSubOrderPayload(mainOrder, groupedSubOrder),
+                    $set: payloads[index],
                 },
                 upsert: true,
             }
@@ -220,8 +257,10 @@ class OrderService {
                     throw new Error(`${product.name} is currently unavailable for purchase`);
                 }
 
-                // Check available stock using inventory reservation service
-                const availableStock = await InventoryReservationService.getAvailableStock(product._id);
+                // Check available stock using user-aware inventory reservation service
+                const availableStock = userId
+                    ? await InventoryReservationService.getAvailableStockForUser(product._id, userId)
+                    : await InventoryReservationService.getAvailableStock(product._id);
                 if (availableStock < item.quantity) {
                     throw new Error(`${product.name} stock not available. Available: ${availableStock}, Requested: ${item.quantity}`);
                 }
@@ -305,24 +344,37 @@ class OrderService {
 
             await this.persistSubOrders(order, subOrders);
 
-            // Create inventory reservations and deduct stock
-            for (const { product, quantity } of enrichedItems) {
-                // Create reservation
-                try {
-                    await InventoryReservationService.reserveStock(
-                        product._id,
-                        userId,
-                        quantity
-                    );
-                } catch (error) {
-                    console.warn(`Warning: Could not create reservation for ${product.name}:`, error.message);
+            // Convert cart reservations to order allocations and deduct stock
+            for (let index = 0; index < enrichedItems.length; index += 1) {
+                const { product, quantity } = enrichedItems[index];
+                const orderItem = orderItemDocs[index];
+
+                if (userId) {
+                    try {
+                        await InventoryReservationService.convertUserReservationToOrder({
+                            userId,
+                            productId: product._id,
+                            quantity,
+                            orderId: order._id,
+                            orderItemId: orderItem?._id,
+                        });
+                    } catch (error) {
+                        console.warn(`Warning: Could not convert reservation for ${product.name}:`, error.message);
+                    }
                 }
 
-                // Deduct stock
                 await Product.findByIdAndUpdate(
                     product._id,
                     { $inc: { stock: -quantity, soldCount: quantity } }
                 );
+
+                if (userId) {
+                    await InventoryReservationService.releaseUserProductReservation(
+                        userId,
+                        product._id,
+                        'cancelled_by_user'
+                    );
+                }
             }
 
             // status timeline
@@ -420,7 +472,7 @@ class OrderService {
             'same_day': 0,
             'express': 2,
             'standard': 5,
-            'pickup_piont': 7
+            'pickup_point': 7
         };
 
         const deliveryDate = new Date();
@@ -926,12 +978,19 @@ class OrderService {
 
             if (event === 'order_placed' || event === 'order Placed') {
                 await NotificationService.notifyOrderCreated(order);
+                if (order.couponCode) {
+                    await NotificationService.notifySuperAdminCouponUsed(order);
+                }
             } else if (event === 'order_confirmed') {
                 await NotificationService.notifyOrderConfirmed(order);
-            } else if (event === 'order_shipped') {
+            } else if (event === 'order_shipped' || event === 'shipped') {
                 await NotificationService.notifyOrderShipped(order, order.trackingNumber, order.courierPartner);
-            } else if (event === 'order_delivered') {
+            } else if (event === 'order_delivered' || event === 'delivered') {
                 await NotificationService.notifyOrderDelivered(order);
+            } else if (event === 'processing_started' || event === 'processing') {
+                await NotificationService.notifyOrderProcessing(order);
+            } else if (event === 'out_for_delivery') {
+                await NotificationService.notifyOrderOutForDelivery(order);
             } else if (event === 'payment_failed') {
                 await NotificationService.notifyPaymentFailed(order);
             } else if (event === 'payment_success') {
