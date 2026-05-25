@@ -89,7 +89,6 @@ const policySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-policySchema.index({ policyType: 1 });
 policySchema.index({ isActive: 1 });
 
 module.exports = mongoose.model('Policy', policySchema);

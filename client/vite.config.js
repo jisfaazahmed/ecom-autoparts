@@ -26,7 +26,7 @@ export default defineConfig(({ mode }) => {
       host: true,
       watch: {
         usePolling,
-        ignored: ['**/node_modules/**', '**/.git/**', '**/dist/**'],
+        ignored: ['**/node_modules/**', '**/.git/**', '**/dist/**', '**/src/assets/**'],
       },
       proxy: {
         '/api': {
