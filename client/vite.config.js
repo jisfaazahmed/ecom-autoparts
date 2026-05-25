@@ -5,6 +5,7 @@ import path from 'path'
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
+  const usePolling = env.VITE_USE_POLLING === 'true';
   return {
     plugins: [react()],
     resolve: {
@@ -17,14 +18,15 @@ export default defineConfig(({ mode }) => {
     },
     optimizeDeps: {
       include: ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query'],
-      force: true,
+      force: false,
     },
     server: {
       port: 3000,
       strictPort: true,
       host: true,
       watch: {
-        usePolling: true,
+        usePolling,
+        ignored: ['**/node_modules/**', '**/.git/**', '**/dist/**'],
       },
       proxy: {
         '/api': {
