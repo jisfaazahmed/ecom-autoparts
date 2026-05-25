@@ -88,6 +88,7 @@ export interface ApiShop {
   address?: string;
   businessRegistration?: string;
   commissionRate?: number;
+  shopWideDiscountPercent?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -109,6 +110,12 @@ export interface ApiProduct {
   shopId: string;
   isActive: boolean;
   status: "Pending" | "Approved" | "Rejected";
+  featured?: boolean;
+  hasDiscount?: boolean;
+  originalPrice?: number;
+  productDiscountPercent?: number;
+  shopDiscountPercent?: number;
+  effectiveDiscountPercent?: number;
   compatibleVariants?: string[];
   specifications?: Record<string, string>;
   createdAt: string;
@@ -228,6 +235,14 @@ export interface ApiVehicleVariant {
   created_at?: string;
 }
 
+export interface ApiResolvedVehicle {
+  id: string;
+  year: number;
+  make: string;
+  model: string;
+  submodel?: string;
+}
+
 export interface ApiUserVehicle {
   id: string;
   userId: string;
@@ -266,6 +281,12 @@ export interface AuthResponse {
   user: ApiUser;
   accessToken: string;
   refreshToken: string;
+}
+
+export interface StartRegisterResponse {
+  message: string;
+  verificationId: string;
+  expiresInMinutes?: number;
 }
 
 export interface StockCheckResult {
@@ -455,6 +476,7 @@ class ApiClient {
       address: vendor?.address ?? undefined,
       businessRegistration: vendor?.businessRegistration || vendor?.businessRegistrationNumber || undefined,
       commissionRate: vendor?.commissionRate ?? 10,
+      shopWideDiscountPercent: vendor?.shopWideDiscountPercent ?? 0,
       createdAt,
       updatedAt: vendor?.updatedAt || vendor?.updated_at || createdAt,
     };
@@ -532,6 +554,8 @@ class ApiClient {
       // If no refresh token or refresh failed, clear tokens and redirect
       localStorage.removeItem('auth_token');
       localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('token');
       localStorage.removeItem('user');
       window.location.href = '/auth/customer?redirect=' + window.location.pathname;
       throw new Error('Session expired, please login again.');
@@ -589,8 +613,12 @@ class ApiClient {
   logout() {
     this.accessToken = null;
     this.refreshToken = null;
+    // Clear all auth keys (new + legacy) so refresh can't restore a session.
+    localStorage.removeItem('auth_token');
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
   }
 
   isAuthenticated(): boolean {
@@ -609,14 +637,14 @@ class ApiClient {
     return response;
   }
 
-  async register(data: {
+  async startRegister(data: {
     email: string;
     password: string;
     fullName: string;
     phone?: string;
-  }): Promise<AuthResponse> {
+  }): Promise<StartRegisterResponse> {
     const normalizedEmail = data.email.trim().toLowerCase();
-    const response = await this.request<AuthResponse>('/auth/register', {
+    return this.request<StartRegisterResponse>('/auth/register/start', {
       method: 'POST',
       body: JSON.stringify({
         name: data.fullName,
@@ -625,8 +653,54 @@ class ApiClient {
         role: 'CUSTOMER',
       }),
     });
+  }
+
+  async startRegisterSeller(data: {
+    email: string;
+    password: string;
+    fullName: string;
+    phone?: string;
+    shopName: string;
+    shopDescription?: string;
+    businessRegistration?: string;
+  }): Promise<StartRegisterResponse> {
+    const normalizedEmail = data.email.trim().toLowerCase();
+    return this.request<StartRegisterResponse>('/auth/register/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: data.fullName,
+        email: normalizedEmail,
+        password: data.password,
+        role: 'ADMIN',
+        shopName: data.shopName,
+      }),
+    });
+  }
+
+  async verifyRegisterOtp(data: { verificationId: string; otp: string }): Promise<AuthResponse> {
+    const response = await this.request<AuthResponse>('/auth/register/verify', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
     this.setTokens(response.accessToken, response.refreshToken);
     return response;
+  }
+
+  async resendRegisterOtp(data: { verificationId: string }): Promise<StartRegisterResponse> {
+    return this.request<StartRegisterResponse>('/auth/register/resend', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Backward-compatible wrappers: perform start phase only
+  async register(data: {
+    email: string;
+    password: string;
+    fullName: string;
+    phone?: string;
+  }): Promise<any> {
+    return this.startRegister(data);
   }
 
   async registerSeller(data: {
@@ -637,20 +711,8 @@ class ApiClient {
     shopName: string;
     shopDescription?: string;
     businessRegistration?: string;
-  }): Promise<AuthResponse> {
-    const normalizedEmail = data.email.trim().toLowerCase();
-    const response = await this.request<AuthResponse>('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: data.fullName,
-        email: normalizedEmail,
-        password: data.password,
-        role: 'ADMIN',
-        shopName: data.shopName,
-      }),
-    });
-    this.setTokens(response.accessToken, response.refreshToken);
-    return response;
+  }): Promise<any> {
+    return this.startRegisterSeller(data);
   }
 
   async getCurrentUser(): Promise<ApiUser> {
@@ -793,6 +855,11 @@ class ApiClient {
     return this.request<ApiProduct>(`/products/${id}`);
   }
 
+  async getFeaturedProducts(): Promise<ApiProduct[]> {
+    const response = await this.request<any>('/products/featured');
+    return Array.isArray(response) ? response : (response.products || response.data || []);
+  }
+
   async createProduct(data: Omit<ApiProduct, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiProduct> {
     return this.request<ApiProduct>('/products', {
       method: 'POST',
@@ -811,6 +878,13 @@ class ApiClient {
     return this.request<ApiProduct>(`/products/${id}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status }),
+    });
+  }
+
+  async updateProductFeatured(id: string, featured: boolean): Promise<ApiProduct> {
+    return this.request<ApiProduct>(`/products/${id}/featured`, {
+      method: 'PUT',
+      body: JSON.stringify({ featured }),
     });
   }
 
@@ -878,6 +952,39 @@ class ApiClient {
       };
     }>(`/orders/my_orders?${searchParams.toString()}`);
     const payload = response.data || { orders: [], pagination: { page: 1, limit: 10, total: 0, pages: 1 } };
+
+    return {
+      data: (payload.orders || []).map((order) => this.normalizeOrder(order)),
+      total: payload.pagination.total,
+      page: payload.pagination.page,
+      limit: payload.pagination.limit,
+      totalPages: payload.pagination.pages,
+    };
+  }
+
+  async getPlatformOrders(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<PaginatedResponse<ApiOrder>> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const response = await this.request<{
+      success: boolean;
+      data: {
+        orders: ApiOrder[];
+        pagination: { page: number; limit: number; total: number; pages: number };
+      };
+    }>(`/orders/admin/all?${searchParams.toString()}`);
+
+    const payload = response.data || { orders: [], pagination: { page: 1, limit: 20, total: 0, pages: 1 } };
 
     return {
       data: (payload.orders || []).map((order) => this.normalizeOrder(order)),
@@ -1454,6 +1561,20 @@ class ApiClient {
 
   async getAllVehicleVariants(): Promise<ApiVehicleVariant[]> {
     return this.request<ApiVehicleVariant[]>('/vehicles/variants/all');
+  }
+
+  async resolveVehicle(params: {
+    year: number;
+    make: string;
+    model: string;
+    submodel?: string;
+  }): Promise<ApiResolvedVehicle> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('year', String(params.year));
+    searchParams.set('make', params.make);
+    searchParams.set('model', params.model);
+    if (params.submodel) searchParams.set('submodel', params.submodel);
+    return this.request<ApiResolvedVehicle>(`/vehicles/resolve?${searchParams.toString()}`);
   }
 
   async createVehicleBrand(data: { name: string; logoUrl?: string }): Promise<ApiVehicleBrand> {

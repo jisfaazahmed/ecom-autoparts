@@ -32,11 +32,11 @@ const Index: React.FC = () => {
       
       try {
         const [productsRes, categoriesRes] = await Promise.all([
-          api.getProducts({ isActive: true, limit: 4 }),
+          api.getFeaturedProducts(),
           api.getCategories()
         ]);
 
-        setProducts(productsRes.data || []);
+        setProducts((productsRes || []).slice(0, 8));
         setCategories(categoriesRes || []);
       } catch (error) {
         console.error('Failed to fetch data:', error);
@@ -49,7 +49,7 @@ const Index: React.FC = () => {
   }, []);
 
   const features = [
-    { icon: Zap, title: 'Fast Shipping', desc: 'Free delivery on orders $99+' },
+    { icon: Zap, title: 'Fast Shipping', desc: 'Free delivery on orders over LKR 50,000' },
     { icon: Shield, title: 'OEM Quality', desc: 'Certified authentic parts' },
     { icon: Truck, title: 'Easy Returns', desc: '30-day hassle-free returns' },
     { icon: Star, title: 'Expert Support', desc: '24/7 technical assistance' },
@@ -66,9 +66,7 @@ const Index: React.FC = () => {
     shopId: p.shopId,
     shopName: p.shop?.name || 'Unknown Shop',
     stock: p.stock,
-    compatibleVehicles: (p.compatibleVehicles || []).map((v) =>
-      typeof v === 'string' ? v : `${v.year} ${v.make} ${v.model}`
-    ),
+    compatibleVehicles: (p.compatibleVariants || []),
     rating: p.rating ?? 0,
     reviewCount: p.reviewCount ?? 0,
     sku: p.sku || '',
@@ -318,7 +316,7 @@ const Index: React.FC = () => {
                   transition={{ delay: i * 0.1 }}
                   viewport={{ once: true }}
                 >
-                  <ProductCard product={mapToProductCard(product)} />
+                  <ProductCard product={mapToProductCard(product)} showCompatibilityBadge={false} />
                 </motion.div>
               ))}
             </div>

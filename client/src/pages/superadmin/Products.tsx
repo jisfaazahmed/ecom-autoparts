@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Package, Search, MoreVertical, Eye, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Package, Search, MoreVertical, Eye, CheckCircle, XCircle, Loader2, Star, StarOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -62,6 +62,27 @@ const SuperAdminProducts: React.FC = () => {
     }
   };
 
+  const handleToggleFeatured = async (product: ApiProduct) => {
+    const productId = product.id || product._id;
+    if (!productId) return;
+    try {
+      const updated = await api.updateProductFeatured(productId, !product.featured);
+      setProducts((prev) =>
+        prev.map((p) => ((p.id || p._id) === productId ? { ...p, featured: !!updated.featured } : p))
+      );
+      toast({
+        title: updated.featured ? 'Added to featured' : 'Removed from featured',
+        description: `${product.name} is now ${updated.featured ? 'featured on' : 'removed from'} homepage`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to update featured status',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const filteredProducts = products.filter(product => {
     const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (product.sku && product.sku.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -120,12 +141,13 @@ const SuperAdminProducts: React.FC = () => {
                   <TableHead className="hidden lg:table-cell">Category</TableHead>
                   <TableHead className="text-right">Price</TableHead>
                   <TableHead className="text-center">Approval</TableHead>
+                  <TableHead className="text-center">Featured</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paginatedItems.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-12 text-muted-foreground">No products found</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">No products found</TableCell></TableRow>
                 ) : (
                   paginatedItems.map((product, index) => (
                     <TableRow key={product.id || product._id || index} className="border-border/50">
@@ -145,12 +167,31 @@ const SuperAdminProducts: React.FC = () => {
                           {product.status || 'Pending'}
                         </Badge>
                       </TableCell>
+                      <TableCell className="text-center">
+                        {product.featured ? (
+                          <Badge variant="outline" className="bg-primary/10 text-primary border-primary/30">Yes</Badge>
+                        ) : (
+                          <Badge variant="outline">No</Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild><Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button></DropdownMenuTrigger>
                           <DropdownMenuContent align="end" className="glass-card">
                             <DropdownMenuItem onClick={() => handleUpdateStatus(product.id || product._id!, 'Approved')} className="cursor-pointer text-success"><CheckCircle className="h-4 w-4 mr-2" /> Approve</DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleUpdateStatus(product.id || product._id!, 'Rejected')} className="cursor-pointer text-destructive"><XCircle className="h-4 w-4 mr-2" /> Reject</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => handleToggleFeatured(product)} className="cursor-pointer">
+                              {product.featured ? (
+                                <>
+                                  <StarOff className="h-4 w-4 mr-2" /> Remove from Featured
+                                </>
+                              ) : (
+                                <>
+                                  <Star className="h-4 w-4 mr-2" /> Add to Featured
+                                </>
+                              )}
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

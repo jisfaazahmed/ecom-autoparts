@@ -5,6 +5,9 @@ export interface Vehicle {
   variant: string;
   year: number;
   vin?: string;
+  brandId?: string;
+  modelId?: string;
+  variantId?: string;
 }
 
 export interface Product {
@@ -26,6 +29,8 @@ export interface Product {
   sku: string;
   specifications?: Record<string, string>;
   isActive?: boolean;
+  originalPrice?: number;
+  effectiveDiscountPercent?: number;
 }
 
 export interface CartItem {

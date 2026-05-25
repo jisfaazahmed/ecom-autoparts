@@ -23,3 +23,9 @@ data/
 # Vite / React
 /client/node_modules
 /server/node_modules
+
+# Ignore Database Files
+data/
+mongo-data/
+*.wt
+*.bson

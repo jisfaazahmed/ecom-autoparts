@@ -31,6 +31,7 @@ const emptyProduct = {
   category_id: '',
   compatible_variants: [] as string[],
   image_url: '',
+  product_discount_percent: '0',
 };
 
 const AdminProducts: React.FC = () => {
@@ -94,6 +95,7 @@ const AdminProducts: React.FC = () => {
       category_id: product.categoryId || '',
       compatible_variants: variantIds.length > 0 ? variantIds : (product.compatibleVariants || []),
       image_url: product.imageUrl || '',
+      product_discount_percent: String(product.productDiscountPercent ?? 0),
     });
     setProductDialogOpen(true);
   };
@@ -114,6 +116,7 @@ const AdminProducts: React.FC = () => {
       categoryId: formData.category_id || null,
       compatibleVariants: formData.compatible_variants.length > 0 ? formData.compatible_variants : undefined,
       imageUrl: formData.image_url || null,
+      productDiscountPercent: Math.max(0, Math.min(90, Number(formData.product_discount_percent || 0))),
     };
 
     try {
@@ -299,6 +302,18 @@ const AdminProducts: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               <div><Label>Price (LKR) *</Label><Input type="number" value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} placeholder="0.00" /></div>
               <div><Label>Stock Quantity</Label><Input type="number" value={formData.stock} onChange={(e) => setFormData({ ...formData, stock: e.target.value })} placeholder="0" /></div>
+            </div>
+            <div>
+              <Label>Product Discount (%)</Label>
+              <Input
+                type="number"
+                min={0}
+                max={90}
+                value={formData.product_discount_percent}
+                onChange={(e) => setFormData({ ...formData, product_discount_percent: e.target.value })}
+                placeholder="0"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Applied on top of your base product price. Shop-wide discount can also apply from Settings.</p>
             </div>
             <div><Label>SKU</Label><Input value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} placeholder="e.g., BP-001" /></div>
             <div>

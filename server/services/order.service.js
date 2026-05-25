@@ -8,8 +8,33 @@ const User = require('../models/user');
 const OrderTimeLine = require('../models/timeline.model');
 const NotificationService = require('./notification.service');
 const InventoryReservationService = require('./inventoryReservation.service');
+const shippingService = require('./shipping.service');
 
 class OrderService {
+
+    async calculateShippingForOrder(items, address, shippingMethod = 'standard') {
+        try {
+            const quote = await shippingService.calculateShippingCost({
+                items: items.map((item) => ({
+                    product: {
+                        price: Number(item?.product?.price || 0),
+                        weight: Number(item?.product?.weight || 0.5),
+                    },
+                    quantity: Number(item?.quantity || 0),
+                })),
+                deliveryAddress: {
+                    district: String(address?.city || '').trim(),
+                    city: String(address?.city || '').trim(),
+                },
+                shippingMethod,
+            });
+
+            return Number.isFinite(quote?.totalCharge) ? Math.round(quote.totalCharge) : 0;
+        } catch (error) {
+            console.warn('Shipping service quote failed, using fallback calculation:', error.message);
+            return this.calculateShipping(items, address || {});
+        }
+    }
 
     normalizeStatus(status) {
         const value = String(status || '').toLowerCase();
@@ -23,7 +48,7 @@ class OrderService {
         return aliases[value] || value;
     }
 
-    buildSubOrders(orderItemDocs, enrichedItems) {
+    buildSubOrders(orderItemDocs, enrichedItems, commissionRateByVendor = new Map()) {
         const grouped = new Map();
 
         orderItemDocs.forEach((itemDoc, index) => {
@@ -52,6 +77,8 @@ class OrderService {
         });
 
         return Array.from(grouped.values()).map(group => ({
+            commissionRate: Number(commissionRateByVendor.get(String(group.vendor)) || 0),
+            commissionAmount: Number(((group.subtotal * Number(commissionRateByVendor.get(String(group.vendor)) || 0)) / 100).toFixed(2)),
             vendor: group.vendor,
             items: group.items,
             status: group.status,
@@ -86,6 +113,8 @@ class OrderService {
             shippingCharge,
             taxAmount,
             discountAmount,
+            commissionRate: Number(groupedSubOrder.commissionRate || 0),
+            commissionAmount: Number(groupedSubOrder.commissionAmount || 0),
             totalAmount: subtotal + shippingCharge + taxAmount - discountAmount,
             shippingAddress: mainOrder.shippingAddress,
             shippingMethod: mainOrder.shippingMethod || 'standard',
@@ -245,7 +274,12 @@ class OrderService {
             }
 
             const itemTotal = enrichedItems.reduce((sum, { product, quantity }) => sum + (product.price * quantity), 0);
-            const shippingCharge = this.calculateShipping(enrichedItems.map(({ product, quantity }) => ({ product, quantity })), { city: normalizedShippingAddress.city || '' });
+            const shippingItems = enrichedItems.map(({ product, quantity }) => ({ product, quantity }));
+            const shippingCharge = await this.calculateShippingForOrder(
+                shippingItems,
+                { city: normalizedShippingAddress.city || '' },
+                orderData.shippingMethod || 'standard'
+            );
             const taxAmount = this.calculateTax(itemTotal);
             const couponResult = couponCode
                 ? await this.applyCoupon(couponCode, itemTotal, orderData?.shopId)
@@ -272,7 +306,15 @@ class OrderService {
                 }))
             );
 
-            const subOrders = this.buildSubOrders(orderItemDocs, enrichedItems);
+            const vendorIds = [...new Set(enrichedItems.map((item) => String(item.resolvedVendorId || '')).filter(Boolean))];
+            const vendorDocs = await User.find({ _id: { $in: vendorIds } }).select('_id commissionRate');
+            const commissionRateByVendor = new Map(
+                vendorDocs.map((vendor) => [String(vendor._id), Number(vendor.commissionRate || 0)])
+            );
+            const subOrders = this.buildSubOrders(orderItemDocs, enrichedItems, commissionRateByVendor);
+            const commissionAmount = Number(
+                subOrders.reduce((sum, subOrder) => sum + Number(subOrder.commissionAmount || 0), 0).toFixed(2)
+            );
 
             const order = new Order({
                 user: userId,
@@ -283,6 +325,7 @@ class OrderService {
                 shippingCharges: shippingCharge,
                 taxAmount: taxAmount,
                 discountAmount,
+                commissionAmount,
                 couponDiscount: discountAmount,
                 couponCode: couponResult?.coupon?.code || null,
                 couponId: couponResult?.coupon?._id || null,

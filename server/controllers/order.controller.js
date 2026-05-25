@@ -130,6 +130,50 @@ module.exports.getAllOrders = async (req, res) => {
     }
 }
 
+// Get all platform orders for admin/superadmin
+module.exports.getPlatformOrders = async (req, res) => {
+    try {
+        const { status, page = 1, limit = 20 } = req.query;
+        const role = String(req.user?.role || '').toLowerCase().replace(/_/g, '');
+        if (!['admin', 'superadmin'].includes(role)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Admin access required'
+            });
+        }
+
+        const query = {};
+        if (status) query.overallStatus = status;
+
+        const orders = await order.find(query)
+            .populate({
+                path: 'items',
+                populate: { path: 'product', select: 'name images price' }
+            })
+            .sort({ createdAt: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit * 1);
+
+        const total = await order.countDocuments(query);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                orders,
+                pagination: {
+                    page: parseInt(page),
+                    limit: parseInt(limit),
+                    total,
+                    pages: Math.ceil(total / limit)
+                }
+            }
+        });
+    }
+    catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+}
+
 // Update Order status
 module.exports.updateOrderStatus = async (req, res) => {
     try {

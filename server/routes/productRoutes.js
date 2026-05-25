@@ -21,5 +21,6 @@ router.delete('/:id', verifyToken, productController.deleteProduct);
 
 // Super Admin: Approve / Reject product
 router.put('/:id/status', verifyToken, isSuperAdmin, productController.updateProductStatus);
+router.put('/:id/featured', verifyToken, isSuperAdmin, productController.updateProductFeatured);
 
 module.exports = router;

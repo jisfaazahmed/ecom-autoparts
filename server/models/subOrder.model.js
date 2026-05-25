@@ -51,6 +51,14 @@ const subOrderSchema = new mongoose.Schema({
         type: Number,
         default: 0
     },
+    commissionRate: {
+        type: Number,
+        default: 0
+    },
+    commissionAmount: {
+        type: Number,
+        default: 0
+    },
     totalAmount: {
         type: Number,
         default: 0

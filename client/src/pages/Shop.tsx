@@ -67,9 +67,64 @@ const Shop: React.FC = () => {
     fetchData();
   }, []);
 
-  const vehicleId = userVehicle
-    ? `${userVehicle.brand.toLowerCase()}-${userVehicle.model.toLowerCase()}-${userVehicle.variant.toLowerCase()}-${userVehicle.year}`
-    : null;
+  const [resolvedVehicleId, setResolvedVehicleId] = useState<string | null>(null);
+  const [vehicleResolveLoading, setVehicleResolveLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const resolve = async () => {
+      if (!userVehicle) {
+        setResolvedVehicleId(null);
+        return;
+      }
+
+      const make = String(userVehicle.brand || '').trim();
+      const model = String(userVehicle.model || '').trim();
+      const submodel = String(userVehicle.variant || '').trim();
+      const year = Number(userVehicle.year);
+
+      if (!make || !model || !Number.isFinite(year)) {
+        setResolvedVehicleId(null);
+        return;
+      }
+
+      setVehicleResolveLoading(true);
+      try {
+        const resolved = await api.resolveVehicle({
+          year,
+          make,
+          model,
+          submodel: submodel || undefined,
+        });
+        if (!cancelled) setResolvedVehicleId(resolved?.id || null);
+      } catch {
+        if (!cancelled) setResolvedVehicleId(null);
+      } finally {
+        if (!cancelled) setVehicleResolveLoading(false);
+      }
+    };
+
+    resolve();
+    return () => {
+      cancelled = true;
+    };
+  }, [userVehicle]);
+
+  const isProductCompatible = (product: ApiProduct) => {
+    // No resolved vehicle => don't block buying / don't show "Not Compatible".
+    if (!resolvedVehicleId) return true;
+
+    const variants = product.compatibleVariants;
+    // If vendor didn't select any compatibility variants, treat as universal-fit.
+    if (!Array.isArray(variants) || variants.length === 0) return true;
+
+    // Backend exposes compatibleVariants as Vehicle IDs.
+    if (variants.includes(resolvedVehicleId)) return true;
+
+    // Fallback: some older records may store a string key; keep a loose check.
+    return variants.some((v) => String(v).includes(resolvedVehicleId));
+  };
 
   const mapToProductCard = (p: ApiProduct) => ({
     id: p.id || p._id || '',
@@ -112,10 +167,8 @@ const Shop: React.FC = () => {
     );
 
     // Compatibility filter
-    if (showCompatibleOnly && vehicleId) {
-      filtered = filtered.filter((p) =>
-        p.compatibleVariants?.some((v) => v.includes(vehicleId.split('-').slice(0, 3).join('-')))
-      );
+    if (showCompatibleOnly && resolvedVehicleId) {
+      filtered = filtered.filter((p) => isProductCompatible(p));
     }
 
     // Sorting
@@ -132,7 +185,7 @@ const Shop: React.FC = () => {
     }
 
     return filtered;
-  }, [products, search, selectedCategory, priceRange, sortBy, showCompatibleOnly, vehicleId]);
+  }, [products, search, selectedCategory, priceRange, sortBy, showCompatibleOnly, resolvedVehicleId]);
 
   const {
     paginatedItems: paginatedProducts,
@@ -140,13 +193,6 @@ const Shop: React.FC = () => {
     totalPages,
     goToPage,
   } = usePagination(filteredProducts, { itemsPerPage: 12 });
-
-  const isProductCompatible = (product: ApiProduct) => {
-    if (!vehicleId) return true;
-    return product.compatibleVariants?.some((v) =>
-      v.includes(vehicleId.split('-').slice(0, 3).join('-'))
-    );
-  };
 
   const FilterContent = () => (
     <div className="space-y-6">

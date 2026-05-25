@@ -45,6 +45,9 @@ const MyVehicle: React.FC = () => {
           variant: active.variant?.name ?? '',
           year: active.year,
           vin: active.vin,
+          brandId: active.brandId,
+          modelId: active.modelId,
+          variantId: active.variantId,
         });
       } else {
         setUserVehicle(null);
@@ -77,6 +80,9 @@ const MyVehicle: React.FC = () => {
           variant: v.variant?.name ?? '',
           year: v.year,
           vin: v.vin,
+          brandId: v.brandId,
+          modelId: v.modelId,
+          variantId: v.variantId,
         });
       }
       toast({

@@ -27,10 +27,12 @@ interface AuthContextType {
   shop: any | null;
   loading: boolean;
   profile: any | null;
-  signUp: (data: { email: string; password: string; fullName: string; phone?: string }) => Promise<{ error: Error | null }>;
+  signUp: (data: { email: string; password: string; fullName: string; phone?: string }) => Promise<{ error: Error | null; verificationId?: string }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
-  signUpSeller: (data: any) => Promise<{ error: Error | null }>;
+  signUpSeller: (data: any) => Promise<{ error: Error | null; verificationId?: string }>;
+  verifySignupOtp: (data: { verificationId: string; otp: string }) => Promise<{ error: Error | null }>;
+  resendSignupOtp: (data: { verificationId: string }) => Promise<{ error: Error | null }>;
   refreshProfile: () => Promise<void>;
 }
 
@@ -48,6 +50,8 @@ const defaultAuthContext: AuthContextType = {
   signIn: async () => ({ error: new Error('AuthProvider missing: signIn unavailable') }),
   signOut: async () => {},
   signUpSeller: async () => ({ error: new Error('AuthProvider missing: signUp unavailable') }),
+  verifySignupOtp: async () => ({ error: new Error('AuthProvider missing: verifySignupOtp unavailable') }),
+  resendSignupOtp: async () => ({ error: new Error('AuthProvider missing: resendSignupOtp unavailable') }),
   refreshProfile: async () => {},
 };
 
@@ -172,22 +176,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (data: { email: string; password: string; fullName: string; phone?: string }) => {
     try {
-      const response = await api.register({
+      const response = await api.startRegister({
         email: data.email,
         password: data.password,
         fullName: data.fullName,
         phone: data.phone,
       });
-      setSession(response);
-      return { error: null };
+      return { error: null, verificationId: response?.verificationId };
     } catch (error: any) {
       return { error };
     }
   };
 
   const logout = () => {
+    // Clear all known auth storage keys (this app has multiple legacy keys).
     localStorage.removeItem('auth_token');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('token');
     localStorage.removeItem('user');
+    api.logout();
     setUser(null);
   };
 
@@ -206,8 +214,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUpSeller = async (data: any) => {
     try {
-      const response = await api.registerSeller(data);
+      const response = await api.startRegisterSeller(data);
+      return { error: null, verificationId: response?.verificationId };
+    } catch (error: any) {
+      return { error };
+    }
+  };
+
+  const verifySignupOtp = async (data: { verificationId: string; otp: string }) => {
+    try {
+      const response = await api.verifyRegisterOtp(data);
       setSession(response);
+      return { error: null };
+    } catch (error: any) {
+      return { error };
+    }
+  };
+
+  const resendSignupOtp = async (data: { verificationId: string }) => {
+    try {
+      await api.resendRegisterOtp(data);
       return { error: null };
     } catch (error: any) {
       return { error };
@@ -243,6 +269,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn,
       signOut,
       signUpSeller,
+      verifySignupOtp,
+      resendSignupOtp,
       refreshProfile
     }}>
       {children}

@@ -8,6 +8,7 @@ const productSchema = new mongoose.Schema({
   stock: { type: Number, required: true, default: 0 },
   sku: { type: String, required: true }, // Changed from partNumber to match frontend
   image: { type: String }, // URL to image
+  productDiscountPercent: { type: Number, default: 0, min: 0, max: 90 },
 
   // 2. The Link to "Brakes > Pads"
   category: {
@@ -37,7 +38,13 @@ const productSchema = new mongoose.Schema({
     type: String,
     enum: ["Pending", "Approved", "Rejected"],
     default: "Pending"
-  }
+  },
+
+  // 7. Homepage featured flag (managed by Super Admin)
+  featured: {
+    type: Boolean,
+    default: false,
+  },
 }, { timestamps: true });
 
 // Index for fast searching by Category and Vehicle
