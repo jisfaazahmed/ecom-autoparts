@@ -461,30 +461,6 @@ class InventoryReservationService {
     }
 
     /**
-     * Release all reservations for a user (on logout, cart clear, etc)
-     */
-    static async releaseUserReservations(userId, reason = 'cancelled_by_user') {
-        try {
-            const result = await InventoryReservation.updateMany(
-                {
-                    user: userId,
-                    status: 'reserved'
-                },
-                {
-                    status: 'released',
-                    releasedAt: new Date(),
-                    releaseReason: reason
-                }
-            );
-
-            return result;
-        } catch (error) {
-            console.error('Error releasing user reservations:', error);
-            throw error;
-        }
-    }
-
-    /**
      * Deduct stock on order completion (after confirmed)
      * This should be called when order is confirmed and payment is successful
      */

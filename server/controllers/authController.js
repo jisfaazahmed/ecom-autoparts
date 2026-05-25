@@ -4,6 +4,16 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const emailService = require('../services/email.service');
 const NotificationService = require('../services/notification.service');
+const { sendSignupOtpEmail } = require('../services/mailer');
+
+const OTP_VALID_MINUTES = 10;
+const MAX_VERIFY_ATTEMPTS = 5;
+const MAX_SENDS_PER_WINDOW = 3;
+const SEND_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+function generateOtp() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
 
 exports.register = async (req, res) => {
   try {
@@ -316,5 +326,204 @@ exports.updateProfile = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Error updating profile' });
+  }
+};
+
+// ========== OTP-BASED REGISTRATION ==========
+
+// POST /api/auth/register/start
+// Creates a PENDING user, generates a 6-digit OTP and emails it.
+exports.registerStart = async (req, res) => {
+  try {
+    const { name, fullName, email, password, role, shopName } = req.body;
+    const displayName = name || fullName;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedRole = role || 'CUSTOMER';
+
+    if (normalizedRole === 'SUPER_ADMIN') {
+      return res.status(403).json({ message: 'Cannot register as Super Admin.' });
+    }
+    if (!displayName || !normalizedEmail || !password) {
+      return res.status(400).json({ message: 'Name, email, and password are required' });
+    }
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    // Remove any unverified duplicate before re-registering
+    const existing = await User.findOne({ email: normalizedEmail });
+    if (existing) {
+      if (existing.emailVerification?.verifiedAt) {
+        return res.status(400).json({ message: 'An account with this email already exists.' });
+      }
+      await User.deleteOne({ _id: existing._id });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const otp = generateOtp();
+    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+    const now = new Date();
+
+    const user = new User({
+      name: displayName,
+      email: normalizedEmail,
+      password: hashedPassword,
+      role: normalizedRole,
+      shopName: normalizedRole === 'ADMIN' ? shopName : undefined,
+      status: 'PENDING',
+      emailVerification: {
+        codeHash: otpHash,
+        expiresAt: new Date(now.getTime() + OTP_VALID_MINUTES * 60 * 1000),
+        attempts: 0,
+        lastSentAt: now,
+        sendCount: 1,
+        sendWindowStartAt: now,
+        verifiedAt: null,
+      },
+    });
+    await user.save();
+
+    sendSignupOtpEmail({ to: normalizedEmail, otp, minutesValid: OTP_VALID_MINUTES }).catch(err =>
+      console.error('Error sending signup OTP:', err)
+    );
+
+    return res.status(200).json({
+      message: 'A 6-digit verification code has been sent to your email.',
+      verificationId: user._id,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// POST /api/auth/register/verify
+// Validates the OTP and activates the account.
+exports.registerVerify = async (req, res) => {
+  try {
+    const { verificationId, otp } = req.body;
+    if (!verificationId || !otp) {
+      return res.status(400).json({ message: 'verificationId and otp are required' });
+    }
+
+    const user = await User.findById(verificationId);
+    if (!user || user.emailVerification?.verifiedAt) {
+      return res.status(400).json({ message: 'Invalid or already-verified verification.' });
+    }
+
+    const ev = user.emailVerification;
+    if (!ev?.codeHash || !ev?.expiresAt) {
+      return res.status(400).json({ message: 'No pending verification found.' });
+    }
+    if (new Date() > ev.expiresAt) {
+      return res.status(400).json({ message: 'OTP has expired. Please request a new one.' });
+    }
+    if ((ev.attempts || 0) >= MAX_VERIFY_ATTEMPTS) {
+      return res.status(429).json({ message: 'Too many incorrect attempts. Please request a new OTP.' });
+    }
+
+    const otpHash = crypto.createHash('sha256').update(String(otp)).digest('hex');
+    if (otpHash !== ev.codeHash) {
+      user.emailVerification.attempts = (ev.attempts || 0) + 1;
+      await user.save();
+      return res.status(400).json({ message: 'Invalid OTP.' });
+    }
+
+    user.emailVerification.verifiedAt = new Date();
+    user.emailVerification.codeHash = null;
+    user.emailVerification.expiresAt = null;
+    if (user.role === 'CUSTOMER') user.status = 'ACTIVE';
+    await user.save();
+
+    if (user.role === 'ADMIN') {
+      NotificationService.notifySuperAdminVendorApplied(user).catch(err =>
+        console.error('Error notifying vendor application:', err)
+      );
+    } else if (user.role === 'CUSTOMER') {
+      NotificationService.notifySuperAdminCustomerSignup(user).catch(err =>
+        console.error('Error notifying customer signup:', err)
+      );
+    }
+
+    const token = jwt.sign(
+      { user: { id: user.id, role: user.role } },
+      process.env.JWT_SECRET || 'secret123',
+      { expiresIn: '1d' }
+    );
+    const roleLower = (user.role || '').toLowerCase().replace('_', '');
+    const mappedRole = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
+
+    return res.status(200).json({
+      message: user.role === 'ADMIN'
+        ? 'Email verified. Your vendor application is pending admin approval.'
+        : 'Registration complete! Welcome.',
+      accessToken: token,
+      refreshToken: token,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.name,
+        role: mappedRole,
+        status: user.status,
+        shopName: user.shopName,
+        commissionRate: user.commissionRate,
+        createdAt: user.createdAt,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// POST /api/auth/register/resend
+// Resends a fresh OTP for a pending registration (rate-limited to 3/hour).
+exports.registerResend = async (req, res) => {
+  try {
+    const { verificationId } = req.body;
+    if (!verificationId) {
+      return res.status(400).json({ message: 'verificationId is required' });
+    }
+
+    const user = await User.findById(verificationId);
+    if (!user) return res.status(400).json({ message: 'Invalid verificationId.' });
+    if (user.emailVerification?.verifiedAt) {
+      return res.status(400).json({ message: 'Email already verified.' });
+    }
+
+    const ev = user.emailVerification || {};
+    const now = new Date();
+    const windowStart = ev.sendWindowStartAt ? new Date(ev.sendWindowStartAt) : now;
+    const windowElapsed = now - windowStart;
+
+    if (windowElapsed < SEND_WINDOW_MS && (ev.sendCount || 0) >= MAX_SENDS_PER_WINDOW) {
+      const minutesLeft = Math.ceil((SEND_WINDOW_MS - windowElapsed) / 60000);
+      return res.status(429).json({ message: `Too many requests. Try again in ${minutesLeft} minute(s).` });
+    }
+
+    const otp = generateOtp();
+    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+
+    user.emailVerification = {
+      codeHash: otpHash,
+      expiresAt: new Date(now.getTime() + OTP_VALID_MINUTES * 60 * 1000),
+      attempts: 0,
+      lastSentAt: now,
+      sendCount: windowElapsed >= SEND_WINDOW_MS ? 1 : (ev.sendCount || 0) + 1,
+      sendWindowStartAt: windowElapsed >= SEND_WINDOW_MS ? now : windowStart,
+      verifiedAt: null,
+    };
+    await user.save();
+
+    sendSignupOtpEmail({ to: user.email, otp, minutesValid: OTP_VALID_MINUTES }).catch(err =>
+      console.error('Error resending OTP:', err)
+    );
+
+    return res.status(200).json({ message: 'A new OTP has been sent to your email.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: 'Server error' });
   }
 };

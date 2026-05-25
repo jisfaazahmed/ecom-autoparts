@@ -3,6 +3,16 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const path = require('path');
+
+// Global handlers – must be registered before anything else so stray throws
+// don't silently kill the process.
+process.on('uncaughtException', (err) => {
+  console.error('💥 uncaughtException – server will stay alive:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('💥 unhandledRejection – server will stay alive:', reason);
+});
+
 const {
   MONGO_DB,
   MONGO_USER,
