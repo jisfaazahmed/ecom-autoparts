@@ -9,23 +9,29 @@ function getFromAddress() {
 }
 
 function hasSmtpConfig() {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_PORT);
+  return Boolean(
+    (process.env.SMTP_HOST && process.env.SMTP_PORT) ||
+    (process.env.EMAIL_HOST && process.env.EMAIL_PORT)
+  );
 }
 
 function createTransporter() {
   if (!hasSmtpConfig()) return null;
 
-  const port = Number(process.env.SMTP_PORT);
+  const host = process.env.SMTP_HOST || process.env.EMAIL_HOST;
+  const port = Number(process.env.SMTP_PORT || process.env.EMAIL_PORT);
   const secure =
     process.env.SMTP_SECURE !== undefined
       ? String(process.env.SMTP_SECURE).toLowerCase() === 'true'
+      : process.env.EMAIL_SECURE !== undefined
+      ? String(process.env.EMAIL_SECURE).toLowerCase() === 'true'
       : port === 465;
 
-  const authUser = process.env.SMTP_USER;
-  const authPass = process.env.SMTP_PASS;
+  const authUser = process.env.SMTP_USER || process.env.EMAIL_USER;
+  const authPass = process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASSWORD;
 
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
+    host,
     port,
     secure,
     auth: authUser && authPass ? { user: authUser, pass: authPass } : undefined,
