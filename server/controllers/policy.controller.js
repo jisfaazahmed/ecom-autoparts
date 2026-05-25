@@ -1,4 +1,6 @@
 const policyService = require('../services/policy.service');
+
+const normalizeRole = (role) => String(role || '').toLowerCase().replace(/_/g, '');
 const Policy = require('../models/policy.model');
 
 // Public endpoints
@@ -99,7 +101,7 @@ exports.searchPolicies = async (req, res) => {
 exports.createPolicy = async (req, res) => {
   try {
     const userId = req.user?.id || req.user?._id;
-    const role = String(req.user?.role || '').toLowerCase();
+    const role = normalizeRole(req.user?.role);
 
     if (!['admin', 'superadmin'].includes(role)) {
       return res.status(403).json({
@@ -127,7 +129,7 @@ exports.updatePolicy = async (req, res) => {
   try {
     const { policyType } = req.params;
     const userId = req.user?.id || req.user?._id;
-    const role = String(req.user?.role || '').toLowerCase();
+    const role = normalizeRole(req.user?.role);
 
     if (!['admin', 'superadmin'].includes(role)) {
       return res.status(403).json({
@@ -153,7 +155,7 @@ exports.updatePolicy = async (req, res) => {
 
 exports.getAllPolicies = async (req, res) => {
   try {
-    const role = String(req.user?.role || '').toLowerCase();
+    const role = normalizeRole(req.user?.role);
 
     if (!['admin', 'superadmin'].includes(role)) {
       return res.status(403).json({
@@ -184,7 +186,7 @@ exports.getAllPolicies = async (req, res) => {
 exports.getPolicyVersionHistory = async (req, res) => {
   try {
     const { policyType } = req.params;
-    const role = String(req.user?.role || '').toLowerCase();
+    const role = normalizeRole(req.user?.role);
 
     if (!['admin', 'superadmin'].includes(role)) {
       return res.status(403).json({
@@ -210,7 +212,7 @@ exports.getPolicyVersionHistory = async (req, res) => {
 exports.addFAQItem = async (req, res) => {
   try {
     const { policyType } = req.params;
-    const role = String(req.user?.role || '').toLowerCase();
+    const role = normalizeRole(req.user?.role);
 
     if (!['admin', 'superadmin'].includes(role)) {
       return res.status(403).json({
@@ -238,7 +240,7 @@ exports.deactivatePolicy = async (req, res) => {
   try {
     const { policyType } = req.params;
     const userId = req.user?.id || req.user?._id;
-    const role = String(req.user?.role || '').toLowerCase();
+    const role = normalizeRole(req.user?.role);
 
     if (!['admin', 'superadmin'].includes(role)) {
       return res.status(403).json({

@@ -114,7 +114,7 @@ module.exports.releaseExpiredReservations = async (req, res) => {
 module.exports.getProductReservations = async (req, res) => {
     try {
         // Check if user is admin/superadmin
-        const userRole = req.user?.role;
+        const userRole = String(req.user?.role || '').toLowerCase().replace(/_/g, '');
         if (userRole !== 'admin' && userRole !== 'superadmin') {
             return res.status(403).json({
                 success: false,

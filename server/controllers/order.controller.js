@@ -452,7 +452,7 @@ module.exports.getInvoice = async (req, res) => {
         if (!ord) return res.status(404).json({ message: 'Order not found' });
 
         const userId = req.user?.id || req.user?._id;
-        const role = String(req.user?.role || '').toLowerCase();
+        const role = String(req.user?.role || '').toLowerCase().replace(/_/g, '');
         const isAdmin = ['admin', 'superadmin'].includes(role);
 
         // Authenticated customer endpoint should never expose guest orders.

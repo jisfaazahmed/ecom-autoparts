@@ -19,7 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { formatLKR } from '@/lib/currency';
 
 const AdminDashboard: React.FC = () => {
-  const { profile, shop } = useAuth();
+  const { profile, shop, role } = useAuth();
   const { toast } = useToast();
   
   const [products, setProducts] = useState<ApiProduct[]>([]);
@@ -43,7 +43,7 @@ const AdminDashboard: React.FC = () => {
         api.getProducts({ shop: shop.id }),
         api.getVendorOrders({ limit: 10 }),
         api.getCategories(),
-        profile?.role === 'admin' || profile?.role === 'superadmin' 
+        role === 'admin' || role === 'superadmin' 
           ? api.getAdminRefunds({ limit: 200 }) 
           : api.getVendorRefunds({ limit: 200 }),
       ]);

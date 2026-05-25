@@ -1,6 +1,32 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/user');
 
+async function hydrateUserFromDatabase(authUser) {
+  const userId = authUser?.id || authUser?._id || authUser?.userId;
+  if (!userId || !/^[a-fA-F0-9]{24}$/.test(String(userId))) {
+    return authUser;
+  }
+
+  const dbUser = await User.findById(userId).select('role email status shopName commissionRate name createdAt');
+  if (!dbUser) {
+    return null;
+  }
+
+  return {
+    ...authUser,
+    id: dbUser.id,
+    _id: dbUser._id,
+    userId: dbUser.id,
+    role: dbUser.role,
+    email: dbUser.email,
+    status: dbUser.status,
+    shopName: dbUser.shopName,
+    commissionRate: dbUser.commissionRate,
+    name: dbUser.name,
+    createdAt: dbUser.createdAt,
+  };
+}
+
 function decodeAuthToken(req) {
   const authHeader = req.header('Authorization');
   const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
@@ -12,14 +38,19 @@ function decodeAuthToken(req) {
 }
 
 // 1. Verify Token (Is user logged in?)
-exports.verifyToken = (req, res, next) => {
+exports.verifyToken = async (req, res, next) => {
   try {
-    const user = decodeAuthToken(req);
-    if (!user) {
+    const tokenUser = decodeAuthToken(req);
+    if (!tokenUser) {
       return res.status(401).json({ message: 'No token, authorization denied' });
     }
 
-    req.user = user;
+    const hydratedUser = await hydrateUserFromDatabase(tokenUser);
+    if (!hydratedUser) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    req.user = hydratedUser;
     next();
   } catch (err) {
     res.status(401).json({ message: 'Token is not valid' });
@@ -27,11 +58,11 @@ exports.verifyToken = (req, res, next) => {
 };
 
 // Optional authentication for mixed guest/auth endpoints (e.g., COD guest checkout)
-exports.attachUserIfPresent = (req, _res, next) => {
+exports.attachUserIfPresent = async (req, _res, next) => {
   try {
-    const user = decodeAuthToken(req);
-    if (user) {
-      req.user = user;
+    const tokenUser = decodeAuthToken(req);
+    if (tokenUser) {
+      req.user = await hydrateUserFromDatabase(tokenUser);
     }
   } catch (_err) {
     // Ignore malformed tokens on optional auth paths.
