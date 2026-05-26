@@ -6,10 +6,10 @@
   "scripts": {
     "dev": "nodemon index.js",
     "start": "node index.js",
-    "seed": "node seedSuperAdmin.js",
-    "seed:vehicles": "node seedVehicles.js",
-    "seed:products": "node seedProducts.js",
-    "seed:all": "node seedVehicles.js && node seedProducts.js",
+    "seed": "node scripts/seedSuperAdmin.js",
+    "seed:vehicles": "node scripts/seedVehicles.js",
+    "seed:products": "node scripts/seedProducts.js",
+    "seed:all": "node scripts/seedVehicles.js && node scripts/seedProducts.js",
     "backfill:suborders": "node scripts/backfill-suborders.js",
     "qa:regression": "node scripts/qa-regression.js",
     "lint": "eslint ."

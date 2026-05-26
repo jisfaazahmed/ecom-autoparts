@@ -24,6 +24,14 @@ data/
 /client/node_modules
 /server/node_modules
 
+# Temp files
+tmp/
+temp/
+
+# Uploaded user files (use external storage in production)
+server/uploads/*
+!server/uploads/.gitkeep
+
 # Ignore Database Files
 data/
 mongo-data/

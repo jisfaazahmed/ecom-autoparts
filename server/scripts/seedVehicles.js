@@ -1,12 +1,12 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
-const config = require('./config/config');
+const config = require('../config/config');
 
 // Import models
-const VehicleBrand = require('./models/vehicleBrand.model');
-const VehicleModel = require('./models/vehicleModel.model');
-const VehicleVariant = require('./models/vehicleVariant.model');
-const Vehicle = require('./models/vehicle');
+const VehicleBrand = require('../models/vehicleBrand.model');
+const VehicleModel = require('../models/vehicleModel.model');
+const VehicleVariant = require('../models/vehicleVariant.model');
+const Vehicle = require('../models/vehicle');
 
 const curatedVehicles = [
   {
