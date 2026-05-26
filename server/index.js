@@ -42,6 +42,7 @@ const notificationRoutes = require('./routes/notificationRoutes');
 const inventoryRoutes = require('./routes/inventoryRoutes');
 const adminAnalyticsRoutes = require('./routes/adminAnalytics.routes');
 const userRoutes = require('./routes/user.routes');
+const uploadRoutes = require('./routes/upload.routes');
 const BackgroundJobs = require('./jobs/backgroundJobs');
 const swaggerUI = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
@@ -56,6 +57,7 @@ app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 app.use(cors());
 app.use(express.json());
 app.use('/labels', express.static(path.join(__dirname, 'uploads', 'labels')));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 //MongoDB connection
 mongoose.connect(`mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_IP}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`).then(() => {
@@ -107,6 +109,7 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/admin-analytics', adminAnalyticsRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/upload', uploadRoutes);
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpecs));
 console.log("📄 Documentation available at http://localhost:5000/api-docs");
 
