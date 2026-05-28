@@ -18,7 +18,7 @@ interface CartItem {
     category?: string;
     shopName?: string;
     stock?: number;
-    compatibleVehicles?: any[];
+    compatibleVehicles?: Array<Record<string, unknown>>;
     rating?: number;
     reviewCount?: number;
   };

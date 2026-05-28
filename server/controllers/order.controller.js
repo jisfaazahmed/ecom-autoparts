@@ -4,6 +4,7 @@ const OrderTimeLine = require('../models/timeline.model');
 const Shipping = require('../models/shipping.model');
 const OrderItem = require('../models/orderItem.model');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
 
 const GUEST_INVOICE_TOKEN_EXPIRY = process.env.GUEST_INVOICE_TOKEN_EXPIRY || '7d';
 
@@ -26,6 +27,14 @@ function verifyGuestInvoiceToken(token, orderId) {
     } catch (_err) {
         return false;
     }
+}
+
+function assertValidOrderId(res, orderId) {
+    if (!mongoose.Types.ObjectId.isValid(String(orderId || ''))) {
+        res.status(400).json({ message: 'Invalid order id' });
+        return false;
+    }
+    return true;
 }
 
 //new order
@@ -78,6 +87,8 @@ module.exports.createOrder = async (req, res) => {
 //Get order by ID
 module.exports.getOrderById = async (req, res) => {
     try {
+        if (!assertValidOrderId(res, req.params.id)) return;
+
         const userId = req.user?.id || req.user?._id;
         const { order, timeline } = await orderService.getOrderDetails(req.params.id, userId);
 
@@ -177,6 +188,7 @@ module.exports.getPlatformOrders = async (req, res) => {
 // Update Order status
 module.exports.updateOrderStatus = async (req, res) => {
     try {
+        if (!assertValidOrderId(res, req.params.id)) return;
 
         const { id, status, note } = req.body;
 
@@ -204,6 +216,8 @@ module.exports.updateOrderStatus = async (req, res) => {
 // Update Overall Order status by Admin
 module.exports.adminUpdateOrderStatus = async (req, res) => {
     try {
+        if (!assertValidOrderId(res, req.params.id)) return;
+
         const { status, trackingNumber } = req.body;
         const userId = req.user?._id || req.user?.id;
         
@@ -223,6 +237,8 @@ module.exports.adminUpdateOrderStatus = async (req, res) => {
 // Cancel order
 module.exports.cancelOrder = async (req, res) => {
     try {
+        if (!assertValidOrderId(res, req.params.id)) return;
+
         const { reason } = req.body;
         const userId = req.user?.id || req.user?._id;
 
@@ -245,6 +261,8 @@ module.exports.cancelOrder = async (req, res) => {
 // Update Payment Status (Pending → Paid lifecycle)
 module.exports.updatePaymentStatus = async (req, res) => {
     try {
+        if (!assertValidOrderId(res, req.params.id)) return;
+
         const role = String(req.user?.role || '').toLowerCase().replace('_', '');
         if (!['admin', 'superadmin'].includes(role)) {
             return res.status(403).json({
@@ -273,6 +291,8 @@ module.exports.updatePaymentStatus = async (req, res) => {
 
 module.exports.verifyCOD = async (req, res) => {
     try {
+        if (!assertValidOrderId(res, req.params.id)) return;
+
         const { status, notes } = req.body;
 
         const order = await orderService.verifyCOD(
@@ -492,6 +512,8 @@ module.exports.getInvoice = async (req, res) => {
         const invoiceService = require('../services/invoice.service');
         const orderId = req.params.id;
 
+        if (!assertValidOrderId(res, orderId)) return;
+
         const ord = await order.findById(orderId).select('user invoiceUrl');
         if (!ord) return res.status(404).json({ message: 'Order not found' });
 
@@ -522,6 +544,8 @@ module.exports.getGuestInvoice = async (req, res) => {
         const invoiceService = require('../services/invoice.service');
         const orderId = req.params.id;
         const token = req.query?.token || req.header('x-guest-invoice-token');
+
+        if (!assertValidOrderId(res, orderId)) return;
 
         const ord = await order.findById(orderId).select('user invoiceUrl');
         if (!ord) return res.status(404).json({ message: 'Order not found' });

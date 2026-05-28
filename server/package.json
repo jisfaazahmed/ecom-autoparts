@@ -11,7 +11,7 @@
     "seed:products": "node scripts/seedProducts.js",
     "seed:all": "node scripts/seedVehicles.js && node scripts/seedProducts.js",
     "backfill:suborders": "node scripts/backfill-suborders.js",
-    "qa:regression": "node scripts/qa-regression.js",
+    "qa:regression": "node scripts/test-unit.js",
     "lint": "eslint ."
   },
   "keywords": [],

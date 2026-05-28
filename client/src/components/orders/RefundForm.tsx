@@ -13,10 +13,35 @@ import {
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 
+export interface RefundFormSubmission {
+  refundType: 'return';
+  returnReason: {
+    category: string;
+    description: string;
+    detailedExplanation: string;
+  };
+  productCondition: {
+    productState: string;
+    packaging: string;
+    accessories: string;
+    returnEligible: boolean;
+  };
+}
+
+interface RefundFormSelectedItem {
+  orderNumber?: string;
+  item?: {
+    name?: string;
+    product?: {
+      name?: string;
+    };
+  };
+}
+
 interface RefundFormProps {
-  onSubmit: (data: any) => Promise<void>;
+  onSubmit: (data: RefundFormSubmission) => Promise<void>;
   isSubmitting: boolean;
-  selectedItem?: any;
+  selectedItem?: RefundFormSelectedItem;
 }
 
 const refundReasons = [
@@ -105,7 +130,7 @@ export const RefundForm: React.FC<RefundFormProps> = ({
   };
 
   const handleSubmit = async () => {
-    const data = {
+    const data: RefundFormSubmission = {
       refundType: 'return',
       returnReason: {
         category: selectedReason,

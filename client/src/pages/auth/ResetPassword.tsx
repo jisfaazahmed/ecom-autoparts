@@ -29,15 +29,24 @@ const ResetPassword = () => {
     e.preventDefault();
     setError("");
 
-    if (!email) {
+    const normalizedEmail = email.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!normalizedEmail) {
       setError("Please enter your email address");
+      return;
+    }
+
+    if (!emailRegex.test(normalizedEmail)) {
+      setError("Please enter a valid email address");
       return;
     }
 
     setLoading(true);
 
     try {
-      await api.forgotPassword(email);
+      await api.forgotPassword(normalizedEmail);
+      setEmail(normalizedEmail);
       setResetRequested(true);
       toast.success("Check your email for reset instructions!");
     } catch (err: unknown) {
@@ -51,12 +60,20 @@ const ResetPassword = () => {
     e.preventDefault();
     setError("");
 
-    if (password.length < 6) {
+    const normalizedPassword = password.trim();
+    const normalizedConfirmPassword = confirmPassword.trim();
+
+    if (!normalizedPassword || !normalizedConfirmPassword) {
+      setError("Please fill in both password fields");
+      return;
+    }
+
+    if (normalizedPassword.length < 6) {
       setError("Password must be at least 6 characters");
       return;
     }
 
-    if (password !== confirmPassword) {
+    if (normalizedPassword !== normalizedConfirmPassword) {
       setError("Passwords do not match");
       return;
     }
@@ -69,7 +86,7 @@ const ResetPassword = () => {
     setLoading(true);
 
     try {
-      await api.resetPassword(resetToken, password);
+      await api.resetPassword(resetToken, normalizedPassword);
       toast.success("Password updated successfully!");
       navigate("/auth/customer");
     } catch (err: unknown) {

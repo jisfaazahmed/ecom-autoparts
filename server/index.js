@@ -46,6 +46,7 @@ const uploadRoutes = require('./routes/upload.routes');
 const BackgroundJobs = require('./jobs/backgroundJobs');
 const swaggerUI = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
+const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
 
@@ -112,6 +113,17 @@ app.use('/api/users', userRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpecs));
 console.log("📄 Documentation available at http://localhost:5000/api-docs");
+
+// Return a consistent payload for unknown API routes.
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ message: 'Route not found' });
+  }
+  next();
+});
+
+// Centralized API error formatter.
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import Navbar from '@/components/layout/Navbar';
 import { useStore } from '@/store/useStore';
-import { api } from '@/lib/api';
+import { api, ApiOrder } from '@/lib/api';
 import { toast } from 'sonner';
+
+type PaymentSuccessOrder = ApiOrder & { guestInvoiceToken?: string };
 
 const PaymentSuccess: React.FC = () => {
   const navigate = useNavigate();
@@ -16,7 +18,7 @@ const PaymentSuccess: React.FC = () => {
   const [cleared, setCleared] = useState(false);
   const [loading, setLoading] = useState(true);
   const [orderNumber, setOrderNumber] = useState<string>('');
-  const [orderData, setOrderData] = useState<any>(null);
+  const [orderData, setOrderData] = useState<PaymentSuccessOrder | null>(null);
   const [downloadingInvoice, setDownloadingInvoice] = useState(false);
   
   const sessionId = searchParams.get('session_id');

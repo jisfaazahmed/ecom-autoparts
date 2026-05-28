@@ -81,7 +81,7 @@ const SuperAdminAnalytics: React.FC = () => {
       setSalesByMonth(data.salesByMonth || []);
 
       const categories = await api.getCategories().catch(() => []);
-      const categoryNameMap = new Map((categories || []).map((cat: any) => [String(cat.id), String(cat.name)]));
+      const categoryNameMap = new Map((categories || []).map((cat: { id: string; name: string }) => [String(cat.id), String(cat.name)]));
 
       const categoryColors = ['hsl(190, 100%, 50%)', 'hsl(270, 100%, 60%)', 'hsl(330, 100%, 60%)', 'hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)'];
       const topCats = (data.topCategories || []).map((c, idx) => ({
@@ -92,9 +92,9 @@ const SuperAdminAnalytics: React.FC = () => {
 
       setTopCategories(topCats);
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Analytics fetch error:', error);
-      toast({ title: 'Error', description: error.message || 'Failed to load analytics', variant: 'destructive' });
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to load analytics', variant: 'destructive' });
     } finally {
       setLoading(false);
     }

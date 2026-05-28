@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import Navbar from '@/components/layout/Navbar';
@@ -12,13 +13,90 @@ import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
+import {
+  normalizeWhitespace,
+  normalizeSriLankanPhone,
+  normalizeSriLankanPostalCode,
+  isValidSriLankanPersonName,
+  isValidSriLankanPhone,
+  isValidSriLankanAddress,
+  isValidSriLankanDistrict,
+  isValidSriLankanPostalCode,
+  SRI_LANKA_DISTRICTS,
+  resolveSriLankanDistrict,
+} from '@/lib/sriLankaValidation';
 
 const profileSchema = z.object({
-  fullName: z.string().min(2, 'Name must be at least 2 characters'),
-  phone: z.string().optional(),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  postalCode: z.string().optional(),
+  fullName: z.string().transform(normalizeWhitespace),
+  phone: z.string().transform(normalizeSriLankanPhone),
+  address: z.string().transform(normalizeWhitespace),
+  city: z.string().transform(normalizeWhitespace),
+  postalCode: z.string().transform(normalizeSriLankanPostalCode),
+}).superRefine((value, ctx) => {
+  if (!isValidSriLankanPersonName(value.fullName)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['fullName'],
+      message: 'Full name can only include letters, spaces, periods, apostrophes, and hyphens',
+    });
+  }
+
+  if (value.phone && !isValidSriLankanPhone(value.phone)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['phone'],
+      message: 'Please enter a valid Sri Lankan phone number (e.g. 0771234567 or +94771234567)',
+    });
+  }
+
+  const hasAnyAddressField = Boolean(value.address || value.city || value.postalCode);
+  if (hasAnyAddressField) {
+    if (!value.address) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['address'],
+        message: 'Address is required when updating location details',
+      });
+    }
+    if (!value.city) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['city'],
+        message: 'City is required when updating location details',
+      });
+    }
+    if (!value.postalCode) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['postalCode'],
+        message: 'Postal code is required when updating location details',
+      });
+    }
+  }
+
+  if (value.address && !isValidSriLankanAddress(value.address)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['address'],
+      message: 'Please enter a complete Sri Lankan street address (8-160 characters)',
+    });
+  }
+
+  if (value.city && !isValidSriLankanDistrict(value.city)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['city'],
+      message: 'Please select a valid Sri Lankan district',
+    });
+  }
+
+  if (value.postalCode && !isValidSriLankanPostalCode(value.postalCode)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['postalCode'],
+      message: 'Please enter a valid Sri Lankan postal code (5 digits)',
+    });
+  }
 });
 
 const Profile: React.FC = () => {
@@ -44,18 +122,47 @@ const Profile: React.FC = () => {
         fullName: profile.full_name || '',
         phone: profile.phone || '',
         address: profile.address || '',
-        city: profile.city || '',
+        city: resolveSriLankanDistrict(profile.city || '') || '',
         postalCode: profile.postal_code || '',
       });
     }
   }, [profile]);
+
+  const updateFormField = (field: keyof typeof form, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+    setErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
 
     try {
-      profileSchema.parse(form);
+      const normalizedForm = profileSchema.parse(form);
+      setForm(normalizedForm);
+
+      if (!user) return;
+
+      setLoading(true);
+
+      await api.updateProfile({
+        fullName: normalizedForm.fullName,
+        phone: normalizedForm.phone || undefined,
+        address: normalizedForm.address || undefined,
+        city: normalizedForm.city || undefined,
+        postalCode: normalizedForm.postalCode || undefined,
+      });
+
+      toast({
+        title: 'Profile Updated',
+        description: 'Your profile has been saved successfully.',
+      });
+      refreshProfile();
     } catch (err) {
       if (err instanceof z.ZodError) {
         const fieldErrors: Record<string, string> = {};
@@ -65,57 +172,53 @@ const Profile: React.FC = () => {
         setErrors(fieldErrors);
         return;
       }
-    }
 
-    if (!user) return;
-
-    setLoading(true);
-    
-    try {
-      await api.updateProfile({
-        fullName: form.fullName,
-        phone: form.phone || undefined,
-        address: form.address || undefined,
-        city: form.city || undefined,
-        postalCode: form.postalCode || undefined,
-      });
-
-      toast({
-        title: 'Profile Updated',
-        description: 'Your profile has been saved successfully.',
-      });
-      refreshProfile();
-    } catch (error: unknown) {
       toast({
         title: 'Error',
-        description: error instanceof Error && error.message ? error.message : 'Failed to update profile',
+        description: err instanceof Error && err.message ? err.message : 'Failed to update profile',
         variant: 'destructive',
       });
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
 
-    if (!passwordForm.currentPassword) {
+    const currentPassword = passwordForm.currentPassword.trim();
+    const newPassword = passwordForm.newPassword.trim();
+    const confirmPassword = passwordForm.confirmPassword.trim();
+
+    if (!currentPassword) {
       setErrors({ currentPassword: 'Current password is required' });
       return;
     }
-    if (passwordForm.newPassword.length < 6) {
+    if (!newPassword) {
+      setErrors({ newPassword: 'New password is required' });
+      return;
+    }
+    if (newPassword.length < 6) {
       setErrors({ newPassword: 'New password must be at least 6 characters' });
       return;
     }
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+    if (newPassword === currentPassword) {
+      setErrors({ newPassword: 'New password must be different from current password' });
+      return;
+    }
+    if (!confirmPassword) {
+      setErrors({ confirmPassword: 'Please confirm your new password' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
       setErrors({ confirmPassword: 'Passwords do not match' });
       return;
     }
 
     setPasswordLoading(true);
     try {
-      await api.changePassword(passwordForm.currentPassword, passwordForm.newPassword);
+      await api.changePassword(currentPassword, newPassword);
       toast({
         title: 'Password Changed',
         description: 'Your password has been updated successfully.',
@@ -188,7 +291,7 @@ const Profile: React.FC = () => {
                     id="fullName"
                     placeholder="John Doe"
                     value={form.fullName}
-                    onChange={(e) => setForm({ ...form, fullName: e.target.value })}
+                    onChange={(e) => updateFormField('fullName', e.target.value)}
                     className="bg-secondary/30"
                   />
                   {errors.fullName && <p className="text-sm text-destructive">{errors.fullName}</p>}
@@ -216,10 +319,11 @@ const Profile: React.FC = () => {
                       id="phone"
                       placeholder="+94 77 123 4567"
                       value={form.phone}
-                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      onChange={(e) => updateFormField('phone', e.target.value)}
                       className="pl-10 bg-secondary/30"
                     />
                   </div>
+                  {errors.phone && <p className="text-sm text-destructive">{errors.phone}</p>}
                 </div>
               </div>
             </div>
@@ -240,21 +344,29 @@ const Profile: React.FC = () => {
                     id="address"
                     placeholder="123 Main Street, Apt 4B"
                     value={form.address}
-                    onChange={(e) => setForm({ ...form, address: e.target.value })}
+                    onChange={(e) => updateFormField('address', e.target.value)}
                     className="bg-secondary/30"
                   />
+                  {errors.address && <p className="text-sm text-destructive">{errors.address}</p>}
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="city">City</Label>
-                    <Input
-                      id="city"
-                      placeholder="Colombo"
+                    <Select
                       value={form.city}
-                      onChange={(e) => setForm({ ...form, city: e.target.value })}
-                      className="bg-secondary/30"
-                    />
+                      onValueChange={(value) => updateFormField('city', value)}
+                    >
+                      <SelectTrigger id="city" className="bg-secondary/30">
+                        <SelectValue placeholder="Select district" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {SRI_LANKA_DISTRICTS.map((district) => (
+                          <SelectItem key={district} value={district}>{district}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {errors.city && <p className="text-sm text-destructive">{errors.city}</p>}
                   </div>
 
                   <div className="space-y-2">
@@ -263,9 +375,10 @@ const Profile: React.FC = () => {
                       id="postalCode"
                       placeholder="10000"
                       value={form.postalCode}
-                      onChange={(e) => setForm({ ...form, postalCode: e.target.value })}
+                      onChange={(e) => updateFormField('postalCode', e.target.value)}
                       className="bg-secondary/30"
                     />
+                    {errors.postalCode && <p className="text-sm text-destructive">{errors.postalCode}</p>}
                   </div>
                 </div>
               </div>

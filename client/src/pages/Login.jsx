@@ -15,10 +15,30 @@ const Login = () => {
     e.preventDefault();
     setMessage('');
 
+    const normalizedEmail = formData.email.trim().toLowerCase();
+    const normalizedPassword = formData.password.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!normalizedEmail) {
+      setMessage('Error: Email is required');
+      return;
+    }
+
+    if (!emailRegex.test(normalizedEmail)) {
+      setMessage('Error: Please enter a valid email address');
+      return;
+    }
+
+    if (!normalizedPassword || normalizedPassword.length < 6) {
+      setMessage('Error: Password must be at least 6 characters');
+      return;
+    }
+
     try {
-      const res = await api.post('/auth/login', formData);
-      
-      console.log("Login Response:", res.data); // <--- DEBUG LOG
+      const res = await api.post('/auth/login', {
+        email: normalizedEmail,
+        password: normalizedPassword,
+      });
 
       // 1. Save Token & User
       localStorage.setItem('token', res.data.token);

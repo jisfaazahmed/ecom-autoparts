@@ -1109,8 +1109,12 @@ class ApiClient {
       try {
         const data = await resp.json();
         message = data.message || message;
-      } 
-      catch {}
+      } catch (_parseError) {
+        const fallbackText = await resp.text().catch(() => '');
+        if (fallbackText) {
+          message = fallbackText;
+        }
+      }
       throw new Error(message);
     }
 

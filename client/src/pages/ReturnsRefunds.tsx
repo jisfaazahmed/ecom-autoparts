@@ -4,6 +4,7 @@ import { AlertCircle, Loader2, RotateCcw, Search, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import Navbar from '@/components/layout/Navbar';
 import RefundForm from '@/components/orders/RefundForm';
+import type { RefundFormSubmission } from '@/components/orders/RefundForm';
 import { useAuth } from '@/hooks/useAuth';
 import { api, ApiOrderItem, ApiRefund } from '@/lib/api';
 import { formatLKR } from '@/lib/currency';
@@ -241,7 +242,7 @@ const ReturnsRefunds: React.FC = () => {
     return input;
   };
 
-  const submitRefundRequest = async (formData: any) => {
+  const submitRefundRequest = async (formData: RefundFormSubmission) => {
     if (!orderId.trim()) {
       toast.error('Please enter an order ID');
       return;
@@ -254,9 +255,19 @@ const ReturnsRefunds: React.FC = () => {
       return;
     }
 
-    if (!amount.trim() || Number(amount) <= 0) {
+    const normalizedAmount = Number(amount);
+    if (!amount.trim() || !Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
       toast.error('Please enter a valid refund amount');
       return;
+    }
+
+    const normalizedPaymentId = paymentId.trim();
+    if (normalizedPaymentId) {
+      const paymentIdRegex = /^[A-Za-z0-9_-]{4,64}$/;
+      if (!paymentIdRegex.test(normalizedPaymentId)) {
+        toast.error('Please enter a valid payment ID');
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -264,8 +275,8 @@ const ReturnsRefunds: React.FC = () => {
       await api.createRefundRequestByOrder({
         orderId: resolvedOrderId,
         orderItemId: selectedItem ? String(selectedItem.item._id || selectedItem.item.id || '') : undefined,
-        paymentId: paymentId.trim() || undefined,
-        amount: Number(amount),
+        paymentId: normalizedPaymentId || undefined,
+        amount: normalizedAmount,
         reason: formData.returnReason.description,
         refundType: 'return',
         details: `Reason: ${formData.returnReason.category}\nCondition: ${formData.productCondition.productState}\nPackaging: ${formData.productCondition.packaging}\nAccessories: ${formData.productCondition.accessories}`,

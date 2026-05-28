@@ -86,7 +86,22 @@ const SuperAdminVehicles: React.FC = () => {
         toast({ title: editingItem ? 'Updated' : 'Created', description: `Model ${editingItem ? 'updated' : 'created'} successfully` });
       } else if (activeTab === 'variants') {
         if (!formData.modelId) { toast({ title: 'Error', description: 'Please select a model', variant: 'destructive' }); setSaving(false); return; }
-        const data = { name: formData.name, modelId: formData.modelId, yearStart: formData.yearStart, yearEnd: formData.yearEnd || undefined };
+        const yearStart = Number(formData.yearStart);
+        const currentYear = new Date().getFullYear() + 1;
+        if (!Number.isInteger(yearStart) || yearStart < 1950 || yearStart > currentYear) {
+          toast({ title: 'Error', description: `Year start must be between 1950 and ${currentYear}`, variant: 'destructive' });
+          setSaving(false);
+          return;
+        }
+
+        const yearEnd = formData.yearEnd == null ? null : Number(formData.yearEnd);
+        if (yearEnd != null && (!Number.isInteger(yearEnd) || yearEnd < yearStart || yearEnd > currentYear)) {
+          toast({ title: 'Error', description: `Year end must be between ${yearStart} and ${currentYear}`, variant: 'destructive' });
+          setSaving(false);
+          return;
+        }
+
+        const data = { name: formData.name, modelId: formData.modelId, yearStart, yearEnd: yearEnd || undefined };
         if (editingItem) {
           await api.updateVehicleVariant(editingItem.id, data);
         } else {

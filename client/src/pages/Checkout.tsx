@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -17,6 +18,19 @@ import { useAuth } from '@/hooks/useAuth';
 import { api, ApiCoupon, ApiAddress } from '@/lib/api';
 import { toast } from 'sonner';
 import { formatLKR } from '@/lib/currency';
+import {
+  normalizeWhitespace,
+  normalizeSriLankanPhone,
+  normalizeSriLankanPostalCode,
+  isValidSriLankanPhone,
+  isValidSriLankanPostalCode,
+  isSriLankanCountry,
+  isValidSriLankanPersonName,
+  isValidSriLankanCity,
+  isValidSriLankanAddress,
+  SRI_LANKA_DISTRICTS,
+  resolveSriLankanDistrict,
+} from '@/lib/sriLankaValidation';
 
 interface StockIssue {
   productId: string;
@@ -39,7 +53,7 @@ const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as stri
 const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
 
 const ZONE_1_CITIES = ['colombo'];
-const ZONE_2_CITIES = ['gampaha', 'kaluthara'];
+const ZONE_2_CITIES = ['gampaha', 'kalutara', 'kaluthara'];
 const ZONE_3_CITIES = [
   'kurunegala',
   'kandy',
@@ -66,10 +80,20 @@ const ZONE_3_CITIES = [
 ];
 
 function getZoneMultiplier(city: string) {
-  const normalizedCity = String(city || '').trim().toLowerCase();
-  if (ZONE_1_CITIES.includes(normalizedCity)) return 100;
-  if (ZONE_2_CITIES.includes(normalizedCity)) return 200;
-  if (ZONE_3_CITIES.includes(normalizedCity)) return 300;
+  const normalizedCity = String(city || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[.,]/g, '');
+  const zoneKey = normalizedCity.startsWith('colombo')
+    ? 'colombo'
+    : normalizedCity.startsWith('gampaha')
+      ? 'gampaha'
+      : normalizedCity.startsWith('kalutara') || normalizedCity.startsWith('kaluthara')
+        ? 'kalutara'
+        : normalizedCity;
+  if (ZONE_1_CITIES.includes(zoneKey)) return 100;
+  if (ZONE_2_CITIES.includes(zoneKey)) return 200;
+  if (ZONE_3_CITIES.includes(zoneKey)) return 300;
   return 0;
 }
 
@@ -321,14 +345,21 @@ export default function Checkout() {
       api.getAddresses().then(addresses => {
         setSavedAddresses(addresses);
         if (addresses.length > 0) {
-           setSelectedAddressId(addresses[0]._id);
-           const addr = addresses[0];
+           const sriLankaAddress = addresses.find((address) => isSriLankanCountry(address.country));
+           if (!sriLankaAddress) {
+             setSelectedAddressId('new');
+             toast.info('Saved addresses must be in Sri Lanka. Please enter a new delivery address.');
+             return;
+           }
+
+           setSelectedAddressId(sriLankaAddress._id);
+           const addr = sriLankaAddress;
            setForm((prev) => ({
              ...prev,
              fullName: addr.fullName,
              phone: addr.phone,
              address: addr.addressLine1,
-             city: addr.city,
+             city: resolveSriLankanDistrict(addr.city) || '',
              postalCode: addr.postalCode,
            }));
         }
@@ -360,12 +391,17 @@ export default function Checkout() {
     } else {
         const addr = savedAddresses.find(a => a._id === addrId);
         if (addr) {
+        if (!isSriLankanCountry(addr.country)) {
+          toast.error('Only Sri Lankan saved addresses can be used for delivery');
+          setSelectedAddressId('new');
+          return;
+        }
             setForm((prev) => ({
                  ...prev,
                  fullName: addr.fullName,
                  phone: addr.phone,
                  address: addr.addressLine1,
-                 city: addr.city,
+                city: resolveSriLankanDistrict(addr.city) || '',
                  postalCode: addr.postalCode,
             }));
         }
@@ -474,10 +510,58 @@ export default function Checkout() {
 
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(form.email)) {
+    if (!emailRegex.test(form.email.trim().toLowerCase())) {
       toast.error('Please enter a valid email address');
       return false;
     }
+
+    const normalizedFullName = normalizeWhitespace(form.fullName);
+    if (!isValidSriLankanPersonName(normalizedFullName)) {
+      toast.error('Full name can only include letters, spaces, periods, apostrophes, and hyphens');
+      return false;
+    }
+
+    if (!isValidSriLankanPhone(form.phone)) {
+      toast.error('Please enter a valid Sri Lankan phone number (e.g. 0771234567 or +94771234567)');
+      return false;
+    }
+
+    if (!isValidSriLankanPostalCode(form.postalCode)) {
+      toast.error('Please enter a valid Sri Lankan postal code (5 digits)');
+      return false;
+    }
+
+    const normalizedAddress = normalizeWhitespace(form.address);
+    if (!isValidSriLankanAddress(normalizedAddress)) {
+      toast.error('Please enter a complete Sri Lankan street address (8-160 characters)');
+      return false;
+    }
+
+    const normalizedCity = normalizeWhitespace(form.city);
+    const resolvedDistrict = resolveSriLankanDistrict(normalizedCity);
+    if (!resolvedDistrict || !isValidSriLankanCity(normalizedCity)) {
+      toast.error('Please select a valid Sri Lankan district');
+      return false;
+    }
+
+    if (selectedAddressId !== 'new') {
+      const selectedAddress = savedAddresses.find((address) => address._id === selectedAddressId);
+      if (selectedAddress?.country && !isSriLankanCountry(selectedAddress.country)) {
+        toast.error('Only Sri Lankan addresses can be used for delivery');
+        return false;
+      }
+    }
+
+    const sanitizedForm: ShippingForm = {
+      fullName: normalizedFullName,
+      email: form.email.trim().toLowerCase(),
+      phone: normalizeSriLankanPhone(form.phone),
+      address: normalizedAddress,
+      city: resolvedDistrict,
+      postalCode: normalizeSriLankanPostalCode(form.postalCode),
+    };
+
+    setForm(sanitizedForm);
 
     return true;
   };
@@ -880,7 +964,7 @@ export default function Checkout() {
                           <Input
                             value={form.phone}
                             onChange={(e) => handleInputChange('phone', e.target.value)}
-                            placeholder="+1 234 567 8900"
+                            placeholder="0771234567"
                           />
                         </div>
 
@@ -889,25 +973,33 @@ export default function Checkout() {
                           <Input
                             value={form.address}
                             onChange={(e) => handleInputChange('address', e.target.value)}
-                            placeholder="123 Main Street"
+                            placeholder="No 12, Galle Road"
                           />
                         </div>
 
                         <div className="grid sm:grid-cols-2 gap-4">
                           <div>
                             <Label>City *</Label>
-                            <Input
+                            <Select
                               value={form.city}
-                              onChange={(e) => handleInputChange('city', e.target.value)}
-                              placeholder="New York"
-                            />
+                              onValueChange={(value) => handleInputChange('city', value)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select district" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {SRI_LANKA_DISTRICTS.map((district) => (
+                                  <SelectItem key={district} value={district}>{district}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
                           <div>
                             <Label>Postal Code *</Label>
                             <Input
                               value={form.postalCode}
                               onChange={(e) => handleInputChange('postalCode', e.target.value)}
-                              placeholder="10001"
+                              placeholder="00300"
                             />
                           </div>
                         </div>
