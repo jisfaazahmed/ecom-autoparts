@@ -120,6 +120,18 @@ const ReturnsRefunds: React.FC = () => {
         'refunded',
         'cancelled',
       ]);
+      const existingRefundOrderIds = new Set(
+        refunds
+          .filter((refund) => String(refund.status || '').toLowerCase() !== 'rejected')
+          .map((refund) => String(refund.order || '').trim())
+          .filter(Boolean)
+      );
+      const existingRefundOrderItemIds = new Set(
+        refunds
+          .filter((refund) => String(refund.status || '').toLowerCase() !== 'rejected')
+          .map((refund) => String(refund.orderItem || '').trim())
+          .filter(Boolean)
+      );
 
       const mappedItems: RefundableItem[] = [];
       const mappedOrderRefs: OrderReference[] = [];
@@ -138,6 +150,15 @@ const ReturnsRefunds: React.FC = () => {
         const canRequestByOrder = refundableStatuses.has(orderStatus);
 
         for (const item of order.items || []) {
+          const currentItemId = String(item._id || item.id || '').trim();
+          const alreadyHasRefund =
+            existingRefundOrderIds.has(currentOrderId) ||
+            (currentItemId && existingRefundOrderItemIds.has(currentItemId));
+
+          if (alreadyHasRefund) {
+            continue;
+          }
+
           const itemStatus = String(item.status || orderStatus || '').toLowerCase();
           const canRequestByItem = itemStatus === 'delivered' || (canRequestByOrder && !blockedItemStatuses.has(itemStatus));
 
@@ -252,6 +273,18 @@ const ReturnsRefunds: React.FC = () => {
     const objectIdRegex = /^[a-f\d]{24}$/i;
     if (!objectIdRegex.test(resolvedOrderId)) {
       toast.error('Please enter a valid order ID (or select an order from the list)');
+      return;
+    }
+
+    const duplicateRefund = refunds.find((refund) => {
+      const status = String(refund.status || '').toLowerCase();
+      if (status === 'rejected') {
+        return false;
+      }
+      return String(refund.order || '').trim() === resolvedOrderId;
+    });
+    if (duplicateRefund) {
+      toast.error(`A refund request already exists for this order (${duplicateRefund.requestNumber || 'existing request'})`);
       return;
     }
 

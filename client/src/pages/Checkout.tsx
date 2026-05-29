@@ -423,6 +423,7 @@ export default function Checkout() {
   const skipEmptyCartRedirect = useRef(false);
   const orderPlacementKeyRef = useRef<string | null>(null);
   const paymentConfirmationKeyRef = useRef<string | null>(null);
+  const paymentMethodRef = useRef<'stripe' | 'wallet' | 'cod'>(paymentMethod);
 
   // Get unique shop IDs from cart
   const shopIds = [...new Set(validCart.map((item) => item.product.shopId))].filter(Boolean);
@@ -502,6 +503,11 @@ export default function Checkout() {
 
   const handleInlineCardReady = useCallback((fn: ConfirmInlineCardFn | null) => {
     setConfirmInlineCard(() => fn);
+  }, []);
+
+  const updatePaymentMethod = useCallback((method: 'stripe' | 'wallet' | 'cod') => {
+    paymentMethodRef.current = method;
+    setPaymentMethod(method);
   }, []);
 
   const handleInputChange = (field: keyof ShippingForm, value: string) => {
@@ -812,9 +818,11 @@ export default function Checkout() {
   };
 
   const handleCheckout = () => {
-    if (paymentMethod === 'stripe') {
+    const currentPaymentMethod = paymentMethodRef.current;
+
+    if (currentPaymentMethod === 'stripe') {
       handleInlineCardCheckout();
-    } else if (paymentMethod === 'wallet') {
+    } else if (currentPaymentMethod === 'wallet') {
       handleWalletCheckout();
     } else {
       handleCODCheckout();
@@ -826,6 +834,10 @@ export default function Checkout() {
     { number: 2, title: 'Payment', icon: CreditCard },
     { number: 3, title: 'Review', icon: Check },
   ];
+
+  const selectPaymentMethod = (method: 'stripe' | 'wallet' | 'cod') => {
+    updatePaymentMethod(method);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 py-8">
@@ -1074,7 +1086,7 @@ export default function Checkout() {
                       value={paymentMethod}
                       onValueChange={(value) => {
                         if (value === 'stripe' || value === 'wallet' || value === 'cod') {
-                          setPaymentMethod(value as 'stripe' | 'wallet' | 'cod');
+                          updatePaymentMethod(value as 'stripe' | 'wallet' | 'cod');
                         }
                       }}
                       className="space-y-4 mb-8"
@@ -1083,6 +1095,7 @@ export default function Checkout() {
                       <motion.div
                         whileHover={{ scale: 1.01 }}
                         whileTap={{ scale: 0.98 }}
+                        onClick={() => selectPaymentMethod('stripe')}
                         className={`
                           relative p-6 rounded-xl border-2 cursor-pointer transition-all
                           ${paymentMethod === 'stripe'
@@ -1121,6 +1134,7 @@ export default function Checkout() {
                       <motion.div
                         whileHover={{ scale: 1.01 }}
                         whileTap={{ scale: 0.98 }}
+                        onClick={() => selectPaymentMethod('wallet')}
                         className={`
                           relative p-6 rounded-xl border-2 cursor-pointer transition-all
                           ${paymentMethod === 'wallet'
@@ -1154,6 +1168,7 @@ export default function Checkout() {
                       <motion.div
                         whileHover={{ scale: 1.01 }}
                         whileTap={{ scale: 0.98 }}
+                        onClick={() => selectPaymentMethod('cod')}
                         className={`
                           relative p-6 rounded-xl border-2 cursor-pointer transition-all
                           ${paymentMethod === 'cod'

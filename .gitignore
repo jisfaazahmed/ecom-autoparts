@@ -9,6 +9,23 @@ yarn-error.log
 .env.development.local
 .env.test.local
 .env.production.local
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# common secret artifacts
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.jks
+
+# secret scan outputs
+.secrets.baseline
+secrets-report.json
 
 # OS
 .DS_Store

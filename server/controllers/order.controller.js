@@ -5,6 +5,7 @@ const Shipping = require('../models/shipping.model');
 const OrderItem = require('../models/orderItem.model');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 
 const GUEST_INVOICE_TOKEN_EXPIRY = process.env.GUEST_INVOICE_TOKEN_EXPIRY || '7d';
 
@@ -55,6 +56,47 @@ function getOrderPlacementScope(req, userId) {
     return `guest:${ip}:${userAgent}`;
 }
 
+function normalizeId(value) {
+    return String(value || '').trim();
+}
+
+function normalizeText(value) {
+    return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function buildServerSideDedupeKey(req, userId) {
+    const body = req.body || {};
+    const rawItems = Array.isArray(body.items) ? body.items : [];
+    const items = rawItems
+        .map((item) => {
+            const productId = normalizeId(item?.productId || item?.product);
+            const quantity = Number(item?.quantity || 0);
+            return `${productId}:${quantity}`;
+        })
+        .filter((token) => !token.startsWith(':0') && !token.startsWith(':'))
+        .sort();
+
+    const fingerprintPayload = {
+        scope: getOrderPlacementScope(req, userId),
+        paymentMethod: normalizeText(body.paymentMethod),
+        shopId: normalizeId(body.shopId),
+        shippingAddress: normalizeText(body.shippingAddress),
+        shippingCity: normalizeText(body.shippingCity),
+        shippingPostalCode: normalizeText(body.shippingPostalCode),
+        fullName: normalizeText(body.fullName),
+        phone: normalizeText(body.phone),
+        couponCode: normalizeText(body.couponCode),
+        items,
+    };
+
+    const hash = crypto
+        .createHash('sha256')
+        .update(JSON.stringify(fingerprintPayload))
+        .digest('hex');
+
+    return `srv:${hash}`;
+}
+
 //new order
 module.exports.createOrder = async (req, res) => {
     try {
@@ -66,14 +108,24 @@ module.exports.createOrder = async (req, res) => {
         }
 
         const userId = req.user?.id || req.user?._id || null;
-        const idempotencyKey = getIdempotencyKey(req);
+        const clientIdempotencyKey = getIdempotencyKey(req);
         const idempotencyScope = getOrderPlacementScope(req, userId);
+        const idempotencyKey = clientIdempotencyKey || buildServerSideDedupeKey(req, userId);
+        const dedupeWindowMs = 2 * 60 * 1000;
+        const dedupeCutoff = new Date(Date.now() - dedupeWindowMs);
 
         if (idempotencyKey) {
-            const existingOrder = await order.findOne({
+            const existingQuery = {
                 'idempotency.orderPlacement.key': idempotencyKey,
                 'idempotency.orderPlacement.scope': idempotencyScope,
-            });
+            };
+
+            // For server-generated fallback keys, only dedupe recent requests.
+            if (!clientIdempotencyKey) {
+                existingQuery.createdAt = { $gte: dedupeCutoff };
+            }
+
+            const existingOrder = await order.findOne(existingQuery);
 
             if (existingOrder) {
                 const replayPayload = {
@@ -117,6 +169,38 @@ module.exports.createOrder = async (req, res) => {
         res.status(200).json(payload);
     }
     catch (error) {
+        // If two identical requests race, recover by returning the already-created order.
+        if (error?.code === 11000) {
+            try {
+                const userId = req.user?.id || req.user?._id || null;
+                const clientIdempotencyKey = getIdempotencyKey(req);
+                const idempotencyScope = getOrderPlacementScope(req, userId);
+                const idempotencyKey = clientIdempotencyKey || buildServerSideDedupeKey(req, userId);
+
+                if (idempotencyKey) {
+                    const existingOrder = await order.findOne({
+                        'idempotency.orderPlacement.key': idempotencyKey,
+                        'idempotency.orderPlacement.scope': idempotencyScope,
+                    });
+
+                    if (existingOrder) {
+                        const replayPayload = {
+                            order: existingOrder,
+                            message: 'order placed successfully',
+                        };
+
+                        if (!userId) {
+                            replayPayload.guestInvoiceToken = generateGuestInvoiceToken(existingOrder._id);
+                        }
+
+                        return res.status(200).json(replayPayload);
+                    }
+                }
+            } catch (_dedupeRecoveryError) {
+                // Fall through to default error handling below.
+            }
+        }
+
         const message = String(error?.message || 'Failed to place order');
         const isValidationError =
             message.includes('not assigned to a vendor') ||
