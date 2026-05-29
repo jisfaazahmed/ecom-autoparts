@@ -79,6 +79,13 @@ const ZONE_3_CITIES = [
   'mullaitivu',
 ];
 
+function generateIdempotencyKey(prefix: string) {
+  const randomPart = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}-${randomPart}`;
+}
+
 function getZoneMultiplier(city: string) {
   const normalizedCity = String(city || '')
     .trim()
@@ -414,6 +421,8 @@ export default function Checkout() {
   const validCart = cart.filter(item => item && item.product);
 
   const skipEmptyCartRedirect = useRef(false);
+  const orderPlacementKeyRef = useRef<string | null>(null);
+  const paymentConfirmationKeyRef = useRef<string | null>(null);
 
   // Get unique shop IDs from cart
   const shopIds = [...new Set(validCart.map((item) => item.product.shopId))].filter(Boolean);
@@ -603,6 +612,9 @@ export default function Checkout() {
         quantity: item.quantity,
       }));
 
+      const orderPlacementKey = orderPlacementKeyRef.current || generateIdempotencyKey('order');
+      orderPlacementKeyRef.current = orderPlacementKey;
+
       const order = await api.createOrder({
         items: orderItems,
         shippingAddress: form.address,
@@ -614,6 +626,7 @@ export default function Checkout() {
         paymentMethod: 'card',
         shopId,
         couponCode: appliedCoupon?.code,
+        idempotencyKey: orderPlacementKey,
       });
 
       const orderId = order.id || order._id;
@@ -632,13 +645,19 @@ export default function Checkout() {
         phone: form.phone,
       });
 
+      const paymentConfirmationKey = paymentConfirmationKeyRef.current || generateIdempotencyKey('confirm-payment');
+      paymentConfirmationKeyRef.current = paymentConfirmationKey;
+
       await api.confirmPaymentIntent({
         orderId,
         paymentIntentId,
+        idempotencyKey: paymentConfirmationKey,
       });
 
       skipEmptyCartRedirect.current = true;
       clearCart();
+      orderPlacementKeyRef.current = null;
+      paymentConfirmationKeyRef.current = null;
       toast.success('Card payment completed successfully!');
       navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId)}${order.guestInvoiceToken ? `&guest_token=${encodeURIComponent(order.guestInvoiceToken)}` : ''}`);
     } catch (error) {
@@ -667,6 +686,9 @@ export default function Checkout() {
         quantity: item.quantity,
       }));
 
+      const orderPlacementKey = orderPlacementKeyRef.current || generateIdempotencyKey('order');
+      orderPlacementKeyRef.current = orderPlacementKey;
+
       const order = await api.createOrder({
         items: orderItems,
         shippingAddress: form.address,
@@ -679,10 +701,13 @@ export default function Checkout() {
         shopId,
         couponCode: appliedCoupon?.code,
         notes: 'Cash on Delivery',
+        idempotencyKey: orderPlacementKey,
       });
 
       skipEmptyCartRedirect.current = true;
       clearCart();
+      orderPlacementKeyRef.current = null;
+      paymentConfirmationKeyRef.current = null;
       toast.success('Order placed successfully!');
       
       // Check if user is logged in
@@ -734,6 +759,9 @@ export default function Checkout() {
           quantity: item.quantity,
         }));
 
+        const orderPlacementKey = orderPlacementKeyRef.current || generateIdempotencyKey('order');
+        orderPlacementKeyRef.current = orderPlacementKey;
+
         const order = await api.createOrder({
           items: orderItems,
           shippingAddress: form.address,
@@ -745,6 +773,7 @@ export default function Checkout() {
           paymentMethod: 'wallet',
           shopId,
           couponCode: appliedCoupon?.code,
+          idempotencyKey: orderPlacementKey,
         });
 
         orderId = order.id || order._id || null;
@@ -770,6 +799,8 @@ export default function Checkout() {
 
       skipEmptyCartRedirect.current = true;
       clearCart();
+      orderPlacementKeyRef.current = null;
+      paymentConfirmationKeyRef.current = null;
       toast.success('Wallet payment completed successfully!');
       navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&method=wallet`);
     } catch (error) {

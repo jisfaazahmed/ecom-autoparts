@@ -1142,10 +1142,13 @@ class ApiClient {
     shopId?: string;
     couponCode?: string;
     notes?: string;
+    idempotencyKey?: string;
   }): Promise<ApiOrder> {
+    const { idempotencyKey, ...payload } = data;
     const response = await this.request<ApiOrder | { order?: ApiOrder; data?: ApiOrder; guestInvoiceToken?: string }>('/orders', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
     });
 
     const rawOrder = (response as any)?.order || (response as any)?.data || response;
@@ -1743,7 +1746,7 @@ class ApiClient {
     return response.data || response;
   }
 
-  async confirmPaymentIntent(data: { orderId: string; paymentIntentId: string; otp?: string }): Promise<{
+  async confirmPaymentIntent(data: { orderId: string; paymentIntentId: string; otp?: string; idempotencyKey?: string }): Promise<{
     orderId: string;
     paymentIntentId: string;
     paymentStatus: string;
@@ -1752,6 +1755,7 @@ class ApiClient {
     retryEligible?: boolean;
     nextAction?: any;
   }> {
+    const { idempotencyKey, ...payload } = data;
     const response = await this.request<{
       orderId: string;
       paymentIntentId: string;
@@ -1771,7 +1775,8 @@ class ApiClient {
       };
     }>('/payments/confirm-payment-intent', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
     });
 
     return response.data || response;

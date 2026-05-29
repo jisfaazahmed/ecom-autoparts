@@ -158,6 +158,28 @@ const paymentSchema = new mongoose.Schema({
     errorMessage: String,
     gatewayResponse: mongoose.Schema.Types.Mixed
   }],
+
+    idempotency: {
+        confirmPaymentIntent: {
+            key: {
+                type: String,
+                default: null
+            },
+            status: {
+                type: String,
+                enum: ['processing', 'requires_action', 'completed', 'failed'],
+                default: null
+            },
+            paymentIntentId: {
+                type: String,
+                default: null
+            },
+            updatedAt: {
+                type: Date,
+                default: null
+            }
+        }
+    },
   
 }, {
     timestamps: true
@@ -211,6 +233,7 @@ paymentSchema.index({ status: 1 });
 paymentSchema.index({paymentMethod : 1});
 paymentSchema.index({ user: 1, createdAt: -1 });
 paymentSchema.index({ gateway: 1 });
+paymentSchema.index({ 'idempotency.confirmPaymentIntent.key': 1 });
 
 
 module.exports = mongoose.model('Payment', paymentSchema);

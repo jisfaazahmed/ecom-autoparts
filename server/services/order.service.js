@@ -224,7 +224,7 @@ class OrderService {
 
     // Create Order
     async createOrder(userId, orderData) {
-            const { shippingAddress, shippingCity, shippingPostalCode, fullName, phone, shippingCountry = 'Sri Lanka', paymentMethod = 'cod', deliveryInstructions, couponCode, items = [] } = orderData;
+            const { shippingAddress, shippingCity, shippingPostalCode, fullName, phone, shippingCountry = 'Sri Lanka', paymentMethod = 'cod', deliveryInstructions, couponCode, items = [], idempotency = null } = orderData;
 
             const normalizedShippingAddress = typeof shippingAddress === 'string'
                 ? {
@@ -337,7 +337,8 @@ class OrderService {
                 estimatedDeliveryDate: this.calculateEstimateDelivery(orderData.shippingMethod || 'standard'),
                 shippingMethod: orderData.shippingMethod || 'standard',
                 ipAddress: orderData.ipAddress,
-                userAgent: orderData.userAgent
+                userAgent: orderData.userAgent,
+                ...(idempotency ? { idempotency } : {})
             });
 
             await order.save();

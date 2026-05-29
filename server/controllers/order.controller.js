@@ -37,6 +37,24 @@ function assertValidOrderId(res, orderId) {
     return true;
 }
 
+function getIdempotencyKey(req) {
+    const headerKey = String(req.get('Idempotency-Key') || req.get('idempotency-key') || '').trim();
+    const bodyKey = String(req.body?.idempotencyKey || '').trim();
+    const key = headerKey || bodyKey;
+    if (!key) return null;
+    return key.slice(0, 128);
+}
+
+function getOrderPlacementScope(req, userId) {
+    if (userId) {
+        return `user:${String(userId)}`;
+    }
+
+    const ip = String(req.ip || '').trim();
+    const userAgent = String(req.get('user-agent') || '').trim();
+    return `guest:${ip}:${userAgent}`;
+}
+
 //new order
 module.exports.createOrder = async (req, res) => {
     try {
@@ -48,8 +66,40 @@ module.exports.createOrder = async (req, res) => {
         }
 
         const userId = req.user?.id || req.user?._id || null;
+        const idempotencyKey = getIdempotencyKey(req);
+        const idempotencyScope = getOrderPlacementScope(req, userId);
+
+        if (idempotencyKey) {
+            const existingOrder = await order.findOne({
+                'idempotency.orderPlacement.key': idempotencyKey,
+                'idempotency.orderPlacement.scope': idempotencyScope,
+            });
+
+            if (existingOrder) {
+                const replayPayload = {
+                    order: existingOrder,
+                    message: 'order placed successfully',
+                };
+
+                if (!userId) {
+                    replayPayload.guestInvoiceToken = generateGuestInvoiceToken(existingOrder._id);
+                }
+
+                return res.status(200).json(replayPayload);
+            }
+        }
+
         const newOrder = await orderService.createOrder(userId, {
             ...req.body,
+            idempotency: idempotencyKey
+                ? {
+                    orderPlacement: {
+                        key: idempotencyKey,
+                        scope: idempotencyScope,
+                        createdAt: new Date(),
+                    },
+                }
+                : undefined,
             ipAddress: req.ip,
             userAgent: req.get('user-agent')
         });
