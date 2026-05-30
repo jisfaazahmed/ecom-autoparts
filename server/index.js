@@ -43,6 +43,7 @@ const inventoryRoutes = require('./routes/inventoryRoutes');
 const adminAnalyticsRoutes = require('./routes/adminAnalytics.routes');
 const userRoutes = require('./routes/user.routes');
 const uploadRoutes = require('./routes/upload.routes');
+const wishlistRoutes = require('./routes/wishlist.routes');
 const BackgroundJobs = require('./jobs/backgroundJobs');
 const swaggerUI = require('swagger-ui-express');
 const swaggerSpecs = require('./config/swagger');
@@ -111,6 +112,7 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/admin-analytics', adminAnalyticsRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/wishlist', wishlistRoutes);
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpecs));
 console.log("📄 Documentation available at http://localhost:5000/api-docs");
 

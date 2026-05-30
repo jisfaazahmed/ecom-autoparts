@@ -37,6 +37,10 @@ import SuperAdminVehicles from "./pages/superadmin/Vehicles";
 import SuperAdminCategories from "./pages/superadmin/Categories";
 import SuperAdminCoupons from "./pages/superadmin/Coupons";
 import SuperAdminPolicies from "./pages/superadmin/Policies";
+import Wishlist from "./pages/Wishlist";
+import Compare from "./pages/Compare";
+import AdminCustomers from "./pages/admin/Customers";
+import SuperAdminSettlements from "./pages/superadmin/Settlements";
 import ReturnPolicy from "./pages/ReturnPolicy";
 import ShippingPolicy from "./pages/ShippingPolicy";
 import CancellationPolicy from "./pages/CancellationPolicy";
@@ -89,6 +93,12 @@ const App = () => (
                 <Profile />
               </ProtectedRoute>
             } />
+            <Route path="/wishlist" element={
+              <ProtectedRoute>
+                <Wishlist />
+              </ProtectedRoute>
+            } />
+            <Route path="/compare" element={<Compare />} />
           
             <Route path="/payment/success" element={<PaymentSuccess />} />
             <Route path="/payment/download" element={<PaymentDownload />} />
@@ -129,6 +139,11 @@ const App = () => (
             <Route path="/admin/settings" element={
               <ProtectedRoute requiredRole="admin" requireApprovedShop>
                 <AdminSettings />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/customers" element={
+              <ProtectedRoute requiredRole="admin" requireApprovedShop>
+                <AdminCustomers />
               </ProtectedRoute>
             } />
             
@@ -176,6 +191,11 @@ const App = () => (
             <Route path="/superadmin/refunds" element={
               <ProtectedRoute requiredRole="superadmin">
                 <AdminRefunds />
+              </ProtectedRoute>
+            } />
+            <Route path="/superadmin/settlements" element={
+              <ProtectedRoute requiredRole="superadmin">
+                <SuperAdminSettlements />
               </ProtectedRoute>
             } />
             

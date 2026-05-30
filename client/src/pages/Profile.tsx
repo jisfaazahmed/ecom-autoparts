@@ -104,6 +104,7 @@ const Profile: React.FC = () => {
   const { toast } = useToast();
   
   const [loading, setLoading] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [showPasswords, setShowPasswords] = useState({ current: false, new: false, confirm: false });
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -115,6 +116,41 @@ const Profile: React.FC = () => {
     city: '',
     postalCode: '',
   });
+
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: 'Invalid File',
+        description: 'Please select an image file.',
+        variant: 'destructive',
+      });
+      event.target.value = '';
+      return;
+    }
+
+    setAvatarUploading(true);
+    try {
+      const imageUrl = await api.uploadFile(file, 'avatars');
+      await api.updateProfile({ avatarUrl: imageUrl } as any);
+      await refreshProfile();
+      toast({
+        title: 'Profile Photo Updated',
+        description: 'Your profile image has been updated successfully.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Upload Failed',
+        description: error instanceof Error && error.message ? error.message : 'Failed to upload profile image',
+        variant: 'destructive',
+      });
+    } finally {
+      setAvatarUploading(false);
+      event.target.value = '';
+    }
+  };
 
   useEffect(() => {
     if (profile) {
@@ -267,9 +303,16 @@ const Profile: React.FC = () => {
                   {getInitials(form.fullName || 'U')}
                 </AvatarFallback>
               </Avatar>
-              <button className="absolute bottom-0 right-0 p-2 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
-                <Camera className="h-4 w-4" />
-              </button>
+              <label className="absolute bottom-0 right-0 p-2 rounded-full bg-primary text-primary-foreground hover:bg-primary/90 transition-colors cursor-pointer">
+                {avatarUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarUpload}
+                  disabled={avatarUploading}
+                />
+              </label>
             </div>
             <h1 className="font-display text-3xl font-bold">My Profile</h1>
             <p className="text-muted-foreground">{user?.email}</p>

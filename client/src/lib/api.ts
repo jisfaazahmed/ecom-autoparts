@@ -719,6 +719,10 @@ class ApiClient {
     return this.request<ApiUser>('/auth/me');
   }
 
+  async getMyProfile(): Promise<any> {
+    return this.request<any>('/users/profile');
+  }
+
   async updateProfile(data: Partial<ApiUser>): Promise<ApiUser> {
     return this.request<ApiUser>('/users/profile', {
       method: 'PUT',
@@ -2222,6 +2226,45 @@ class ApiClient {
 
     const result = await response.json();
     return result.files.map((f: { url: string }) => f.url);
+  }
+
+  // ============ WISHLIST ============
+
+  async getWishlist(): Promise<{ products: ApiProduct[] }> {
+    return this.request<{ products: ApiProduct[] }>('/wishlist');
+  }
+
+  async getWishlistIds(): Promise<{ productIds: string[] }> {
+    return this.request<{ productIds: string[] }>('/wishlist/ids');
+  }
+
+  async addToWishlist(productId: string): Promise<{ message: string; productIds: string[] }> {
+    return this.request<{ message: string; productIds: string[] }>(`/wishlist/${productId}`, {
+      method: 'POST',
+    });
+  }
+
+  async removeFromWishlist(productId: string): Promise<{ message: string; productIds: string[] }> {
+    return this.request<{ message: string; productIds: string[] }>(`/wishlist/${productId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // ============ SELLER CUSTOMERS ============
+
+  async getSellerCustomers(): Promise<{
+    success: boolean;
+    data: Array<{
+      customerId: string;
+      name: string;
+      email: string;
+      totalOrders: number;
+      totalSpent: number;
+      lastOrderAt: string;
+    }>;
+    total: number;
+  }> {
+    return this.request('/orders/seller/customers');
   }
 }
 

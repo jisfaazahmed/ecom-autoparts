@@ -1,13 +1,16 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { Star, ShoppingCart, Check, AlertCircle } from 'lucide-react';
+import { Star, ShoppingCart, Check, AlertCircle, Heart, GitCompare } from 'lucide-react';
 import { Product } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useStore } from '@/store/useStore';
 import { toast } from 'sonner';
 import { formatLKR } from '@/lib/currency';
+import { api } from '@/lib/api';
+import { useAuth } from '@/hooks/useAuth';
+import { cn } from '@/lib/utils';
 
 interface ProductCardProps {
   product: Product;
@@ -20,13 +23,65 @@ const ProductCard: React.FC<ProductCardProps> = ({
   isCompatible = true,
   showCompatibilityBadge = true,
 }) => {
-  const { addToCart } = useStore();
+  const { addToCart, wishlistIds, toggleWishlistId, addToCompare, compareItems } = useStore();
+  const { user } = useAuth();
+  const isWishlisted = wishlistIds.includes(product.id);
+  const isInCompare = compareItems.some((c) => c.id === product.id);
 
   const handleAddToCart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     addToCart({ id: product.id, product, quantity: 1 });
     toast.success(`${product.name} added to cart`);
+  };
+
+  const handleWishlist = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!user) {
+      toast.error('Sign in to save items to your wishlist');
+      return;
+    }
+    try {
+      if (isWishlisted) {
+        await api.removeFromWishlist(product.id);
+        toggleWishlistId(product.id);
+        toast.success('Removed from wishlist');
+      } else {
+        await api.addToWishlist(product.id);
+        toggleWishlistId(product.id);
+        toast.success('Added to wishlist');
+      }
+    } catch {
+      toast.error('Failed to update wishlist');
+    }
+  };
+
+  const handleCompare = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isInCompare) {
+      toast.info('Already in compare list');
+      return;
+    }
+    if (compareItems.length >= 4) {
+      toast.error('Compare list is full (max 4)');
+      return;
+    }
+    addToCompare({
+      id: product.id,
+      name: product.name,
+      price: product.price,
+      image: product.image,
+      category: product.category,
+      brand: product.brand,
+      stock: product.stock,
+      rating: product.rating,
+      reviewCount: product.reviewCount,
+      sku: product.sku,
+      shopName: product.shopName,
+    });
+    toast.success('Added to compare');
   };
 
   return (
@@ -92,6 +147,33 @@ const ProductCard: React.FC<ProductCardProps> = ({
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        {/* Wishlist + Compare overlay */}
+        <div className="absolute top-2 right-2 flex flex-col gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
+          <button
+            onClick={handleWishlist}
+            className={cn(
+              'w-8 h-8 rounded-full flex items-center justify-center shadow-md transition-colors',
+              isWishlisted
+                ? 'bg-red-500 text-white'
+                : 'bg-background/80 text-foreground hover:bg-red-500 hover:text-white'
+            )}
+            title={isWishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+          >
+            <Heart className={cn('h-4 w-4', isWishlisted && 'fill-current')} />
+          </button>
+          <button
+            onClick={handleCompare}
+            className={cn(
+              'w-8 h-8 rounded-full flex items-center justify-center shadow-md transition-colors',
+              isInCompare
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-background/80 text-foreground hover:bg-primary hover:text-primary-foreground'
+            )}
+            title="Add to compare"
+          >
+            <GitCompare className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {/* Content */}

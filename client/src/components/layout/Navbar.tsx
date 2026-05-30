@@ -2,7 +2,7 @@ import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
-  Search, ShoppingCart, User, Menu, Car, LogOut, Store, Shield, UserCircle, FileText 
+  Search, ShoppingCart, User, Menu, Car, LogOut, Store, Shield, UserCircle, FileText, Heart, GitCompare 
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,7 @@ import NotificationBell from '@/components/notifications/NotificationBell';
 const Navbar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { cart, userVehicle } = useStore();
+  const { cart, userVehicle, compareItems, wishlistIds } = useStore();
   
   // Fix: map useAuth return values to what Navbar expects
   const { user, logout } = useAuth();
@@ -130,7 +130,33 @@ const Navbar: React.FC = () => {
 
           {/* Notifications */}
           {user && <NotificationBell />}
-          
+
+          {/* Wishlist */}
+          {user && (
+            <Link to="/wishlist">
+              <Button variant="ghost" size="icon" className="relative">
+                <Heart className={`h-5 w-5 ${wishlistIds.length > 0 ? 'fill-red-500 text-red-500' : ''}`} />
+                {wishlistIds.length > 0 && (
+                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-bold">
+                    {wishlistIds.length > 9 ? '9+' : wishlistIds.length}
+                  </span>
+                )}
+              </Button>
+            </Link>
+          )}
+
+          {/* Compare */}
+          {compareItems.length > 0 && (
+            <Link to="/compare">
+              <Button variant="ghost" size="icon" className="relative">
+                <GitCompare className="h-5 w-5 text-primary" />
+                <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold">
+                  {compareItems.length}
+                </span>
+              </Button>
+            </Link>
+          )}
+
           {/* Cart */}
           <Link to="/cart">
             <Button variant="ghost" size="icon" className="relative">
@@ -179,6 +205,9 @@ const Navbar: React.FC = () => {
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link to="/orders">My Orders</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/wishlist">My Wishlist</Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link to="/returns">Returns & Refunds</Link>
@@ -265,6 +294,12 @@ const Navbar: React.FC = () => {
                   <>
                     <Link to="/orders" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
                       My Orders
+                    </Link>
+                    <Link to="/wishlist" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
+                      My Wishlist {wishlistIds.length > 0 && `(${wishlistIds.length})`}
+                    </Link>
+                    <Link to="/compare" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
+                      Compare {compareItems.length > 0 && `(${compareItems.length})`}
                     </Link>
                     <Link to="/returns" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
                       Returns & Refunds

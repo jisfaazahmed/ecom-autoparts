@@ -16,6 +16,8 @@ import {
   Car,
   Home,
   Menu,
+  CreditCard,
+  Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
@@ -37,6 +39,7 @@ const adminLinks = [
   { href: '/admin/products', label: 'Products', icon: Package },
   { href: '/admin/orders', label: 'Orders', icon: ShoppingBag },
   { href: '/admin/refunds', label: 'Refunds', icon: CheckCircle },
+  { href: '/admin/customers', label: 'Customers', icon: Users },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -46,6 +49,7 @@ const superAdminLinks = [
   { href: '/superadmin/vendors', label: 'Vendors', icon: Building2 },
   { href: '/superadmin/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/superadmin/refunds', label: 'Refunds', icon: CheckCircle },
+  { href: '/superadmin/settlements', label: 'Settlements', icon: CreditCard },
   { href: '/superadmin/vehicles', label: 'Vehicles', icon: Car },
   { href: '/superadmin/categories', label: 'Categories', icon: Database },
   { href: '/superadmin/coupons', label: 'Coupons', icon: Package },

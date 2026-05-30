@@ -63,6 +63,26 @@ const userSchema = new mongoose.Schema({
   shopName: {
     type: String, // Only for Vendors
   },
+  phone: {
+    type: String,
+    default: null,
+  },
+  address: {
+    type: String,
+    default: null,
+  },
+  city: {
+    type: String,
+    default: null,
+  },
+  postalCode: {
+    type: String,
+    default: null,
+  },
+  avatarUrl: {
+    type: String,
+    default: null,
+  },
   commissionRate: {
     type: Number,
     default: 10,

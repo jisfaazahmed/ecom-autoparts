@@ -707,3 +707,44 @@ module.exports.getGuestInvoice = async (req, res) => {
         return res.status(500).json({ message: error.message });
     }
 };
+
+// GET /api/orders/seller/customers - aggregated customer list for seller dashboard
+module.exports.getSellerCustomers = async (req, res) => {
+    try {
+        const sellerId = req.user?.id || req.user?._id;
+        const SubOrder = require('../models/orderItem.model');
+
+        const rows = await SubOrder.aggregate([
+            { $match: { seller: new mongoose.Types.ObjectId(String(sellerId)) } },
+            { $lookup: { from: 'orders', localField: 'order', foreignField: '_id', as: 'orderDoc' } },
+            { $unwind: '$orderDoc' },
+            {
+                $group: {
+                    _id: '$orderDoc.user',
+                    guestEmail: { $first: '$orderDoc.guestEmail' },
+                    totalOrders: { $sum: 1 },
+                    totalSpent: { $sum: '$subtotal' },
+                    lastOrderAt: { $max: '$orderDoc.createdAt' },
+                },
+            },
+            { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'userDoc' } },
+            { $unwind: { path: '$userDoc', preserveNullAndEmpty: true } },
+            {
+                $project: {
+                    _id: 0,
+                    customerId: '$_id',
+                    name: { $ifNull: ['$userDoc.name', 'Guest'] },
+                    email: { $ifNull: ['$userDoc.email', '$guestEmail'] },
+                    totalOrders: 1,
+                    totalSpent: 1,
+                    lastOrderAt: 1,
+                },
+            },
+            { $sort: { totalSpent: -1 } },
+        ]);
+
+        return res.json({ success: true, data: rows, total: rows.length });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
