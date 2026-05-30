@@ -399,7 +399,7 @@ exports.updateProduct = async (req, res) => {
   }
 };
 
-// 1.06 DELETE PRODUCT (Owner seller or Super Admin)
+// 1.06 DELETE PRODUCT (Admin or Super Admin)
 exports.deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
@@ -418,11 +418,10 @@ exports.deleteProduct = async (req, res) => {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    const ownerId = String(product.createdBy || '');
-    const isOwner = ownerId && ownerId === String(requester.id);
+    const isAdmin = requester.role === 'admin';
     const isSuperAdmin = requester.role === 'superadmin';
-    if (!isOwner && !isSuperAdmin) {
-      return res.status(403).json({ message: 'Not authorized to delete this product' });
+    if (!isAdmin && !isSuperAdmin) {
+      return res.status(403).json({ message: 'Only admin or superadmin can delete products' });
     }
 
     await Promise.all([

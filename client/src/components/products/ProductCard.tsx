@@ -50,7 +50,7 @@ const ProductCard: React.FC<ProductCardProps> = ({
 
       {showCompatibilityBadge && isCompatible && (
         <div className="absolute top-3 left-3 z-10">
-          <Badge className="bg-success/20 text-success border-success/30 flex items-center gap-1">
+          <Badge className="bg-primary text-primary-foreground border-primary/80 shadow-sm flex items-center gap-1">
             <Check className="h-3 w-3" />
             Compatible
           </Badge>
@@ -69,15 +69,15 @@ const ProductCard: React.FC<ProductCardProps> = ({
 
       <div className="absolute top-3 right-3 z-10">
         {product.stock > 10 ? (
-          <Badge variant="outline" className="border-success/50 text-success">
+          <Badge className="bg-primary text-primary-foreground border-primary/80 shadow-sm">
             In Stock
           </Badge>
         ) : product.stock > 0 ? (
-          <Badge variant="outline" className="border-warning/50 text-warning">
+          <Badge className="bg-warning text-black border-warning/80 shadow-sm">
             Low Stock
           </Badge>
         ) : (
-          <Badge variant="outline" className="border-destructive/50 text-destructive">
+          <Badge className="bg-destructive text-destructive-foreground border-destructive/80 shadow-sm">
             Out of Stock
           </Badge>
         )}
