@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import Navbar from '@/components/layout/Navbar';
 import { useStore } from '@/store/useStore';
+import { useAuth } from '@/hooks/useAuth';
 import { api, ApiOrder } from '@/lib/api';
 import { toast } from 'sonner';
 
@@ -15,6 +16,7 @@ const PaymentSuccess: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { clearCart } = useStore();
+  const { isAuthenticated } = useAuth();
   const [cleared, setCleared] = useState(false);
   const [loading, setLoading] = useState(true);
   const [orderNumber, setOrderNumber] = useState<string>('');
@@ -25,12 +27,18 @@ const PaymentSuccess: React.FC = () => {
   const paymentIntentId = searchParams.get('payment_intent');
   const orderId = searchParams.get('order_id');
   const guestToken = searchParams.get('guest_token');
+  const method = searchParams.get('method');
+  const autoInvoiceRedirected = searchParams.get('invoice_redirected') === '1';
 
   useEffect(() => {
     const verifyPayment = async () => {
-      if (!orderId || (!sessionId && !paymentIntentId && !guestToken)) {
-        toast.error('Invalid payment session');
-        navigate('/orders');
+      if (!orderId) {
+        toast.error('Missing order reference');
+        if (isAuthenticated) {
+          navigate('/orders');
+        } else {
+          navigate('/');
+        }
         return;
       }
 
@@ -43,18 +51,40 @@ const PaymentSuccess: React.FC = () => {
             clearCart();
             setCleared(true);
           }
+        } else if (!isAuthenticated && (method === 'cod' || method === 'wallet')) {
+          // Guest COD/wallet checkout with no guest token — just show the success page.
+          if (!cleared) {
+            clearCart();
+            setCleared(true);
+          }
         } else {
-          // Fetch order details to confirm payment
+          // Authenticated user — fetch order details.
           const order = await api.getOrder(orderId);
 
-          if (order && order.paymentStatus === 'completed') {
+          if (order) {
             setOrderNumber(order.orderNumber || '');
             setOrderData(order);
 
-            // Clear cart on successful payment
             if (!cleared) {
               clearCart();
               setCleared(true);
+            }
+
+            if (order.paymentStatus === 'completed' && !autoInvoiceRedirected) {
+              const params = new URLSearchParams({
+                order_id: orderId,
+              });
+
+              if (paymentIntentId) {
+                params.set('payment_intent', paymentIntentId);
+              }
+
+              if (guestToken || order.guestInvoiceToken) {
+                params.set('guest_token', guestToken || order.guestInvoiceToken || '');
+              }
+
+              navigate(`/payment/download?${params.toString()}`, { replace: true });
+              return;
             }
           } else {
             toast.info('Payment is being processed...');
@@ -69,7 +99,7 @@ const PaymentSuccess: React.FC = () => {
     };
 
     verifyPayment();
-  }, [sessionId, paymentIntentId, orderId, clearCart, cleared, navigate]);
+  }, [sessionId, paymentIntentId, orderId, clearCart, cleared, navigate, autoInvoiceRedirected, guestToken, isAuthenticated, method]);
 
   const handleDownloadInvoice = async () => {
     if (!orderId || !orderData) {

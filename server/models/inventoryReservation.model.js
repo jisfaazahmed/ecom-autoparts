@@ -88,6 +88,11 @@ inventoryReservationSchema.index({ user: 1, status: 1 });
 // Index for expiring reservations
 inventoryReservationSchema.index({ expiresAt: 1, status: 1 });
 
+// Fast path for stock checks and active reservation reads
+inventoryReservationSchema.index({ product: 1, status: 1, expiresAt: 1 });
+inventoryReservationSchema.index({ user: 1, product: 1, status: 1, expiresAt: 1 });
+inventoryReservationSchema.index({ order: 1, status: 1 });
+
 // TTL index to auto-delete expired reservations after 30 days
 inventoryReservationSchema.index({ createdAt: 1 }, { expireAfterSeconds: 2592000 });
 

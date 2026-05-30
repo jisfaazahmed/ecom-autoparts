@@ -202,17 +202,26 @@ module.exports.createOrder = async (req, res) => {
         }
 
         const message = String(error?.message || 'Failed to place order');
-        const isValidationError =
-            message.includes('not assigned to a vendor') ||
-            message.includes('does not own product') ||
-            message.includes('unavailable for purchase') ||
-            message.includes('Shipping address is incomplete') ||
-            message.includes('No items provided for order') ||
-            message.includes('Product not found') ||
-            message.includes('stock not available') ||
-            message.includes('coupon') ||
-            message.includes('Coupon') ||
-            message.includes('Minimum order amount');
+        const validationFragments = [
+            'not assigned to a vendor',
+            'does not own product',
+            'unavailable for purchase',
+            'shipping address is incomplete',
+            'no items provided for order',
+            'product not found',
+            'stock not available',
+            'coupon',
+            'minimum order amount',
+            'invalid',
+            'must be',
+            'is required',
+            'duplicate product in items',
+            'order cannot contain more than',
+        ];
+        const normalizedMessage = message.toLowerCase();
+        const isValidationError = validationFragments.some((fragment) =>
+            normalizedMessage.includes(fragment)
+        );
 
         res.status(isValidationError ? 400 : 500).json({ message });
     }

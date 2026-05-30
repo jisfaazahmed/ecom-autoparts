@@ -60,7 +60,7 @@ const PaymentDownload: React.FC = () => {
       if (ok) {
         toast.success('Invoice downloaded');
         // After download, navigate to final success page
-        navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId || '')}`);
+        navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId || '')}&invoice_redirected=1`);
       } else {
         toast.error('Invoice download failed');
       }
@@ -112,7 +112,7 @@ const PaymentDownload: React.FC = () => {
                   )}
                 </Button>
 
-                <Button variant="outline" onClick={() => navigate(`/payment/success?order_id=${encodeURIComponent(orderId || '')}&payment_intent=${encodeURIComponent(paymentIntentId || '')}`)}>
+                <Button variant="outline" onClick={() => navigate(`/payment/success?order_id=${encodeURIComponent(orderId || '')}&payment_intent=${encodeURIComponent(paymentIntentId || '')}&invoice_redirected=1`)}>
                   Continue
                 </Button>
               </div>

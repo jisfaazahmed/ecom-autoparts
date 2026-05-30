@@ -12,6 +12,10 @@ const shippingService = require('./shipping.service');
 
 class OrderService {
 
+    static ALLOWED_PAYMENT_METHODS = new Set(['cod', 'card', 'wallet']);
+
+    static ALLOWED_SHIPPING_METHODS = new Set(['standard', 'express', 'same_day', 'pickup_point']);
+
     async calculateShippingForOrder(items, address, shippingMethod = 'standard') {
         try {
             const quote = await shippingService.calculateShippingCost({
@@ -46,6 +50,182 @@ class OrderService {
             out_for_delivery: 'out_for_delivery',
         };
         return aliases[value] || value;
+    }
+
+    normalizeTextField(value, fieldName, { min = 1, max = 255, allowEmpty = false } = {}) {
+        if (value === undefined || value === null) {
+            if (allowEmpty) return '';
+            throw new Error(`${fieldName} is required`);
+        }
+
+        if (typeof value !== 'string') {
+            throw new Error(`${fieldName} must be a string`);
+        }
+
+        const normalized = value.trim().replace(/\s+/g, ' ');
+        if (!normalized) {
+            if (allowEmpty) return '';
+            throw new Error(`${fieldName} is required`);
+        }
+
+        if (normalized.length < min || normalized.length > max) {
+            throw new Error(`${fieldName} length must be between ${min} and ${max}`);
+        }
+
+        return normalized;
+    }
+
+    normalizeOptionalTextField(value, fieldName, { max = 255 } = {}) {
+        if (value === undefined || value === null || value === '') {
+            return '';
+        }
+
+        return this.normalizeTextField(value, fieldName, { min: 1, max, allowEmpty: true });
+    }
+
+    normalizePhone(value) {
+        const normalized = this.normalizeTextField(value, 'Phone', { min: 7, max: 20 });
+        const compact = normalized.replace(/[\s()-]/g, '');
+        if (!/^\+?[0-9]{7,15}$/.test(compact)) {
+            throw new Error('Phone must contain only digits and optional leading +');
+        }
+        return normalized;
+    }
+
+    normalizeItems(items) {
+        if (!Array.isArray(items) || items.length === 0) {
+            throw new Error('No items provided for order');
+        }
+
+        if (items.length > 50) {
+            throw new Error('Order cannot contain more than 50 items');
+        }
+
+        const seen = new Set();
+
+        return items.map((item, index) => {
+            if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                throw new Error(`Item at index ${index} must be an object`);
+            }
+
+            const rawProductId = String(item.productId || item.product || '').trim();
+            if (!/^[a-fA-F0-9]{24}$/.test(rawProductId)) {
+                throw new Error(`Item at index ${index} has invalid product id`);
+            }
+
+            if (seen.has(rawProductId)) {
+                throw new Error(`Duplicate product in items: ${rawProductId}`);
+            }
+            seen.add(rawProductId);
+
+            const parsedQuantity = Number(item.quantity);
+            if (!Number.isInteger(parsedQuantity) || parsedQuantity < 1 || parsedQuantity > 999) {
+                throw new Error(`Item at index ${index} has invalid quantity`);
+            }
+
+            const normalizedItem = {
+                ...item,
+                productId: rawProductId,
+                quantity: parsedQuantity,
+            };
+
+            if (item.vendorId !== undefined || item.vendor !== undefined) {
+                const vendorId = String(item.vendorId || item.vendor || '').trim();
+                if (vendorId && !/^[a-fA-F0-9]{24}$/.test(vendorId)) {
+                    throw new Error(`Item at index ${index} has invalid vendor id`);
+                }
+                normalizedItem.vendorId = vendorId || undefined;
+                normalizedItem.vendor = vendorId || undefined;
+            }
+
+            return normalizedItem;
+        });
+    }
+
+    normalizeAndValidateCreateOrderInput(orderData) {
+        if (!orderData || typeof orderData !== 'object' || Array.isArray(orderData)) {
+            throw new Error('Invalid order payload');
+        }
+
+        const paymentMethod = this.normalizeTextField(orderData.paymentMethod || 'cod', 'Payment method', {
+            min: 3,
+            max: 20,
+        }).toLowerCase();
+
+        if (!OrderService.ALLOWED_PAYMENT_METHODS.has(paymentMethod)) {
+            throw new Error('Invalid payment method');
+        }
+
+        const shippingMethod = this.normalizeTextField(orderData.shippingMethod || 'standard', 'Shipping method', {
+            min: 3,
+            max: 30,
+        }).toLowerCase();
+
+        if (!OrderService.ALLOWED_SHIPPING_METHODS.has(shippingMethod)) {
+            throw new Error('Invalid shipping method');
+        }
+
+        const shippingCountry = this.normalizeTextField(orderData.shippingCountry || 'Sri Lanka', 'Shipping country', {
+            min: 2,
+            max: 80,
+        });
+
+        const fullName = this.normalizeTextField(orderData.fullName || 'Guest Customer', 'Full name', {
+            min: 2,
+            max: 120,
+        });
+        const phone = this.normalizePhone(orderData.phone || '0000000');
+
+        let normalizedShippingAddress;
+        if (typeof orderData.shippingAddress === 'string') {
+            normalizedShippingAddress = {
+                fullName,
+                phone,
+                addressLine1: this.normalizeTextField(orderData.shippingAddress, 'Shipping address', { min: 5, max: 220 }),
+                city: this.normalizeTextField(orderData.shippingCity, 'Shipping city', { min: 2, max: 100 }),
+                postalCode: this.normalizeTextField(orderData.shippingPostalCode, 'Shipping postal code', { min: 3, max: 20 }),
+                country: shippingCountry,
+            };
+        } else if (orderData.shippingAddress && typeof orderData.shippingAddress === 'object' && !Array.isArray(orderData.shippingAddress)) {
+            normalizedShippingAddress = {
+                fullName: this.normalizeTextField(orderData.shippingAddress.fullName || fullName, 'Full name', { min: 2, max: 120 }),
+                phone: this.normalizePhone(orderData.shippingAddress.phone || phone),
+                addressLine1: this.normalizeTextField(orderData.shippingAddress.addressLine1, 'Shipping address', { min: 5, max: 220 }),
+                city: this.normalizeTextField(orderData.shippingAddress.city, 'Shipping city', { min: 2, max: 100 }),
+                postalCode: this.normalizeTextField(orderData.shippingAddress.postalCode, 'Shipping postal code', { min: 3, max: 20 }),
+                country: this.normalizeTextField(orderData.shippingAddress.country || shippingCountry, 'Shipping country', { min: 2, max: 80 }),
+            };
+        } else {
+            throw new Error('Shipping address is incomplete');
+        }
+
+        const deliveryInstructions = this.normalizeOptionalTextField(orderData.deliveryInstructions, 'Delivery instructions', {
+            max: 500,
+        });
+        const couponCode = this.normalizeOptionalTextField(orderData.couponCode, 'Coupon code', { max: 64 });
+        const shopId = orderData.shopId === undefined || orderData.shopId === null || orderData.shopId === ''
+            ? null
+            : String(orderData.shopId).trim();
+
+        if (shopId && !/^[a-fA-F0-9]{24}$/.test(shopId)) {
+            throw new Error('Invalid shop id');
+        }
+
+        return {
+            ...orderData,
+            paymentMethod,
+            shippingMethod,
+            shippingCountry,
+            fullName,
+            phone,
+            shippingAddress: normalizedShippingAddress,
+            shippingCity: normalizedShippingAddress.city,
+            shippingPostalCode: normalizedShippingAddress.postalCode,
+            deliveryInstructions,
+            couponCode,
+            shopId,
+            items: this.normalizeItems(orderData.items),
+        };
     }
 
     buildSubOrders(orderItemDocs, enrichedItems, commissionRateByVendor = new Map()) {
@@ -224,26 +404,17 @@ class OrderService {
 
     // Create Order
     async createOrder(userId, orderData) {
-            const { shippingAddress, shippingCity, shippingPostalCode, fullName, phone, shippingCountry = 'Sri Lanka', paymentMethod = 'cod', deliveryInstructions, couponCode, items = [], idempotency = null } = orderData;
-
-            const normalizedShippingAddress = typeof shippingAddress === 'string'
-                ? {
-                    fullName: fullName || 'Guest Customer',
-                    phone: phone || 'N/A',
-                    addressLine1: shippingAddress,
-                    city: shippingCity || '',
-                    postalCode: shippingPostalCode || '',
-                    country: shippingCountry || 'Sri Lanka'
-                }
-                : shippingAddress;
-
-            if (!normalizedShippingAddress?.addressLine1 || !normalizedShippingAddress?.city || !normalizedShippingAddress?.postalCode) {
-                throw new Error('Shipping address is incomplete');
-            }
-
-            if (!items || !Array.isArray(items) || items.length === 0) {
-                throw new Error('No items provided for order');
-            }
+            const normalizedInput = this.normalizeAndValidateCreateOrderInput(orderData);
+            const {
+                paymentMethod,
+                deliveryInstructions,
+                couponCode,
+                items,
+                idempotency = null,
+                shippingMethod,
+                shippingAddress: normalizedShippingAddress,
+                shopId,
+            } = normalizedInput;
 
             // Load products, resolve vendor ownership, and check stock with inventory service
             const enrichedItems = [];
@@ -278,11 +449,11 @@ class OrderService {
             const shippingCharge = await this.calculateShippingForOrder(
                 shippingItems,
                 { city: normalizedShippingAddress.city || '' },
-                orderData.shippingMethod || 'standard'
+                shippingMethod
             );
             const taxAmount = this.calculateTax(itemTotal);
             const couponResult = couponCode
-                ? await this.applyCoupon(couponCode, itemTotal, orderData?.shopId)
+                ? await this.applyCoupon(couponCode, itemTotal, shopId)
                 : { discountAmount: 0, coupon: null };
             const discountAmount = couponResult.discountAmount;
             const totalAmount = itemTotal + shippingCharge + taxAmount - discountAmount;
@@ -334,10 +505,10 @@ class OrderService {
                 paymentStatus: paymentMethod === 'cod' ? 'pending' : 'processing',
                 overallStatus: 'pending',
                 deliveryInstructions,
-                estimatedDeliveryDate: this.calculateEstimateDelivery(orderData.shippingMethod || 'standard'),
-                shippingMethod: orderData.shippingMethod || 'standard',
-                ipAddress: orderData.ipAddress,
-                userAgent: orderData.userAgent,
+                estimatedDeliveryDate: this.calculateEstimateDelivery(shippingMethod),
+                shippingMethod,
+                ipAddress: normalizedInput.ipAddress,
+                userAgent: normalizedInput.userAgent,
                 ...(idempotency ? { idempotency } : {})
             });
 
@@ -364,9 +535,9 @@ class OrderService {
                     }
                 }
 
-                await Product.findByIdAndUpdate(
+                await InventoryReservationService.acquireStockForOrder(
                     product._id,
-                    { $inc: { stock: -quantity, soldCount: quantity } }
+                    quantity
                 );
 
                 if (userId) {

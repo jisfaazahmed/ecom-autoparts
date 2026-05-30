@@ -715,18 +715,7 @@ export default function Checkout() {
       orderPlacementKeyRef.current = null;
       paymentConfirmationKeyRef.current = null;
       toast.success('Order placed successfully!');
-      
-      // Check if user is logged in
-      if (user) {
-        navigate('/orders', { replace: true });
-      } else {
-        // For guest users, redirect to login with success message
-        toast.info('Please log in to view your orders');
-        navigate('/auth/customer', { 
-          replace: true, 
-          state: { message: 'Order placed successfully! Please log in to view your order details.' }
-        });
-      }
+      navigate(`/payment/success?order_id=${encodeURIComponent(order.id || order._id || '')}${order.guestInvoiceToken ? `&guest_token=${encodeURIComponent(order.guestInvoiceToken)}` : ''}&method=cod`, { replace: true });
     } catch (error) {
       console.error('COD order error:', error);
       toast.error( 'Failed to place order');
