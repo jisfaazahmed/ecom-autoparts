@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { BarChart3, DollarSign, TrendingUp, ShoppingBag, Users, Package, Loader2, Calendar, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import { BarChart3, DollarSign, TrendingUp, ShoppingBag, Users, Package, Loader2, Calendar, ArrowUpRight, ArrowDownRight, Download } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { api, ApiOrder, ApiShop, ApiProduct, ApiCategory } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatLKR, formatLKRCompact } from '@/lib/currency';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend } from 'recharts';
+import { jsPDF } from 'jspdf';
+import 'jspdf-autotable';
 // Use live data via API; remove mock fallbacks
 
 const SuperAdminAnalytics: React.FC = () => {
@@ -104,6 +107,115 @@ const SuperAdminAnalytics: React.FC = () => {
     fetchAnalytics();
   }, [fetchAnalytics]);
 
+  const handleExportPDF = () => {
+    try {
+      const doc = new jsPDF();
+
+      // Header Configuration
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(20);
+      doc.setTextColor(33, 37, 41);
+      doc.text('Ecom AutoParts - Platform Analytics Report', 14, 20);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(100, 116, 139);
+      const dateRangeText = {
+        '7d': 'Last 7 Days',
+        '30d': 'Last 30 Days',
+        '90d': 'Last 90 Days',
+        '1y': 'Last Year'
+      }[timeRange];
+      doc.text(`Report Period: ${dateRangeText} (Generated on: ${new Date().toLocaleDateString()})`, 14, 27);
+
+      doc.setDrawColor(226, 232, 240);
+      doc.line(14, 32, 196, 32);
+
+      // Section 1: Summary Metrics Table
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.setTextColor(30, 41, 59);
+      doc.text('Performance Summary', 14, 42);
+
+      const summaryHeaders = [['Metric', 'Value']];
+      const summaryRows = [
+        ['Total Sales', formatLKR(totalSales)],
+        ['Commission Earned', formatLKR(totalCommission)],
+        ['Total Orders', totalOrders.toLocaleString()],
+        ['Average Order Value (AOV)', formatLKR(aov)],
+        ['Total Refunds', formatLKR(totalRefunds)],
+        ['Active Vendors', totalVendors.toLocaleString()]
+      ];
+
+      // @ts-ignore
+      doc.autoTable({
+        startY: 47,
+        head: summaryHeaders,
+        body: summaryRows,
+        theme: 'striped',
+        headStyles: { fillColor: [6, 182, 212] }, // Cyan theme matches primary colors
+        margin: { left: 14, right: 14 }
+      });
+
+      // Section 2: Top Performing Vendors Table
+      // @ts-ignore
+      const finalY1 = doc.lastAutoTable.finalY;
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('Top Performing Vendors', 14, finalY1 + 15);
+
+      const vendorHeaders = [['Rank', 'Shop Name', 'Vendor Name', 'Total Orders', 'Total Revenue']];
+      const vendorRows = topVendors.map((vendor, index) => [
+        String(index + 1),
+        vendor.shopName || 'N/A',
+        vendor.name || 'N/A',
+        vendor.orders.toLocaleString(),
+        formatLKR(vendor.sales)
+      ]);
+
+      // @ts-ignore
+      doc.autoTable({
+        startY: finalY1 + 20,
+        head: vendorHeaders,
+        body: vendorRows.length > 0 ? vendorRows : [['-', 'No vendor data available', '-', '-', '-']],
+        theme: 'grid',
+        headStyles: { fillColor: [6, 182, 212] },
+        margin: { left: 14, right: 14 }
+      });
+
+      // Section 3: Top Product Categories
+      // @ts-ignore
+      const finalY2 = doc.lastAutoTable.finalY;
+      
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('Top Product Categories', 14, finalY2 + 15);
+
+      const categoryHeaders = [['Category Name', 'Total Earnings']];
+      const categoryRows = topCategories.map(cat => [
+        cat.name || 'N/A',
+        formatLKR(cat.value)
+      ]);
+
+      // @ts-ignore
+      doc.autoTable({
+        startY: finalY2 + 20,
+        head: categoryHeaders,
+        body: categoryRows.length > 0 ? categoryRows : [['No category data available', '-']],
+        theme: 'grid',
+        headStyles: { fillColor: [6, 182, 212] },
+        margin: { left: 14, right: 14 }
+      });
+
+      doc.save(`platform-analytics-${timeRange}-${new Date().toISOString().slice(0, 10)}.pdf`);
+      toast({ title: 'Success', description: 'PDF report downloaded successfully' });
+    } catch (err: any) {
+      console.error('PDF export failed:', err);
+      toast({ title: 'Export Error', description: err.message || 'Failed to export PDF', variant: 'destructive' });
+    }
+  };
+
 
   const stats = [
     { label: 'Total Sales', value: formatLKRCompact(totalSales), icon: DollarSign, change: '+18%', positive: true, color: 'text-primary' },
@@ -124,10 +236,15 @@ const SuperAdminAnalytics: React.FC = () => {
             <h1 className="font-display text-2xl lg:text-3xl font-bold flex items-center gap-3"><BarChart3 className="h-7 w-7 lg:h-8 lg:w-8 text-primary" />Platform Analytics</h1>
             <p className="text-muted-foreground mt-1">Monitor platform performance and growth metrics</p>
           </div>
-          <Select value={timeRange} onValueChange={setTimeRange}>
-            <SelectTrigger className="w-40 bg-secondary/50"><Calendar className="h-4 w-4 mr-2" /><SelectValue /></SelectTrigger>
-            <SelectContent className="glass-card"><SelectItem value="7d">Last 7 days</SelectItem><SelectItem value="30d">Last 30 days</SelectItem><SelectItem value="90d">Last 90 days</SelectItem><SelectItem value="1y">Last year</SelectItem></SelectContent>
-          </Select>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button onClick={handleExportPDF} variant="outline" className="bg-secondary/50 border border-primary/20 hover:bg-primary/10">
+              <Download className="h-4 w-4 mr-2 text-primary" /> Export PDF
+            </Button>
+            <Select value={timeRange} onValueChange={setTimeRange}>
+              <SelectTrigger className="w-40 bg-secondary/50"><Calendar className="h-4 w-4 mr-2" /><SelectValue /></SelectTrigger>
+              <SelectContent className="glass-card"><SelectItem value="7d">Last 7 days</SelectItem><SelectItem value="30d">Last 30 days</SelectItem><SelectItem value="90d">Last 90 days</SelectItem><SelectItem value="1y">Last year</SelectItem></SelectContent>
+            </Select>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 lg:gap-6 mb-8">
