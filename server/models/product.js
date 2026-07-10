@@ -6,6 +6,7 @@ const productSchema = new mongoose.Schema({
   description: { type: String },
   price: { type: Number, required: true },
   stock: { type: Number, required: true, min: 0 },
+  sku: { type: String, required: true },
   partNumber: { type: String, required: true }, // e.g. "BC-1234"
   image: { type: String }, // URL to image
 
@@ -22,12 +23,6 @@ const productSchema = new mongoose.Schema({
     ref: 'VehicleModel'
   }],
 
-  // Legacy compatibility field still used by existing routes/controllers.
-  compatibleVehicles: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Vehicle'
-  }],
-
   // 4. Who created this? (Super Admin)
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
@@ -42,8 +37,7 @@ const productSchema = new mongoose.Schema({
   reviewCount: { type: Number, default: 0 }
 }, { timestamps: true });
 
-// Index for fast searching by Category and Vehicle
-productSchema.index({ category: 1, compatibleVehicles: 1 });
+// Index for fast searching by Category and vehicle model compatibility
 productSchema.index({ category: 1, compatibleVehicleModels: 1 });
 
 // Text index for search functionality (name, description, partNumber)

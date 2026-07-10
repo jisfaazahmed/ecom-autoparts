@@ -3,6 +3,16 @@ const Vehicle = require('../models/vehicle');
 const VehicleBrand = require('../models/vehicleBrand.model');
 const VehicleModel = require('../models/vehicleModel.model');
 
+const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+function emptyProductsPage(limit) {
+  const limitNum = Math.max(1, parseInt(limit, 10) || 20);
+  return {
+    products: [],
+    pagination: { page: 1, limit: limitNum, total: 0, totalPages: 0 },
+  };
+}
+
 // ── Helper: transform a populated product doc for the frontend ──
 function transformProduct(p) {
   const obj = typeof p.toObject === 'function' ? p.toObject() : { ...p };
@@ -45,7 +55,6 @@ function transformProduct(p) {
 function applyPopulates(query) {
   return query
     .populate('category', 'name slug')
-    .populate('compatibleVehicles', 'year make model')
     .populate({
       path: 'compatibleVehicleModels',
       select: 'name brand',
@@ -59,17 +68,19 @@ exports.createProduct = async (req, res) => {
     const { name, partNumber, categoryId, vehicleIds, description } = req.body;
 
     const count = await Vehicle.countDocuments({ _id: { $in: vehicleIds } });
-    
+
     if (count !== vehicleIds.length) {
       return res.status(400).json({ message: 'One or more Vehicle IDs are invalid.' });
     }
+
+    const compatibleVehicleModels = await VehicleModel.find({ _id: { $in: vehicleIds } });
 
     // Create the product
     const newProduct = new Product({
       name,
       partNumber,
       category: categoryId,
-      compatibleVehicles: vehicleIds, // Array of Vehicle IDs (e.g., [TeslaID, HondaID])
+      compatibleVehicleModels,
       description,
       createdBy: req.user.id
     });
@@ -110,25 +121,37 @@ exports.getProducts = async (req, res) => {
       query.category = catId;
     }
 
-    // Filter by Vehicle (legacy single ID)
+    // Filter by Vehicle (legacy Document ID → resolve to VehicleModel)
     if (vehicleId) {
-      query.compatibleVehicles = vehicleId;
+      const vehicle = await Vehicle.findById(vehicleId).lean();
+      if (!vehicle) {
+        return res.json(emptyProductsPage(limit));
+      }
+      const brand = await VehicleBrand.findOne({
+        name: { $regex: new RegExp(`^${escapeRegex(vehicle.make)}$`, 'i') },
+      });
+      if (!brand) {
+        return res.json(emptyProductsPage(limit));
+      }
+      const vModel = await VehicleModel.findOne({
+        name: { $regex: new RegExp(`^${escapeRegex(vehicle.model)}$`, 'i') },
+        brand: brand._id,
+      });
+      if (!vModel) {
+        return res.json(emptyProductsPage(limit));
+      }
+      query.compatibleVehicleModels = vModel._id;
     }
 
     // Filter by vehicle make/model — uses the VehicleModel system directly
     if (make && vehicleModel) {
-      const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
       // Step 1: Find the VehicleBrand by name
       const brand = await VehicleBrand.findOne({
         name: { $regex: new RegExp(`^${escapeRegex(make)}$`, 'i') },
       });
 
       if (!brand) {
-        return res.json({
-          products: [],
-          pagination: { page: 1, limit: parseInt(limit, 10) || 20, total: 0, totalPages: 0 },
-        });
+        return res.json(emptyProductsPage(limit));
       }
 
       // Step 2: Find the VehicleModel by name + brand
@@ -138,10 +161,7 @@ exports.getProducts = async (req, res) => {
       });
 
       if (!vModel) {
-        return res.json({
-          products: [],
-          pagination: { page: 1, limit: parseInt(limit, 10) || 20, total: 0, totalPages: 0 },
-        });
+        return res.json(emptyProductsPage(limit));
       }
 
       // Step 3: Filter products by the matched model ID
