@@ -63,6 +63,18 @@ exports.addUserVehicle = async (req, res) => {
       return res.status(400).json({ message: 'Invalid brand or model' });
     }
 
+    const duplicate = await UserVehicle.findOne({
+      user: userId,
+      brand: brandId,
+      model: modelId,
+      year: yearNum,
+    }).exec();
+    if (duplicate) {
+      return res.status(409).json({
+        message: 'You already have this vehicle saved',
+      });
+    }
+
     const count = await UserVehicle.countDocuments({ user: userId }).exec();
     const isActive = count === 0;
 

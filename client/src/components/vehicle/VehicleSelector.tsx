@@ -23,7 +23,7 @@ import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
 import { Vehicle } from '@/types';
 import { toast } from 'sonner';
-import { api, ApiVehicleBrand, ApiVehicleModel, ApiRegCheckVehicle } from '@/lib/api';
+import { api, ApiVehicleBrand, ApiVehicleModel, ApiRegCheckVehicle, ApiUserVehicle } from '@/lib/api';
 
 interface VehicleSelectorProps {
   trigger?: React.ReactNode;
@@ -54,6 +54,29 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedYear, setSelectedYear] = useState('');
+  const [savedVehicles, setSavedVehicles] = useState<ApiUserVehicle[]>([]);
+
+  const isDuplicateVehicle = (brandId: string, modelId: string, year: number) =>
+    savedVehicles.some(
+      (v) => v.brandId === brandId && v.modelId === modelId && v.year === year
+    );
+
+  // Load saved vehicles when dialog opens (for duplicate check)
+  useEffect(() => {
+    if (!open || !user) {
+      setSavedVehicles([]);
+      return;
+    }
+    const loadSaved = async () => {
+      try {
+        const data = await api.getUserVehicles();
+        setSavedVehicles(data || []);
+      } catch {
+        setSavedVehicles([]);
+      }
+    };
+    loadSaved();
+  }, [open, user]);
 
   // Fetch brands on mount
   useEffect(() => {
@@ -192,6 +215,12 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
       return;
     }
 
+    const year = regVehicle.year;
+    if (year != null && isDuplicateVehicle(regVehicle.brand.id, regVehicle.model.id, year)) {
+      toast.error('You already have this vehicle saved');
+      return;
+    }
+
     setRegSaving(true);
 
     try {
@@ -242,6 +271,12 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
 
     if (!user) {
       toast.error('Please log in to save vehicles');
+      return;
+    }
+
+    const year = parseInt(selectedYear, 10);
+    if (isDuplicateVehicle(selectedBrand, selectedModel, year)) {
+      toast.error('You already have this vehicle saved');
       return;
     }
 
