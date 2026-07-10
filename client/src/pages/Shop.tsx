@@ -37,11 +37,11 @@ const Shop: React.FC = () => {
   const { user } = useAuth();
   const searchFromUrl = searchParams.get('search') || '';
   const categoryFromUrl = searchParams.get('category') || 'all';
-  
+
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [categories, setCategories] = useState<ApiCategory[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   const [search, setSearch] = useState(searchFromUrl);
   const [selectedCategory, setSelectedCategory] = useState(categoryFromUrl);
   const maxPrice = 50000;
@@ -53,7 +53,7 @@ const Shop: React.FC = () => {
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-      
+
       try {
         // Build product query params
         const productParams: Parameters<typeof api.getProducts>[0] = {
@@ -78,7 +78,7 @@ const Shop: React.FC = () => {
       } catch (error) {
         console.error('Failed to fetch data:', error);
       }
-      
+
       setLoading(false);
     };
 
@@ -90,61 +90,42 @@ const Shop: React.FC = () => {
     setSelectedCategory(categoryFromUrl);
   }, [searchFromUrl, categoryFromUrl]);
 
-  const [resolvedVehicleId, setResolvedVehicleId] = useState<string | null>(null);
-  const [vehicleResolveLoading, setVehicleResolveLoading] = useState(false);
+  const isProductCompatible = (product: ApiProduct): boolean | undefined => {
+    // No selected vehicle => unknown compatibility, don't show any badge.
+    if (!userVehicle) return undefined;
 
-  useEffect(() => {
-    let cancelled = false;
+    const normalize = (value?: string) => String(value || '').trim().toLowerCase();
+    const selectedMake = normalize(userVehicle.brand);
+    const selectedModel = normalize(userVehicle.model);
+    const selectedYear = Number(userVehicle.year);
 
-    const resolve = async () => {
-      if (!userVehicle) {
-        setResolvedVehicleId(null);
-        return;
-      }
+    const models = Array.isArray(product.compatibleVehicleModels)
+      ? product.compatibleVehicleModels
+      : [];
+    if (models.length > 0) {
+      const modelMatch = models.some((m) => {
+        const nameMatches = normalize(m?.name) === selectedModel;
+        const brandMatches = !m?.brandName || normalize(m.brandName) === selectedMake;
+        return nameMatches && brandMatches;
+      });
+      return modelMatch;
+    }
 
-      const make = String(userVehicle.brand || '').trim();
-      const model = String(userVehicle.model || '').trim();
-      const year = Number(userVehicle.year);
+    const vehicles = Array.isArray(product.compatibleVehicles)
+      ? product.compatibleVehicles
+      : [];
+    if (vehicles.length > 0) {
+      const vehicleMatch = vehicles.some((v) => {
+        const makeMatches = normalize(v?.make) === selectedMake;
+        const modelMatches = normalize(v?.model) === selectedModel;
+        const yearMatches = !Number.isFinite(selectedYear) || Number(v?.year) === selectedYear;
+        return makeMatches && modelMatches && yearMatches;
+      });
+      return vehicleMatch;
+    }
 
-      if (!make || !model || !Number.isFinite(year)) {
-        setResolvedVehicleId(null);
-        return;
-      }
-
-      setVehicleResolveLoading(true);
-      try {
-        const resolved = await api.resolveVehicle({
-          year,
-          make,
-          model
-        });
-        if (!cancelled) setResolvedVehicleId(resolved?.id || null);
-      } catch {
-        if (!cancelled) setResolvedVehicleId(null);
-      } finally {
-        if (!cancelled) setVehicleResolveLoading(false);
-      }
-    };
-
-    resolve();
-    return () => {
-      cancelled = true;
-    };
-  }, [userVehicle]);
-
-  const isProductCompatible = (product: ApiProduct) => {
-    // No resolved vehicle => don't block buying / don't show "Not Compatible".
-    if (!resolvedVehicleId) return true;
-
-    const variants = product.compatibleVariants;
-    // If vendor didn't select any compatibility variants, treat as universal-fit.
-    if (!Array.isArray(variants) || variants.length === 0) return true;
-
-    // Backend exposes compatibleVariants as Vehicle IDs.
-    if (variants.includes(resolvedVehicleId)) return true;
-
-    // Fallback: some older records may store a string key; keep a loose check.
-    return variants.some((v) => String(v).includes(resolvedVehicleId));
+    // No compatibility metadata on this product.
+    return undefined;
   };
 
   const mapToProductCard = (p: ApiProduct) => {
@@ -200,8 +181,8 @@ const Shop: React.FC = () => {
     );
 
     // Compatibility filter
-    if (showCompatibleOnly && resolvedVehicleId) {
-      filtered = filtered.filter((p) => isProductCompatible(p));
+    if (showCompatibleOnly && userVehicle) {
+      filtered = filtered.filter((p) => isProductCompatible(p) === true);
     }
 
     // Sorting
@@ -218,7 +199,7 @@ const Shop: React.FC = () => {
     }
 
     return filtered;
-  }, [products, search, selectedCategory, priceRange, sortBy, showCompatibleOnly, resolvedVehicleId]);
+  }, [products, search, selectedCategory, priceRange, sortBy, showCompatibleOnly, userVehicle]);
 
   const {
     paginatedItems: paginatedProducts,
@@ -461,7 +442,7 @@ const Shop: React.FC = () => {
                 className={
                   viewMode === 'grid'
                     ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6'
-                    : 'space-y-4'
+                    : 'flex flex-col gap-3'
                 }
               >
                 {paginatedProducts.map((product, i) => (
@@ -474,6 +455,7 @@ const Shop: React.FC = () => {
                     <ProductCard
                       product={mapToProductCard(product)}
                       isCompatible={isProductCompatible(product)}
+                      variant={viewMode}
                     />
                   </motion.div>
                 ))}

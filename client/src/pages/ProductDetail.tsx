@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
   ShoppingCart, Star, ChevronLeft, Check, Package, 
@@ -28,6 +28,7 @@ import { useToast } from '@/hooks/use-toast';
 
 const ProductDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { addToCart, userVehicle } = useStore();
   const { user, profile } = useAuth();
   const { toast } = useToast();
@@ -67,9 +68,22 @@ const ProductDetail: React.FC = () => {
     fetchProduct();
   }, [id]);
 
-  const handleAddToCart = () => {
+  const handleAddToCart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
     if (!product) return;
     
+    if (!user) {
+      toast({
+        title: 'Sign In Required',
+        description: 'Please sign in to add items to cart.',
+        variant: 'destructive',
+      });
+      navigate('/auth/customer');
+      return;
+    }
+
     addToCart({
       id: product.id,
       name: product.name,
