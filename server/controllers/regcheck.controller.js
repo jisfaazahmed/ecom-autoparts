@@ -1,8 +1,8 @@
 const xml2js = require('xml2js');
 const VehicleBrand = require('../models/vehicleBrand.model');
 const VehicleModel = require('../models/vehicleModel.model');
-const VehicleVariant = require('../models/vehicleVariant.model');
 const UserVehicle = require('../models/userVehicle.model');
+const { xml } = require('../xml.js')
 
 const REGCHECK_BASE = 'https://www.regcheck.org.uk/api/reg.asmx/CheckSriLanka';
 const REGCHECK_USERNAME = process.env.REGCHECK_USERNAME || '';
@@ -22,7 +22,7 @@ async function parseRegCheckXml(xmlText) {
     throw new Error('Unexpected XML structure — no <Vehicle> root element');
   }
 
-  // 1. Try vehicleJson first (it's a JSON string inside the XML)
+  // 1. Try vehicleJson first (the JSON string inside the XML)
   const vehicleJsonStr = vehicle.vehicleJson;
   if (vehicleJsonStr && typeof vehicleJsonStr === 'string' && vehicleJsonStr.trim()) {
     try {
@@ -44,33 +44,18 @@ async function parseRegCheckXml(xmlText) {
 // Normalize vehicle info from the parsed vehicleJson object.
 
 function normalizeFromJson(json) {
-  // Recursively extract a string from a field that may be:
-  //   - a plain string
-  //   - { CurrentTextValue: "..." }
-  //   - { CurrentTextValue: { _: "..." } }
-  //   - { CurrentValue: "..." }
-  //   - a number
   const txt = (field) => {
     if (field == null) return '';
     if (typeof field === 'string') return field;
     if (typeof field === 'number') return String(field);
-    if (typeof field === 'object') {
-      // Try common property names for the display text
-      for (const key of ['CurrentTextValue', 'currentTextValue', 'CurrentValue', 'currentValue', '_']) {
-        if (field[key] != null) {
-          const val = field[key];
-          if (typeof val === 'string') return val;
-          if (typeof val === 'number') return String(val);
-          if (typeof val === 'object') return txt(val); // recurse
-        }
-      }
-      return '';
+    if (typeof field === 'object' && field.CurrentTextValue != null) {
+      return String(field.CurrentTextValue);
     }
-    return String(field);
+    return '';
   };
 
   return {
-    description: txt(json.Description) || txt(json.description) || '',
+    description: txt(json.Description) || '',
     make: txt(json.CarMake) || txt(json.Make) || txt(json.MakeDescription) || txt(json.carMake) || '',
     model: txt(json.CarModel) || txt(json.Model) || txt(json.ModelDescription) || txt(json.carModel) || '',
     year: parseYear(json.RegistrationYear || json.registrationYear || json.YearOfManufacture || json.ManufactureYearFrom),
@@ -83,6 +68,10 @@ function normalizeFromJson(json) {
     driverSide: txt(json.DriverSide) || txt(json.driverSide) || '',
     indicativeValue: txt(json.IndicativeValue) || txt(json.indicativeValue) || '',
     immobiliser: txt(json.Immobiliser) || txt(json.immobiliser) || '',
+    owner: txt(json.Owner) || txt(json.owner) || '',
+    vehicleClass: txt(json.VehicleClass) || txt(json.vehicleClass) || '',
+    conditions: txt(json.Conditions) || txt(json.conditions) || '',
+    imageUrl: txt(json.ImageUrl) || txt(json.imageUrl) || '',
   };
 }
 
@@ -150,14 +139,18 @@ exports.lookupRegistration = async (req, res) => {
     const url = `${REGCHECK_BASE}?RegistrationNumber=${encodeURIComponent(normalizedRegNumber)}&username=${encodeURIComponent(REGCHECK_USERNAME)}`;
 
     const response = await fetch(url);
+    console.log(response);
+    
     if (!response.ok) {
       return res.status(502).json({
-        message: `RegCheck API returned status ${response.status}`,
+        message: 'Failed to fetch vehicle data',
       });
-    }
-
+    } 
+    
     const xmlText = await response.text();
-    console.log('XML response:'); 
+
+    console.log('='.repeat(100));
+    console.log('XML response:');
     console.log(xmlText);
 
     // 2. Parse API response
@@ -170,10 +163,9 @@ exports.lookupRegistration = async (req, res) => {
     // 3. Check whether the decoded vehicle exists in DB
     let matchedBrand = null;
     let matchedModel = null;
-    let matchedVariant = null;
 
     if (decoded.make) {
-      const splittedMake = decoded.make.split(' ');
+      const splittedMake = decoded.make.trim().split(/\s+/);
       matchedBrand = await VehicleBrand.findOne({
       name: {
         $regex: splittedMake.join('|'),
@@ -183,23 +175,13 @@ exports.lookupRegistration = async (req, res) => {
     }
 
     if (matchedBrand && decoded.model) {
-      const splittedModel = decoded.model.split(' ');
+      const splittedModel = decoded.model.trim().split(/\s+/);
       matchedModel = await VehicleModel.findOne({
+        brand: matchedBrand._id,
         name: {
         $regex: splittedModel.join('|'),
         $options: 'i'
       }
-      }).exec();
-    }
-
-    if (matchedModel && decoded.year) {
-      matchedVariant = await VehicleVariant.findOne({
-        model: matchedModel._id,
-        yearStart: { $lte: decoded.year },
-        $or: [
-          { yearEnd: { $gte: decoded.year } },
-          { yearEnd: null },
-        ],
       }).exec();
     }
 
@@ -218,14 +200,6 @@ exports.lookupRegistration = async (req, res) => {
         registrationNumber: normalizedRegNumber,
         brand: { id: matchedBrand._id.toString(), name: matchedBrand.name, logoUrl: matchedBrand.logoUrl },
         model: { id: matchedModel._id.toString(), name: matchedModel.name },
-        variant: matchedVariant
-          ? {
-              id: matchedVariant._id.toString(),
-              name: matchedVariant.name,
-              yearStart: matchedVariant.yearStart,
-              yearEnd: matchedVariant.yearEnd,
-            }
-          : null,
         year: decoded.year,
       },
     });
@@ -240,12 +214,12 @@ exports.lookupRegistration = async (req, res) => {
  * Accepts DB IDs returned by the lookup endpoint — does NOT auto-create records.
  *
  * POST /vehicles/user/reg
- * Body: { registrationNumber, brandId, modelId, variantId?, year }
+ * Body: { registrationNumber, brandId, modelId, year }
  */
 exports.addUserVehicleByReg = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { registrationNumber, brandId, modelId, variantId, year } = req.body;
+    const { registrationNumber, brandId, modelId, year } = req.body;
 
     if (!registrationNumber || !registrationNumber.trim()) {
       return res.status(400).json({ message: 'Registration number is required' });
@@ -255,9 +229,9 @@ exports.addUserVehicleByReg = async (req, res) => {
     }
 
     const normalizedRegNumber = normalizeRegNumber(registrationNumber);
-    const vehicleYear = parseInt(year, 10) || new Date().getFullYear();
+    const vehicleYear = parseInt(year, 10);
 
-    // Validate that brand, model, and variant exist in DB
+    // Validate that brand and model exist in DB
     const brand = await VehicleBrand.findById(brandId).exec();
     if (!brand) {
       return res.status(404).json({ message: 'Brand not found' });
@@ -268,26 +242,11 @@ exports.addUserVehicleByReg = async (req, res) => {
       return res.status(404).json({ message: 'Model not found' });
     }
 
-    let variant = null;
-    if (variantId) {
-      variant = await VehicleVariant.findById(variantId).exec();
-      if (!variant) {
-        return res.status(404).json({ message: 'Variant not found' });
-      }
-    } else {
-      // If no variant was matched during lookup, try to find a default one
-      variant = await VehicleVariant.findOne({ model: vehicleModel._id }).exec();
-      if (!variant) {
-        return res.status(404).json({ message: 'No variant found for this model' });
-      }
-    }
-
     // Check if user already has this exact vehicle
     const existing = await UserVehicle.findOne({
       user: userId,
       brand: brand._id,
       model: vehicleModel._id,
-      variant: variant._id,
       year: vehicleYear,
     }).exec();
 
@@ -299,7 +258,6 @@ exports.addUserVehicleByReg = async (req, res) => {
       const populated = await UserVehicle.findById(existing._id)
         .populate('brand', 'name logoUrl')
         .populate('model', 'name brand')
-        .populate('variant', 'name model yearStart yearEnd')
         .exec();
       return res.status(200).json(mapUserVehicle(populated));
     }
@@ -312,7 +270,6 @@ exports.addUserVehicleByReg = async (req, res) => {
       user: userId,
       brand: brand._id,
       model: vehicleModel._id,
-      variant: variant._id,
       year: vehicleYear,
       registrationNumber: normalizedRegNumber,
       isActive,
@@ -321,7 +278,6 @@ exports.addUserVehicleByReg = async (req, res) => {
     const populated = await UserVehicle.findById(uv._id)
       .populate('brand', 'name logoUrl')
       .populate('model', 'name brand')
-      .populate('variant', 'name model yearStart yearEnd')
       .exec();
 
     res.status(201).json(mapUserVehicle(populated));
@@ -342,28 +298,17 @@ function mapUserVehicle(doc) {
     doc.model && typeof doc.model === 'object' && doc.model.name
       ? { id: doc.model._id.toString(), name: doc.model.name }
       : undefined;
-  const variant =
-    doc.variant && typeof doc.variant === 'object' && doc.variant.name
-      ? {
-          id: doc.variant._id.toString(),
-          name: doc.variant.name,
-          yearStart: doc.variant.yearStart,
-          yearEnd: doc.variant.yearEnd,
-        }
-      : undefined;
 
   return {
     id: doc._id.toString(),
     userId: doc.user && (doc.user._id ? doc.user._id.toString() : doc.user.toString()),
     brandId: doc.brand && (doc.brand._id ? doc.brand._id.toString() : doc.brand.toString()),
     modelId: doc.model && (doc.model._id ? doc.model._id.toString() : doc.model.toString()),
-    variantId: doc.variant && (doc.variant._id ? doc.variant._id.toString() : doc.variant.toString()),
     year: doc.year,
-    registrationNumber: doc.normalizedRegNumber ?? undefined,
+    registrationNumber: doc.registrationNumber ?? undefined,
     isActive: !!doc.isActive,
     ...(brand && { brand }),
     ...(model && { model }),
-    ...(variant && { variant }),
     createdAt: doc.createdAt ? doc.createdAt.toISOString() : undefined,
   };
 }
