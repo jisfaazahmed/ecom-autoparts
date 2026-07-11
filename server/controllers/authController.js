@@ -2,7 +2,7 @@ const User = require('../models/user')
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const { sendSignupOtpEmail } = require('../services/mailer');
+const { sendSignupOtpEmail, sendPasswordReset } = require('../services/mailer');
 
 const OTP_TTL_MINUTES = Number(process.env.SIGNUP_OTP_TTL_MINUTES || 10);
 const OTP_MIN_RESEND_SECONDS = Number(process.env.SIGNUP_OTP_RESEND_COOLDOWN_SECONDS || 60);
@@ -111,33 +111,31 @@ async function issueTokensAndRespond(res, user) {
 
 exports.register = async (req, res) => {
   try {
-    // Accept both 'name' and 'fullName' from frontend
-    const { name, fullName, email, password, role, shopName, phone } = req.body;
-    const userName = name || fullName;
+    const { name, fullName, email, password, role, shopName } = req.body;
+    const displayName = name || fullName;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedRole = normalizeRole(role);
 
-    if (!userName || !email || !password) {
-      return res.status(400).json({ message: 'Name, email and password are required.' });
-    }
-
-    if (role === 'SUPER_ADMIN') {
+    if (normalizedRole === 'SUPER_ADMIN') {
       return res.status(403).json({ message: 'Cannot register as Super Admin.' });
     }
 
-    let user = await User.findOne({ email });
+    if (!displayName || !normalizedEmail || !password) {
+      return res.status(400).json({ message: 'Name, email, and password are required' });
+    }
+
+    let user = await User.findOne({ email: normalizedEmail });
     if (user) return res.status(400).json({ message: 'User already exists' });
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
     user = new User({
-      name: userName,
-      email,
+      name: displayName,
+      email: normalizedEmail,
       password: hashedPassword,
-      phone: phone || undefined,
-      role: role || 'CUSTOMER',
-      shopName: role === 'ADMIN' ? shopName : undefined,
-      // Customers are auto-active; sellers need Super Admin approval
-      status: role === 'ADMIN' ? 'PENDING' : 'ACTIVE',
+      role: normalizedRole,
+      shopName: normalizedRole === 'ADMIN' ? shopName : undefined,
     });
 
     await user.save();
@@ -183,6 +181,7 @@ exports.registerStart = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const otp = generateOtp6();
+    console.log(`OTP for ${normalizedEmail}: ${otp}`);
     const now = new Date();
     const expiresAt = new Date(now.getTime() + OTP_TTL_MINUTES * 60 * 1000);
 
@@ -323,7 +322,7 @@ exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: email.trim().toLowerCase() });
     if (!user) return res.status(400).json({ message: 'Invalid Credentials' });
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -360,8 +359,13 @@ exports.getMe = async (req, res) => {
       id: user.id,
       email: user.email,
       fullName: user.name,
+      phone: user.phone || null,
+      address: user.address || null,
+      city: user.city || null,
+      postalCode: user.postalCode || null,
       role,
       userRoles: [{ role }],
+      emailVerified: user.emailVerified || false,
       profile: {
         id: user._id.toString(),
         userId: user._id.toString(),
@@ -369,6 +373,8 @@ exports.getMe = async (req, res) => {
         email: user.email,
         phone: user.phone || null,
         address: user.address || null,
+        city: user.city || null,
+        postalCode: user.postalCode || null,
         createdAt: user.createdAt && new Date(user.createdAt).toISOString(),
         updatedAt: user.updatedAt && new Date(user.updatedAt).toISOString(),
       },
@@ -431,6 +437,98 @@ exports.updateProfile = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Failed to update profile' });
+  }
+};
+
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      // For security, don't reveal if email exists
+      return res.status(200).json({
+        message: 'If an account with this email exists, a password reset link will be sent.'
+      });
+    }
+
+    // Generate reset token (valid for 1 hour)
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    user.resetToken = resetTokenHash;
+    user.resetTokenExpiry = resetTokenExpiry;
+    await user.save();
+
+    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/reset-password?token=${resetToken}`;
+
+    console.log(`Password reset link for ${normalizedEmail}: ${resetLink}`);
+
+    const emailResult = await sendPasswordReset(normalizedEmail, resetLink);
+    if (!emailResult.delivered) {
+      console.warn(`Password reset email failed to send for ${normalizedEmail}`);
+    }
+
+    res.status(200).json({
+      message: 'Password reset link has been sent to your email',
+      // Only in development - remove in production
+      ...(process.env.NODE_ENV !== 'production' && { resetToken, resetLink })
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error processing password reset request' });
+  }
+};
+
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token, password, passwordConfirm } = req.body;
+
+    if (!token || !password) {
+      return res.status(400).json({ message: 'Token and password are required' });
+    }
+
+    if (password !== passwordConfirm) {
+      return res.status(400).json({ message: 'Passwords do not match' });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    // Hash the token to compare with stored hash
+    const resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+
+    // Find user with matching reset token and non-expired token
+    const user = await User.findOne({
+      resetToken: resetTokenHash,
+      resetTokenExpiry: { $gt: new Date() }
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: 'Reset token is invalid or has expired' });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    // Update password and clear reset token
+    user.password = hashedPassword;
+    user.resetToken = null;
+    user.resetTokenExpiry = null;
+    await user.save();
+
+    res.status(200).json({ message: 'Password has been reset successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error resetting password' });
   }
 };
 

@@ -104,7 +104,7 @@ router.post('/register/resend', authController.registerResend);
 
 // Legacy endpoints kept for compatibility (now instruct clients to use /register/start)
 router.post('/register', authController.register);
-router.post('/register/seller', authController.registerSeller);
+//router.post('/register/seller', authController.registerSeller);
 
 /**
  * @swagger
@@ -137,5 +137,7 @@ router.post('/login', authController.login);
 router.get('/me', verifyToken, authController.getMe);
 router.put('/profile', verifyToken, authController.updateProfile);
 router.post('/change-password', verifyToken, authController.changePassword);
+router.post('/forgot-password', authController.forgotPassword);
+router.post('/reset-password', authController.resetPassword);
 
 module.exports = router;

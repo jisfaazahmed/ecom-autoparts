@@ -76,24 +76,23 @@ const userSchema = new mongoose.Schema({
   logoUrl: { type: String },
   commissionRate: { type: Number, default: 10 },
   rejectionReason: { type: String },
-  updatedAt: {
-    type: Date,
-    default: Date.now,
-  },
   createdAt: {
     type: Date,
     default: Date.now,
   },
-  // Saved vehicles for "My Garage"
-  savedVehicles: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Vehicle'
-  }],
-  // Wishlist - saved products
-  wishlist: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Product'
-  }],
+  updatedAt: {
+    type: Date,
+    default: Date.now,
+  },
+  resetToken: {
+    type: String,
+    default: null
+  },
+  resetTokenExpiry: {
+    type: Date,
+    default: null
+  }
+
 }, { timestamps: true });
 
 // MIDDLEWARE: Force PENDING status for new Admins (Vendors)

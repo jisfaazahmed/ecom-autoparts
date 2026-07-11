@@ -21,14 +21,17 @@ function createTransporter() {
       ? String(process.env.SMTP_SECURE).toLowerCase() === 'true'
       : port === 465;
 
-  const authUser = process.env.SMTP_USER;
-  const authPass = process.env.SMTP_PASS;
+  const authUser = (process.env.SMTP_USER || '').trim();
+  const authPass = (process.env.SMTP_PASS || '').trim();
 
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port,
     secure,
     auth: authUser && authPass ? { user: authUser, pass: authPass } : undefined,
+    tls: {
+      rejectUnauthorized: false
+    }
   });
 }
 
@@ -40,14 +43,11 @@ async function sendMail({ to, subject, text, html }) {
     if (isProd()) {
       throw new Error('SMTP is not configured');
     }
-    console.log('[DEV_MAILER] To:', to);
-    console.log('[DEV_MAILER] Subject:', subject);
-    if (text) console.log('[DEV_MAILER] Text:', text);
-    if (html) console.log('[DEV_MAILER] HTML:', html);
+    console.log('SMTP not configured, skipping email send');
     return { delivered: false };
   }
 
-  await transporter.sendMail({
+  const result = await transporter.sendMail({
     from: getFromAddress(),
     to,
     subject,
@@ -80,8 +80,20 @@ async function sendSignupOtpEmail({ to, otp, minutesValid = 10 }) {
   return sendMail({ to, subject, text, html });
 }
 
+async function sendPasswordReset(email, resetLink) {
+        const subject = 'Password Reset Request';
+        const html = `
+            <h1>Password Reset</h1>
+            <p>You requested a password reset. Click the link below to reset your password:</p>
+            <a href="${resetLink}">${resetLink}</a>
+            <p>This link is valid for 1 hour.</p>
+            <p>If you didn't request this, please ignore this email.</p>
+        `;
+        return sendMail({ to: email, subject, html });
+    }
+
 module.exports = {
   sendMail,
   sendSignupOtpEmail,
+  sendPasswordReset
 };
-
