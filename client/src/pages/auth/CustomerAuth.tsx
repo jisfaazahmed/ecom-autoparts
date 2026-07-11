@@ -12,21 +12,21 @@ import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
 
 const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  email: z.string().trim().min(1, "Please enter your email address").email('Invalid email address'),
+  password: z.string().trim().min(6, 'Password must be at least 6 characters'),
 });
 
 const signupSchema = z.object({
-  fullName: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  fullName: z.string().trim().min(2, 'Name must be at least 2 characters'),
+  email: z.string().trim().min(1, "Please enter your email address").email('Invalid email address'),
+  password: z.string().trim().min(6, 'Password must be at least 6 characters'),
 });
 
 const CustomerAuth: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-    const { signIn, signUp, verifySignupOtp, resendSignupOtp, user, signOut } = useAuth();
-  
+  const { signIn, signUp, verifySignupOtp, resendSignupOtp, user, signOut } = useAuth();
+
   const role = user?.role;
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -61,7 +61,7 @@ const CustomerAuth: React.FC = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
-    
+
     try {
       loginSchema.parse(loginForm);
     } catch (err) {
@@ -77,7 +77,7 @@ const CustomerAuth: React.FC = () => {
 
     setLoading(true);
     const { error } = await signIn(loginForm.email, loginForm.password);
-    
+
     if (!error) {
       // The useAuth hook will update the role, check it after sign in
       // This is handled by the useEffect above after state updates
@@ -90,7 +90,7 @@ const CustomerAuth: React.FC = () => {
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
-    
+
     try {
       signupSchema.parse(signupForm);
     } catch (err) {
@@ -112,7 +112,7 @@ const CustomerAuth: React.FC = () => {
       phone: signupForm.phone,
     });
     setLoading(false);
-    
+
     if (error) {
       toast({
         title: 'Signup Failed',
@@ -149,7 +149,7 @@ const CustomerAuth: React.FC = () => {
       return;
     }
 
-    const from = (location.state)?.from?.pathname || '/shop';
+    const from = (location.state)?.from?.pathname || '/';
     navigate(from);
   };
 
@@ -175,11 +175,11 @@ const CustomerAuth: React.FC = () => {
       <div className="absolute top-4 right-4 z-10">
         <ThemeToggle />
       </div>
-      
+
       <div className="absolute inset-0 bg-grid-pattern opacity-5" />
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-pulse-glow" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/20 rounded-full blur-3xl animate-pulse-glow" />
-      
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -247,11 +247,11 @@ const CustomerAuth: React.FC = () => {
                   {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
                 </div>
 
-                {/* <div className="text-right">
+                <div className="text-right">
                   <Link to="/auth/reset-password" className="text-sm text-primary hover:underline">
                     Forgot password?
                   </Link>
-                </div> */}
+                </div>
 
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
@@ -263,65 +263,65 @@ const CustomerAuth: React.FC = () => {
             <TabsContent value="signup">
               {!pendingVerificationId ? (
                 <form onSubmit={handleSignup} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signup-name">Full Name *</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="signup-name"
-                      type="text"
-                      placeholder="John Smith"
-                      className="pl-10"
-                      value={signupForm.fullName}
-                      onChange={(e) => setSignupForm({ ...signupForm, fullName: e.target.value })}
-                    />
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-name">Full Name *</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-name"
+                        type="text"
+                        placeholder="John Smith"
+                        className="pl-10"
+                        value={signupForm.fullName}
+                        onChange={(e) => setSignupForm({ ...signupForm, fullName: e.target.value })}
+                      />
+                    </div>
+                    {errors.fullName && <p className="text-sm text-destructive">{errors.fullName}</p>}
                   </div>
-                  {errors.fullName && <p className="text-sm text-destructive">{errors.fullName}</p>}
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="signup-email">Email *</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="signup-email"
-                      type="email"
-                      placeholder="your@email.com"
-                      className="pl-10"
-                      value={signupForm.email}
-                      onChange={(e) => setSignupForm({ ...signupForm, email: e.target.value })}
-                    />
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-email">Email *</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-email"
+                        type="email"
+                        placeholder="your@email.com"
+                        className="pl-10"
+                        value={signupForm.email}
+                        onChange={(e) => setSignupForm({ ...signupForm, email: e.target.value })}
+                      />
+                    </div>
+                    {errors.email && <p className="text-sm text-destructive">{errors.email}</p>}
                   </div>
-                  {errors.email && <p className="text-sm text-destructive">{errors.email}</p>}
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="signup-password">Password *</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="signup-password"
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="••••••••"
-                      className="pl-10 pr-10"
-                      value={signupForm.password}
-                      onChange={(e) => setSignupForm({ ...signupForm, password: e.target.value })}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-password">Password *</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-password"
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="••••••••"
+                        className="pl-10 pr-10"
+                        value={signupForm.password}
+                        onChange={(e) => setSignupForm({ ...signupForm, password: e.target.value })}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
                   </div>
-                  {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
-                </div>
 
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Create Account
-                </Button>
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Create Account
+                  </Button>
                 </form>
               ) : (
                 <form onSubmit={handleVerifyOtp} className="space-y-4">

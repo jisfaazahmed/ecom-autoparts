@@ -37,6 +37,8 @@ interface Shop {
 interface User {
   id: string;
   email?: string;
+  emailVerified?: boolean;
+  role?: string;
 }
 
 // Compatibility type for session
@@ -60,7 +62,7 @@ interface AuthState {
   isShopApproved: boolean;
 
   // Actions
-  signUp: (email: string, password: string, metadata?: { full_name?: string; phone?: string; role?: string }) => Promise<{ error: Error | null }>;
+  signUp: (data: { email: string; password: string; fullName: string; phone?: string }) => Promise<{ error: Error | null; verificationId?: string }>;
   signUpSeller: (data: {
     email: string;
     password: string;
@@ -70,20 +72,26 @@ interface AuthState {
     shopDescription?: string;
     phone?: string;
     address?: string;
-  }) => Promise<{ error: Error | null }>;
+  }) => Promise<{ error: Error | null; verificationId?: string }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   initAuth: () => Promise<void>;
+  logout: () => Promise<void>;
+  verifyEmail: (token: string) => Promise<{ error: Error | null }>;
+  resendVerificationEmail: (email: string) => Promise<{ error: Error | null }>;
+  verifySignupOtp: (data: { verificationId: string; otp: string }) => Promise<{ error: Error | null }>;
+  resendSignupOtp: (data: { verificationId: string }) => Promise<{ error: Error | null }>;
 }
 
 // Helper to convert API profile to local Profile format
 const mapApiProfile = (apiProfile: ApiProfile | null | undefined): Profile | null => {
   if (!apiProfile) return null;
+  const fullName = apiProfile.fullName || (apiProfile as ApiProfile & { full_name?: string }).full_name || '';
   return {
     id: apiProfile.id,
     user_id: apiProfile.userId,
-    full_name: apiProfile.fullName,
+    full_name: fullName,
     email: apiProfile.email,
     phone: apiProfile.phone || null,
     avatar_url: apiProfile.avatarUrl || null,
@@ -160,17 +168,20 @@ export const useAuthStore = create<AuthState>()((set, get) => {
         user: { id: authUser.id, email: authUser.email },
       };
 
-      const profile: Profile = mapApiProfile(authUser.profile) || {
-        id: authUser.id,
-        user_id: authUser.id,
-        full_name: authUser.fullName || '',
-        email: authUser.email || '',
-        phone: authUser.phone || null,
-        avatar_url: authUser.avatarUrl || null,
-        address: authUser.address || null,
-        city: authUser.city || null,
-        postal_code: authUser.postalCode || null,
-      };
+      const mappedProfile = mapApiProfile(authUser.profile);
+      const profile: Profile = mappedProfile && mappedProfile.full_name
+        ? mappedProfile
+        : {
+          id: authUser.id,
+          user_id: authUser.id,
+          full_name: authUser.fullName || (authUser.profile as ApiProfile & { full_name?: string } | undefined)?.full_name || '',
+          email: authUser.email || '',
+          phone: authUser.phone || null,
+          avatar_url: authUser.avatarUrl || null,
+          address: authUser.address || null,
+          city: authUser.city || null,
+          postal_code: authUser.postalCode || null,
+        };
 
       // Get the primary role (highest privilege)
       const roles = authUser.userRoles?.map((r) => r.role) || [];
@@ -219,36 +230,30 @@ export const useAuthStore = create<AuthState>()((set, get) => {
       set({ loading: false });
     },
 
-    signUp: async (email, password, metadata) => {
+    signUp: async (data) => {
       try {
-        await api.register({
-          email,
-          password,
-          fullName: metadata?.full_name || email.split('@')[0],
-          phone: metadata?.phone,
+        const response = await api.startRegister({
+          email: data.email,
+          password: data.password,
+          fullName: data.fullName,
+          phone: data.phone,
         });
 
-        await fetchUserData();
-
-        toast({
-          title: 'Account Created',
-          description: 'Your account has been created successfully.',
-        });
-        return { error: null };
+        return { error: null, verificationId: response.verificationId };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to create account';
         toast({
-          title: 'Sign Up Failed',
-          description: errorMessage,
+          title: errorMessage,
           variant: 'destructive',
         });
+        console.error('Sign Up Error:', error);
         return { error: error as Error };
       }
     },
 
     signUpSeller: async (data) => {
       try {
-        await api.registerSeller({
+        const response = await api.startRegisterSeller({
           email: data.email,
           password: data.password,
           fullName: data.fullName,
@@ -256,16 +261,9 @@ export const useAuthStore = create<AuthState>()((set, get) => {
           businessRegistration: data.businessRegistration,
           shopDescription: data.shopDescription,
           phone: data.phone,
-          address: data.address,
         });
 
-        await fetchUserData();
-
-        toast({
-          title: 'Seller Account Created',
-          description: 'Your seller account has been created. Your shop is pending approval.',
-        });
-        return { error: null };
+        return { error: null, verificationId: response.verificationId };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Failed to create seller account';
         toast({
@@ -287,7 +285,7 @@ export const useAuthStore = create<AuthState>()((set, get) => {
 
         toast({
           title: 'Welcome Back',
-          description: 'You have successfully signed in.',
+          description: 'You have successfully signed in',
         });
         return { error: null };
       } catch (error) {
@@ -321,13 +319,114 @@ export const useAuthStore = create<AuthState>()((set, get) => {
 
       toast({
         title: 'Signed Out',
-        description: 'You have been signed out.',
+        description: 'You have been signed out',
+      });
+    },
+
+    logout: async () => {
+      set({
+        user: null,
+        session: null,
+        profile: null,
+        role: null,
+        shop: null,
+        loading: false,
+        isAdmin: false,
+        isSuperAdmin: false,
+        isCustomer: false,
+        isShopApproved: false,
       });
     },
 
     refreshProfile: async () => {
       if (get().user) {
         await fetchUserData();
+      }
+    },
+
+    verifyEmail: async (token) => {
+      try {
+        await api.verifyEmail(token);
+
+        // Refresh user data to get updated emailVerified status
+        await fetchUserData();
+
+        toast({
+          title: 'Email Verified',
+          description: 'Your email has been successfully verified.',
+        });
+        return { error: null };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to verify email';
+        toast({
+          title: 'Verification Failed',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+        return { error: error as Error };
+      }
+    },
+
+    resendVerificationEmail: async (email) => {
+      try {
+        await api.resendVerificationEmail(email);
+        toast({
+          title: 'Email Sent',
+          description: 'Verification email has been resent. Check your inbox.',
+        });
+        return { error: null };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to resend verification email';
+        toast({
+          title: 'Error',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+        return { error: error as Error };
+      }
+    },
+
+    verifySignupOtp: async (data) => {
+      try {
+        await api.verifyRegisterOtp(data);
+
+        // OTP verified — tokens are set by the API client, now hydrate user data
+        await fetchUserData();
+        await hydrateActiveVehicle();
+        await useStore.getState().syncCartFromApi();
+
+        toast({
+          title: 'Account Verified',
+          description: 'Your account has been created successfully.',
+        });
+        return { error: null };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'OTP verification failed';
+        toast({
+          title: 'Verification Failed',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+        return { error: error as Error };
+      }
+    },
+
+    resendSignupOtp: async (data) => {
+      try {
+        await api.resendRegisterOtp(data);
+        toast({
+          title: 'OTP Resent',
+          description: 'A new verification code has been sent to your email.',
+        });
+        return { error: null };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Failed to resend OTP';
+        toast({
+          title: 'Error',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+        return { error: error as Error };
       }
     },
   };

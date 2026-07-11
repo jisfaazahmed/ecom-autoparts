@@ -70,6 +70,12 @@ export interface ApiShop {
   updatedAt: string;
 }
 
+export interface ForgotPasswordResponse {
+  message: string;
+  resetToken?: string;
+  resetLink?: string;
+}
+
 export interface ApiCompatibleVehicle {
   id: string;
   year: number;
@@ -77,13 +83,9 @@ export interface ApiCompatibleVehicle {
   model: string;
 }
 
-export interface ApiCompatibleVariant {
+export interface ApiCompatibleModel {
   id: string;
   name: string;
-  yearStart: number;
-  yearEnd: number | null;
-  modelId?: string;
-  modelName?: string;
   brandId?: string;
   brandName?: string;
 }
@@ -106,8 +108,7 @@ export interface ApiProduct {
   shopId?: string;
   isActive: boolean;
   compatibleVehicles?: ApiCompatibleVehicle[];
-  compatibleVehicleVariants?: ApiCompatibleVariant[];
-  compatibleVariants?: string[];
+  compatibleVehicleModels?: ApiCompatibleModel[];
   specifications?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
@@ -205,20 +206,7 @@ export interface ApiVehicleModel {
   created_at?: string;
 }
 
-export interface ApiVehicleVariant {
-  id: string;
-  name: string;
-  modelId: string;
-  yearStart: number;
-  yearEnd?: number;
-  created_at?: string;
-  model?: {
-    id: string;
-    name: string;
-    brandId?: string;
-    brandName?: string;
-  };
-}
+
 
 export interface ApiResolvedVehicle {
   id: string;
@@ -233,13 +221,11 @@ export interface ApiUserVehicle {
   userId: string;
   brandId: string;
   modelId: string;
-  variantId?: string;
   year: number;
   registrationNumber?: string;
   isActive: boolean;
   brand?: ApiVehicleBrand;
   model?: ApiVehicleModel;
-  variant?: ApiVehicleVariant;
   createdAt?: string;
 }
 
@@ -247,7 +233,6 @@ export interface ApiRegCheckVehicle {
   registrationNumber: string;
   brand: ApiVehicleBrand;
   model: { id: string; name: string };
-  variant: { id: string; name: string; yearStart: number; yearEnd: number | null } | null;
   year: number | null;
 }
 
@@ -516,17 +501,17 @@ class ApiClient {
     });
   }
 
-  async forgotPassword(email: string): Promise<void> {
-    await this.request('/auth/forgot-password', {
+  async forgotPassword(email: string): Promise<ForgotPasswordResponse> {
+    return this.request<ForgotPasswordResponse>('/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify({ email }),
     });
   }
 
-  async resetPassword(token: string, password: string): Promise<void> {
+  async resetPassword(token: string, password: string, passwordConfirm: string): Promise<void> {
     await this.request('/auth/reset-password', {
       method: 'POST',
-      body: JSON.stringify({ token, password }),
+      body: JSON.stringify({ token, password, passwordConfirm }),
     });
   }
 
@@ -534,6 +519,20 @@ class ApiClient {
     await this.request('/auth/update-password', {
       method: 'POST',
       body: JSON.stringify({ password }),
+    });
+  }
+
+  async verifyEmail(token: string): Promise<{ message: string; emailVerified: boolean }> {
+    return this.request('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  async resendVerificationEmail(email: string): Promise<{ message: string }> {
+    return this.request('/auth/resend-verification-email', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
     });
   }
 
@@ -963,13 +962,7 @@ class ApiClient {
     return this.request<ApiVehicleModel[]>('/vehicles/models/all');
   }
 
-  async getVehicleVariants(modelId: string): Promise<ApiVehicleVariant[]> {
-    return this.request<ApiVehicleVariant[]>(`/vehicles/variants/${modelId}`);
-  }
 
-  async getAllVehicleVariants(): Promise<ApiVehicleVariant[]> {
-    return this.request<ApiVehicleVariant[]>('/vehicles/variants/all');
-  }
 
   async resolveVehicle(params: {
     year: number;
@@ -1021,29 +1014,7 @@ class ApiClient {
     await this.request(`/vehicles/models/${id}`, { method: 'DELETE' });
   }
 
-  async createVehicleVariant(data: {
-    name: string;
-    modelId: string;
-    yearStart: number;
-    yearEnd?: number;
-  }): Promise<ApiVehicleVariant> {
-    return this.request<ApiVehicleVariant>('/vehicles/variants', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  }
 
-  async updateVehicleVariant(id: string, data: {
-    name?: string;
-    modelId?: string;
-    yearStart?: number;
-    yearEnd?: number;
-  }): Promise<ApiVehicleVariant> {
-    return this.request<ApiVehicleVariant>(`/vehicles/variants/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  }
 
   // ============ REGISTRATION LOOKUP ============
 
@@ -1055,7 +1026,6 @@ class ApiClient {
     registrationNumber: string;
     brandId: string;
     modelId: string;
-    variantId?: string;
     year?: number;
   }): Promise<ApiUserVehicle> {
     return this.request<ApiUserVehicle>('/vehicles/user/reg', {
@@ -1073,7 +1043,6 @@ class ApiClient {
   async addUserVehicle(data: {
     brandId: string;
     modelId: string;
-    variantId?: string;
     year: number;
     registrationNumber?: string;
   }): Promise<ApiUserVehicle> {
@@ -1093,9 +1062,7 @@ class ApiClient {
     await this.request(`/vehicles/user/${vehicleId}`, { method: 'DELETE' });
   }
 
-  async deleteVehicleVariant(id: string): Promise<void> {
-    await this.request(`/vehicles/variants/${id}`, { method: 'DELETE' });
-  }
+
 
   // ============ REVIEWS ============
 
