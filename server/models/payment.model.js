@@ -17,7 +17,7 @@ const paymentSchema = new mongoose.Schema({
     },
     paymentMethod: {
         type: String,
-        enum: ['cod', 'card', 'wallet', 'bank_transfer', 'upi', 'net_banking', 'installment'],
+        enum: ['cod', 'card', 'wallet'],
         required: true
     },
     //card
@@ -56,8 +56,13 @@ const paymentSchema = new mongoose.Schema({
     gatewayOrderId: String,
     gateway: {
         type: String,
-        require: true,
-        unique: true
+        required: false,
+        default: function() {
+            const method = String(this.paymentMethod || '').toLowerCase();
+            if (method === 'card') return 'stripe';
+            if (method === 'cod') return 'cod';
+            return 'manual';
+        }
     },
 
     //COD
@@ -158,24 +163,35 @@ const paymentSchema = new mongoose.Schema({
     timestamps: true
 });
 
-// Create unique payment number
-paymentSchema.pre('save', async function(next) {
-  if (this.isNew) {
-    const date = new Date();
-    const year = date.getFullYear().toString().slice(-2);
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    
-    const count = await mongoose.model('Payment').countDocuments({
-      createdAt: {
-        $gte: new Date(date.setHours(0, 0, 0, 0)),
-        $lt: new Date(date.setHours(23, 59, 59, 999))
-      }
-    });
-    
-    this.paymentNumber = `PAY${year}${month}${day}${String(count + 1).padStart(6, '0')}`;
-  }
-  next();
+// Create unique payment number before validation so required:true passes.
+paymentSchema.pre('validate', async function(next) {
+    if (!this.isNew || this.paymentNumber) {
+        return next();
+    }
+
+    try {
+        const date = new Date();
+        const year = date.getFullYear().toString().slice(-2);
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+
+        const startOfDay = new Date(date);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(date);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const count = await mongoose.model('Payment').countDocuments({
+            createdAt: {
+                $gte: startOfDay,
+                $lt: endOfDay
+            }
+        });
+
+        this.paymentNumber = `PAY${year}${month}${day}${String(count + 1).padStart(6, '0')}`;
+        return next();
+    } catch (error) {
+        return next(error);
+    }
 });
 
 // Add timeline event
@@ -193,8 +209,8 @@ paymentSchema.index({ order: 1 });
 paymentSchema.index({ transactionId: 1 });
 paymentSchema.index({ status: 1 });
 paymentSchema.index({paymentMethod : 1});
-paymentSchema.index({ paymentNumber: 1 });
 paymentSchema.index({ user: 1, createdAt: -1 });
+paymentSchema.index({ gateway: 1 });
 
 
 module.exports = mongoose.model('Payment', paymentSchema);

@@ -1,24 +1,31 @@
 const express = require('express');
 const router = express.Router();
 const refundController = require('../controllers/refund.controller');
+const { verifyToken } = require('../middleware/authMiddleware');
 
 // Customer routes
-router.post('/create/:orderItemId', refundController.createRefundRequest);
-router.get('/my-refunds', refundController.getCustomerRefunds);
-router.get('/:refundId', refundController.getRefundDetails);
-router.post('/:refundId/quality-response', refundController.qualityCheckResponse);
-router.post('/:refundId/feedback', refundController.submitFeedback);
+router.post('/', verifyToken, refundController.createRefundRequestByOrder);
+router.post('/create/:orderItemId', verifyToken, refundController.createRefundRequest);
+router.get('/my-refunds', verifyToken, refundController.getCustomerRefunds);
 
 // Vendor routes
-router.get('/vendor/refunds', refundController.getVendorRefunds);
-router.post('/:refundId/review', refundController.vendorReviewRefund);
+router.get('/vendor/refunds', verifyToken, refundController.getVendorRefunds);
+router.post('/:refundId/review', verifyToken, refundController.vendorReviewRefund);
 
-// Courier/Admin routes
-router.patch('/:refundId/return-shipping', refundController.updateReturnShipping);
+// Admin/Courier routes
+router.put('/:refundId/approve', verifyToken, refundController.approveOrRejectRefund);
+router.patch('/:refundId/return-status', verifyToken, refundController.updateReturnStatus);
+router.patch('/:refundId/return-shipping', verifyToken, refundController.updateReturnShipping);
 
 // Admin routes
-router.post('/:refundId/quality-check', refundController.conductQualityCheck);
-router.post('/:refundId/dispute', refundController.handleDispute);
-router.get('/admin/statistics', refundController.getRefundStatistics);
+router.get('/admin/list', verifyToken, refundController.getAdminRefunds);
+router.post('/:refundId/quality-check', verifyToken, refundController.conductQualityCheck);
+router.post('/:refundId/dispute', verifyToken, refundController.handleDispute);
+router.get('/admin/statistics', verifyToken, refundController.getRefundStatistics);
+
+// Customer detail/update routes - keep after static paths
+router.get('/:refundId', verifyToken, refundController.getRefundDetails);
+router.post('/:refundId/quality-response', verifyToken, refundController.qualityCheckResponse);
+router.post('/:refundId/feedback', verifyToken, refundController.submitFeedback);
 
 module.exports = router;

@@ -25,7 +25,7 @@ const signupSchema = z.object({
 const CustomerAuth: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signIn, signUp, verifySignupOtp, resendSignupOtp, user, signOut } = useAuth();
+  const { signIn, signUp, verifySignupOtp, resendSignupOtp, user } = useAuth();
 
   const role = user?.role;
   const { toast } = useToast();
@@ -47,7 +47,7 @@ const CustomerAuth: React.FC = () => {
   // Redirect if already logged in
   useEffect(() => {
     if (user && role) {
-      const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
+      const from = (location.state)?.from?.pathname || '/';
       if (role === 'superadmin') {
         navigate('/superadmin');
       } else if (role === 'admin') {
@@ -77,14 +77,18 @@ const CustomerAuth: React.FC = () => {
 
     setLoading(true);
     const { error } = await signIn(loginForm.email, loginForm.password);
-
-    if (!error) {
-      // The useAuth hook will update the role, check it after sign in
-      // This is handled by the useEffect above after state updates
-      const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
-      navigate(from);
-    }
     setLoading(false);
+
+    if (error) {
+      toast({
+        title: 'Login Failed',
+        description: error.message || 'Invalid email or password.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Redirect is handled by the useEffect when user/role state updates.
   };
 
   const handleSignup = async (e: React.FormEvent) => {
@@ -112,7 +116,6 @@ const CustomerAuth: React.FC = () => {
       phone: signupForm.phone,
     });
     setLoading(false);
-
     if (error) {
       toast({
         title: 'Signup Failed',

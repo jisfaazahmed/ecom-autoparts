@@ -35,21 +35,21 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<'reg' | 'manual'>('manual');
-  
+
   // Loading states
   const [loading, setLoading] = useState(false);
-  
+
   // Data from database
   const [brands, setBrands] = useState<ApiVehicleBrand[]>([]);
   const [models, setModels] = useState<ApiVehicleModel[]>([]);
-  
+
   // Registration lookup state
   const [regNumber, setRegNumber] = useState('');
   const [regLoading, setRegLoading] = useState(false);
   const [regVehicle, setRegVehicle] = useState<ApiRegCheckVehicle | null>(null);
   const [regNotFound, setRegNotFound] = useState<string | null>(null);
   const [regSaving, setRegSaving] = useState(false);
-  
+
   // Manual selection state
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
@@ -97,7 +97,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
       setModels([]);
       return;
     }
-    
+
     const fetchModels = async () => {
       setLoading(true);
       try {
@@ -237,6 +237,8 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
         model: saved.model?.name || regVehicle.model.name,
         year: saved.year,
         registrationNumber: regVehicle.registrationNumber,
+        brandId: saved.brandId ?? saved.brand?.id ?? regVehicle.brand.id,
+        modelId: saved.modelId ?? saved.model?.id ?? regVehicle.model.id,
       };
 
       setUserVehicle(vehicle);
@@ -296,6 +298,8 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
         brand: selectedBrandData.name,
         model: selectedModelData.name,
         year: parseInt(selectedYear),
+        brandId: selectedBrand,
+        modelId: selectedModel,
       };
 
       setUserVehicle(vehicle);
@@ -307,7 +311,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
     } catch (error: unknown) {
       toast.error(error instanceof Error && error.message ? error.message : 'Failed to save vehicle');
     }
-    
+
     setLoading(false);
   };
 

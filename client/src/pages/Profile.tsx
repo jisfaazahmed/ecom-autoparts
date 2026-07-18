@@ -73,11 +73,11 @@ const Profile: React.FC = () => {
     
     try {
       await api.updateProfile({
-        fullName: form.fullName,
-        phone: form.phone || undefined,
-        address: form.address || undefined,
-        city: form.city || undefined,
-        postalCode: form.postalCode || undefined,
+        fullName: form.fullName.trim(),
+        phone: form.phone.trim() || undefined,
+        address: form.address.trim() || undefined,
+        city: form.city.trim() || undefined,
+        postalCode: form.postalCode.trim() || undefined,
       });
 
       toast({

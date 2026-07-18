@@ -44,6 +44,8 @@ const MyVehicle: React.FC = () => {
           model: active.model?.name ?? '',
           year: active.year,
           registrationNumber: active.registrationNumber,
+          brandId: active.brandId ?? active.brand?.id,
+          modelId: active.modelId ?? active.model?.id,
         });
       } else {
         setUserVehicle(null);
@@ -75,6 +77,8 @@ const MyVehicle: React.FC = () => {
           model: v.model?.name ?? '',
           year: v.year,
           registrationNumber: v.registrationNumber,
+          brandId: v.brandId ?? v.brand?.id,
+          modelId: v.modelId ?? v.model?.id,
         });
       }
       toast({
@@ -111,7 +115,7 @@ const MyVehicle: React.FC = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
+
       <main className="container mx-auto px-4 py-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -132,7 +136,7 @@ const MyVehicle: React.FC = () => {
                 Manage your saved vehicles for personalized part recommendations
               </p>
             </div>
-            <VehicleSelector 
+            <VehicleSelector
               trigger={
                 <Button className="gap-2">
                   <Plus className="h-4 w-4" />
@@ -158,7 +162,7 @@ const MyVehicle: React.FC = () => {
                 <p className="text-muted-foreground text-center mb-6 max-w-md">
                   Add your vehicle to get personalized part recommendations and ensure compatibility with every purchase.
                 </p>
-                <VehicleSelector 
+                <VehicleSelector
                   trigger={
                     <Button className="gap-2">
                       <Plus className="h-4 w-4" />
@@ -178,9 +182,8 @@ const MyVehicle: React.FC = () => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
                 >
-                  <Card className={`glass-card relative overflow-hidden transition-all ${
-                    vehicle.isActive ? 'border-primary ring-2 ring-primary/20' : ''
-                  }`}>
+                  <Card className={`glass-card relative overflow-hidden transition-all ${vehicle.isActive ? 'border-primary ring-2 ring-primary/20' : ''
+                    }`}>
                     {vehicle.isActive && (
                       <div className="absolute top-0 right-0">
                         <Badge className="rounded-none rounded-bl-lg gap-1">
@@ -244,7 +247,7 @@ const MyVehicle: React.FC = () => {
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction 
+                              <AlertDialogAction
                                 onClick={() => handleDelete(vehicle.id)}
                                 className="bg-destructive hover:bg-destructive/90"
                               >

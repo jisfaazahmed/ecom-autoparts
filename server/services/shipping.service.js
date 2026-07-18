@@ -2,6 +2,9 @@ const Shipping = require('../models/shipping.model');
 const Order = require('../models/order.model');
 const OrderTimeline = require('../models/timeline.model');
 const ShippingZone = require('../models/deliveryZone.model');
+const fs = require('fs');
+const path = require('path');
+const PDFDocument = require('pdfkit');
 
 const ZONES = {
     'zone1': {
@@ -38,6 +41,88 @@ const ZONES = {
 };
 
 class ShippingService {
+
+    ensureLabelDirectory() {
+        const labelsDir = path.join(__dirname, '..', 'uploads', 'labels');
+        if (!fs.existsSync(labelsDir)) {
+            fs.mkdirSync(labelsDir, { recursive: true });
+        }
+        return labelsDir;
+    }
+
+    sanitizeFileName(value) {
+        return String(value || '')
+            .replace(/[^a-zA-Z0-9-_]/g, '_')
+            .slice(0, 80);
+    }
+
+    generateTrackingNumber(courierName) {
+        const prefix = String(courierName || 'SHIP')
+            .replace(/[^a-zA-Z0-9]/g, '')
+            .slice(0, 3)
+            .toUpperCase() || 'SHP';
+
+        const date = new Date();
+        const year = String(date.getFullYear()).slice(-2);
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const stamp = `${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 900) + 100}`;
+
+        return `${prefix}${year}${month}${day}${stamp}`;
+    }
+
+    async createLabelPdf(shipping, filePath) {
+        return new Promise((resolve, reject) => {
+            const doc = new PDFDocument({ size: 'A4', margin: 40 });
+            const stream = fs.createWriteStream(filePath);
+
+            stream.on('finish', resolve);
+            stream.on('error', reject);
+            doc.on('error', reject);
+
+            doc.pipe(stream);
+
+            const orderNumber = shipping?.order?.orderNumber || 'N/A';
+            const trackingNumber = shipping?.trackingNumber || 'N/A';
+            const courier = shipping?.courierPartner || shipping?.courierPartner?.name || 'N/A';
+            const customerName = shipping?.deliveryAddress?.customerName || shipping?.shippingAddress?.fullName || 'N/A';
+            const phone = shipping?.deliveryAddress?.phone || shipping?.shippingAddress?.phone || 'N/A';
+            const address = [
+                shipping?.deliveryAddress?.addressLine1 || shipping?.shippingAddress?.addressLine1,
+                shipping?.deliveryAddress?.addressLine2 || shipping?.shippingAddress?.addressLine2,
+                shipping?.deliveryAddress?.city || shipping?.shippingAddress?.city,
+                shipping?.deliveryAddress?.district || shipping?.shippingAddress?.district,
+                shipping?.deliveryAddress?.postalCode || shipping?.shippingAddress?.postalCode,
+            ].filter(Boolean).join(', ');
+
+            doc.fontSize(20).text('Shipping Label', { align: 'center' });
+            doc.moveDown();
+            doc.fontSize(12).text(`Generated: ${new Date().toLocaleString()}`);
+            doc.moveDown();
+
+            doc.fontSize(12).text(`Order Number: ${orderNumber}`);
+            doc.text(`Tracking Number: ${trackingNumber}`);
+            doc.text(`Courier Partner: ${courier}`);
+            doc.text(`Shipping Method: ${shipping?.shippingMethod || shipping?.shipmentType || 'standard'}`);
+            doc.moveDown();
+
+            doc.fontSize(13).text('Deliver To', { underline: true });
+            doc.fontSize(12).text(`Name: ${customerName}`);
+            doc.text(`Phone: ${phone}`);
+            doc.text(`Address: ${address || 'N/A'}`);
+            doc.moveDown();
+
+            doc.fontSize(13).text('Package Details', { underline: true });
+            doc.fontSize(12).text(`Weight: ${shipping?.packageDetails?.weight || shipping?.package?.weight || 'N/A'}`);
+            doc.text(`Package Type: ${shipping?.packageDetails?.packageType || shipping?.package?.packageType || 'N/A'}`);
+            doc.text(`Estimated Delivery: ${shipping?.estimatedDeliveryDate ? new Date(shipping.estimatedDeliveryDate).toDateString() : 'N/A'}`);
+
+            doc.moveDown(2);
+            doc.fontSize(10).fillColor('gray').text('This shipping label is system generated.', { align: 'center' });
+
+            doc.end();
+        });
+    }
 
     async calculateShippingCost(orderData) {
         const {
@@ -86,22 +171,25 @@ class ShippingService {
     }
 
     async getShippingZone(district) {
+        if (!district) district = '';
+        const normalizedDistrict = district.trim().toLowerCase();
+
         let zone = await ShippingZone.findOne({
-            'district.name': district,
+            'district.name': { $regex: new RegExp('^' + normalizedDistrict + '$', 'i') },
             isActive: true
         });
 
         if (!zone) {
             // Fallback to zone type matching
             for (const [zoneType, data] of Object.entries(ZONES)) {
-                if (data.districts.includes(district)) {
+                if (data.districts.some(d => d.toLowerCase() === normalizedDistrict)) {
                     zone = {
                         zoneName: zoneType,
                         zoneType: zoneType,
                         rates: {
-                            standard: { baseRate: 250, perKgRate: 50, freeShippingThreshold: 5000 },
-                            express: { baseRate: 500, perKgRate: 100, freeShippingThreshold: 10000 },
-                            same_day: { baseRate: 1000, perKgRate: 200, freeShippingThreshold: 15000 }
+                            standard: { baseRate: 250, perKgRate: 50, freeShippingThreshold: 100000 },
+                            express: { baseRate: 500, perKgRate: 100, freeShippingThreshold: 150000 },
+                            same_day: { baseRate: 1000, perKgRate: 200, freeShippingThreshold: 200000 }
                         },
                         estimatedDelivery: {
                             standard: { min: 1, max: 3 },
@@ -113,6 +201,25 @@ class ShippingService {
                 }
             }
         }
+
+        if (!zone) {
+            // Universal fallback if district totally unknown to avoid 500 error
+            zone = {
+                zoneName: 'zone3',
+                zoneType: 'zone3',
+                rates: {
+                    standard: { baseRate: 350, perKgRate: 50, freeShippingThreshold: 100000 },
+                    express: { baseRate: 600, perKgRate: 100, freeShippingThreshold: 150000 },
+                    same_day: { baseRate: 1000, perKgRate: 200, freeShippingThreshold: 200000 }
+                },
+                estimatedDelivery: {
+                    standard: { min: 1, max: 5 },
+                    express: { min: 1, max: 3 },
+                    same_day: { min: 0, max: 2 }
+                }
+            };
+        }
+
         return zone;
     }
 
@@ -128,7 +235,10 @@ class ShippingService {
 
     async createShipping(orderId, vendorId) {
         const order = await Order.findById(orderId)
-            .populate('items.product')
+            .populate({
+                path: 'items',
+                populate: { path: 'product' }
+            })
             .populate('user');
 
         if (!order) {
@@ -136,9 +246,10 @@ class ShippingService {
         }
 
         // Get vendor items
-        const vendorItems = order.items.filter(
-            item => item.vendor.toString() === vendorId.toString()
-        );
+        const vendorItems = (order.items || []).filter((item) => {
+            const itemVendorId = item?.vendor ? String(item.vendor) : '';
+            return itemVendorId && itemVendorId === String(vendorId);
+        });
 
         if (vendorItems.length === 0) {
             throw new Error('No items for this vendor');
@@ -159,15 +270,22 @@ class ShippingService {
             order.shippingMethod
         );
 
+        const selectedOrderItem = vendorItems[0];
+        const courierName = await this.assignCourier(order.shippingAddress.district, order.shippingMethod);
+        const trackingNumber = this.generateTrackingNumber(courierName);
+
         // Create shipping record
         const shipping = new Shipping({
             order: orderId,
+            orderItem: selectedOrderItem._id,
             vendor: vendorId,
             customer: order.user._id,
-            shippingMethod: order.shippingMethod,
-            courierPartner,
-            deliveryAddress: {
-                customerName: order.shippingAddress.fullName,
+            shipmentType: order.shippingMethod,
+            courierPartner: {
+                name: courierName,
+            },
+            shippingAddress: {
+                fullName: order.shippingAddress.fullName,
                 phone: order.shippingAddress.phone,
                 alternatePhone: order.shippingAddress.alternatePhone,
                 addressLine1: order.shippingAddress.addressLine1,
@@ -175,24 +293,26 @@ class ShippingService {
                 city: order.shippingAddress.city,
                 district: order.shippingAddress.district,
                 postalCode: order.shippingAddress.postalCode,
-                addressType: order.shippingAddress.addressType
+                country: order.shippingAddress.country || 'Sri Lanka',
+                addressType: order.shippingAddress.addressType,
             },
-            packageDetails: {
+            package: {
                 weight: totalWeight,
-                packageType,
-                valueDeclaration: vendorItems.reduce((sum, item) => sum + item.finalPrice, 0)
+                packageType: packageType === 'small_box' ? 'box' : 'parcel',
+                packageValue: vendorItems.reduce((sum, item) => sum + item.finalPrice, 0),
             },
-            charges: {
+            shippingCost: {
                 baseCharge: order.shippingCharges,
                 totalCharge: order.shippingCharges,
-                paidBy: 'customer'
+                paidBy: 'sender'
             },
+            trackingNumber,
             estimatedDeliveryDate,
-            status: 'pending',
-            statusHistory: [{
-                status: 'pending',
+            status: 'label_created',
+            trackingEvents: [{
+                status: 'label_created',
                 timestamp: new Date(),
-                note: 'Shipping created, awaiting pickup'
+                description: 'Shipping created, awaiting pickup'
             }]
         });
 
@@ -200,7 +320,7 @@ class ShippingService {
 
         await OrderTimeline.create({
             order: orderId,
-            event: 'shipping_created',
+            event: 'processing_started',
             title: 'Shipping Label Created',
             description: `Shipping created via ${courierPartner}`,
             actorType: 'system',
@@ -275,10 +395,11 @@ class ShippingService {
         shipping.estimatedPickupDate = pickupData.pickupDate;
         shipping.status = 'pickup_scheduled';
 
-        shipping.statusHistory.push({
+        shipping.trackingEvents = shipping.trackingEvents || [];
+        shipping.trackingEvents.push({
             status: 'pickup_scheduled',
             timestamp: new Date(),
-            note: `Pickup scheduled for ${pickupData.pickupDate.toLocaleDateString()}`,
+            description: `Pickup scheduled for ${pickupData.pickupDate.toLocaleDateString()}`,
             location: {
                 district: pickupData.pickupAddress.district
             }
@@ -297,12 +418,14 @@ class ShippingService {
         }
 
         const { status, location, note, updatedBy, scanType } = statusData;
+        const nextStatus = this.normalizeShippingStatus(status);
+        const currentStatus = this.normalizeShippingStatus(shipping.status);
 
-        if (!this.isValidStatusTransition(shipping.status, status)) {
-            throw new Error(`Invalid status transition from ${shipping.status} to ${status}`);
+        if (!this.isValidStatusTransition(currentStatus, nextStatus)) {
+            throw new Error(`Invalid status transition from ${currentStatus} to ${nextStatus}`);
         }
 
-        shipping.status = status;
+        shipping.status = nextStatus;
 
         if (location) {
             shipping.currentLocation = {
@@ -311,17 +434,17 @@ class ShippingService {
             };
         }
 
-        shipping.statusHistory.push({
-            status,
+        shipping.trackingEvents = shipping.trackingEvents || [];
+        shipping.trackingEvents.push({
+            status: nextStatus,
             location,
             timestamp: new Date(),
-            note,
-            updatedBy,
-            scanType
+            description: note || `Shipment ${nextStatus}`,
+            scannedBy: updatedBy || scanType || 'system'
         });
 
         // Update specific dates
-        switch (status) {
+        switch (nextStatus) {
             case 'picked_up':
                 shipping.actualPickupDate = new Date();
                 break;
@@ -334,9 +457,9 @@ class ShippingService {
 
         await OrderTimeline.create({
             order: shipping.order,
-            event: this.mapStatusToEvent(status),
-            title: this.getStatusTitle(status),
-            description: note || `Shipment ${status}`,
+            event: this.mapStatusToEvent(nextStatus),
+            title: this.getStatusTitle(nextStatus),
+            description: note || `Shipment ${nextStatus}`,
             actorType: 'courier',
             location: location
         });
@@ -344,18 +467,31 @@ class ShippingService {
         return shipping;
     }
 
+    normalizeShippingStatus(status) {
+        const value = String(status || '').toLowerCase();
+        const aliases = {
+            pending: 'label_created',
+            reached_hub: 'in_transit',
+            failed_delivery: 'failed',
+            returned_to_vendor: 'returned_to_sender',
+        };
+        return aliases[value] || value;
+    }
+
     //statsus of shipping
     isValidStatusTransition(currentStatus, newStatus) {
         const validTransitions = {
-            'pending': ['pickup_scheduled', 'cancelled'],
+            'label_created': ['pickup_scheduled', 'picked_up', 'cancelled', 'on_hold'],
             'pickup_scheduled': ['picked_up', 'cancelled'],
-            'picked_up': ['in_transit', 'cancelled'],
-            'in_transit': ['reached_hub', 'out_for_delivery'],
-            'reached_hub': ['in_transit', 'out_for_delivery'],
-            'out_for_delivery': ['delivered', 'failed_delivery'],
-            'failed_delivery': ['out_for_delivery', 'returned_to_vendor'],
+            'picked_up': ['in_transit', 'cancelled', 'on_hold'],
+            'in_transit': ['out_for_delivery', 'failed', 'lost', 'damaged', 'on_hold'],
+            'out_for_delivery': ['delivered', 'failed', 'on_hold'],
+            'failed': ['out_for_delivery', 'returned_to_sender', 'cancelled'],
+            'on_hold': ['in_transit', 'out_for_delivery', 'cancelled'],
             'delivered': [],
-            'returned_to_vendor': [],
+            'returned_to_sender': [],
+            'lost': [],
+            'damaged': [],
             'cancelled': []
         };
 
@@ -364,28 +500,34 @@ class ShippingService {
 
     mapStatusToEvent(status) {
         const mapping = {
-            'pickup_scheduled': 'pickup_scheduled',
+            'label_created': 'ready_to_ship',
+            'pickup_scheduled': 'ready_to_ship',
             'picked_up': 'picked_up',
             'in_transit': 'in_transit',
-            'reached_hub': 'reached_hub',
             'out_for_delivery': 'out_for_delivery',
             'delivered': 'delivered',
-            'failed_delivery': 'delivery_failed',
-            'returned_to_vendor': 'return_received'
+            'failed': 'delivery_failed',
+            'returned_to_sender': 'return_received',
+            'on_hold': 'in_transit',
+            'lost': 'delivery_failed',
+            'damaged': 'delivery_failed'
         };
-        return mapping[status] || status;
+        return mapping[status] || 'in_transit';
     }
 
     getStatusTitle(status) {
         const titles = {
+            'label_created': 'Label Created',
             'pickup_scheduled': 'Pickup Scheduled',
             'picked_up': 'Package Picked Up',
             'in_transit': 'In Transit',
-            'reached_hub': 'Reached Sorting Hub',
             'out_for_delivery': 'Out for Delivery',
             'delivered': 'Delivered',
-            'failed_delivery': 'Delivery Failed',
-            'returned_to_vendor': 'Returned to Vendor'
+            'failed': 'Delivery Failed',
+            'returned_to_sender': 'Returned to Sender',
+            'on_hold': 'Shipment On Hold',
+            'lost': 'Shipment Lost',
+            'damaged': 'Shipment Damaged'
         };
         return titles[status] || status;
     }
@@ -489,8 +631,7 @@ class ShippingService {
     async trackShipment(trackingNumber) {
 
         const shipping = await Shipping.findOne({ trackingNumber })
-            .populate('order', 'orderNumber')
-            .populate('customer', 'name phone');
+            .populate('order', 'orderNumber');
 
         if (!shipping) {
             throw new Error('Tracking number not found');
@@ -561,6 +702,63 @@ class ShippingService {
         await shipping.save();
 
         return shipping;
+    }
+
+    async generateShippingLabel(shippingId) {
+        const shipping = await Shipping.findById(shippingId).populate('order', 'orderNumber');
+
+        if (!shipping) {
+            throw new Error('Shipping not found');
+        }
+
+        const labelsDir = this.ensureLabelDirectory();
+        const safeTracking = this.sanitizeFileName(shipping.trackingNumber || `SHIP-${shipping._id}`);
+        const fileName = `${safeTracking}.pdf`;
+        const absoluteFilePath = path.join(labelsDir, fileName);
+
+        if (!fs.existsSync(absoluteFilePath)) {
+            await this.createLabelPdf(shipping, absoluteFilePath);
+        }
+
+        if (!shipping.documents) {
+            shipping.documents = {};
+        }
+
+        if (!shipping.documents.shippingLabel) {
+            const baseUrl = process.env.SERVER_PUBLIC_URL || `http://localhost:${process.env.PORT || 5000}`;
+            const tracking = shipping.trackingNumber || `SHIP-${shipping._id}`;
+            shipping.documents.shippingLabel = `${baseUrl}/labels/${fileName}`;
+
+            shipping.statusHistory = shipping.statusHistory || [];
+            shipping.statusHistory.push({
+                status: shipping.status,
+                timestamp: new Date(),
+                note: 'Shipping label generated',
+                scanType: 'label_created'
+            });
+
+            await shipping.save();
+
+            await OrderTimeline.create({
+                order: shipping.order?._id || shipping.order,
+                event: 'label_created',
+                title: 'Shipping Label Created',
+                description: `Label generated for tracking ${tracking}`,
+                actorType: 'system',
+                metadata: {
+                    trackingNumber: tracking,
+                    labelUrl: shipping.documents.shippingLabel,
+                }
+            });
+        }
+
+        return {
+            shippingId: shipping._id,
+            orderNumber: shipping.order?.orderNumber,
+            trackingNumber: shipping.trackingNumber,
+            labelUrl: shipping.documents.shippingLabel,
+            fileName,
+        };
     }
 }
 module.exports = new ShippingService();

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   mongo:
     image: mongo:7.0
@@ -12,52 +10,49 @@ services:
       - MONGO_INITDB_ROOT_USERNAME=root
       - MONGO_INITDB_ROOT_PASSWORD=password
       - MONGO_INITDB_DATABASE=ecom-autoparts
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+    # healthcheck temporarily disabled for local dev to avoid startup hangs
+    # healthcheck:
+    #  test: ["CMD-SHELL", "mongosh --quiet --username $$MONGO_INITDB_ROOT_USERNAME --password $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\" | grep 1"]
+    #  interval: 10s
+    #  timeout: 5s
+    #  retries: 5
+    #  start_period: 30s
 
   server:
     build: ./server
-    command: npm run dev
+    command: npm start
+    restart: unless-stopped
     ports:
       - "5000:5000"
     environment:
       - PORT=5000
       - NODE_ENV=development
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
       - MONGO_IP=mongo
       - MONGO_PORT=27017
       - MONGO_USER=root
       - MONGO_PASSWORD=password
       - MONGO_DB=ecom-autoparts
-      - CLIENT_URL=http://localhost:3000
-      # SMTP (set real values to send signup OTP emails)
-      - SMTP_HOST=smtp.gmail.com
-      - SMTP_PORT=587
-      - SMTP_SECURE=false
-      - SMTP_USER=automatrix365@gmail.com
-      - SMTP_PASS=mxunykupzmyichgm
-      - EMAIL_FROM=AutoMatrix <automatrix365@gmail.com>
+      - CLIENT_URL=${CLIENT_URL}
     volumes:
       - ./server:/app
       - /app/node_modules
     depends_on:
       mongo:
-        condition: service_healthy
+        condition: service_started
 
   client:
     build: ./client
     ports:
       - "3000:3000"
     environment:
-      # Browser runs on host; must use localhost so fetch() can reach the API
-      - VITE_API_URL=http://localhost:5000/api
-    volumes:
-      - ./client:/app
-      - /app/node_modules
-      - /app/.vite
+      - NODE_OPTIONS=--max-old-space-size=2048
+      - CHOKIDAR_USEPOLLING=false
+      - VITE_USE_POLLING=false
+      - VITE_API_URL=http://127.0.0.1:5000/api
+      - VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
+    command: sh -c "npm run dev -- --host 0.0.0.0 --strictPort"
     depends_on:
       - server
 

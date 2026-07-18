@@ -4,6 +4,10 @@ export interface Vehicle {
   model: string;
   year: number;
   registrationNumber?: string;
+  vin?: string;
+  brandId?: string;
+  modelId?: string;
+  variantId?: string;
 }
 
 export interface Product {
@@ -25,6 +29,8 @@ export interface Product {
   sku: string;
   specifications?: Record<string, string>;
   isActive?: boolean;
+  originalPrice?: number;
+  effectiveDiscountPercent?: number;
 }
 
 export interface CartItem {
@@ -54,6 +60,8 @@ export interface Order {
   shopId: string;
   items: OrderItem[];
   total: number;
+  totalAmount?: number;
+  commissionAmount?: number;
   status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
   shippingAddress: string;
   shippingCity?: string;

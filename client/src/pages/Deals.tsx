@@ -1,26 +1,39 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Tag, Percent, Clock, Loader2 } from 'lucide-react';
+import { Tag, Percent, Clock, Loader2, Copy, Check } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import ProductCard from '@/components/products/ProductCard';
 import PaginationControls from '@/components/common/PaginationControls';
-import { api, ApiProduct } from '@/lib/api';
+import { api, ApiProduct, ApiCoupon } from '@/lib/api';
 import { usePagination } from '@/hooks/usePagination';
+import { formatLKR } from '@/lib/currency';
 
 const Deals: React.FC = () => {
   const [products, setProducts] = useState<ApiProduct[]>([]);
+  const [coupons, setCoupons] = useState<ApiCoupon[]>([]);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchDeals = async () => {
       try {
-        const response = await api.getProducts({ isActive: true, limit: 1000 });
-        // Filter products with stock > 10 as "deals"
-        const dealProducts = (response.data || []).filter(p => p.stock > 10);
+        const response = await api.getProducts({ limit: 1000 });
+        // Only discounted products should appear on the deals page.
+        const dealProducts = (response.data || []).filter(
+          (p) => (p.effectiveDiscountPercent || 0) > 0 && p.stock > 0
+        );
         setProducts(dealProducts);
       } catch (error) {
         console.error('Failed to fetch deals:', error);
       }
+
+      try {
+        const activeCoupons = await api.getPublicActiveCoupons(6);
+        setCoupons(activeCoupons);
+      } catch (error) {
+        console.error('Failed to fetch coupons:', error);
+      }
+
       setLoading(false);
     };
     fetchDeals();
@@ -34,10 +47,12 @@ const Deals: React.FC = () => {
   } = usePagination(products, { itemsPerPage: 12 });
 
   const mapToProductCard = (p: ApiProduct) => ({
-    id: p.id,
+    id: p.id || p._id || '',
     name: p.name,
     description: p.description || '',
     price: p.price,
+    originalPrice: p.originalPrice || p.price,
+    effectiveDiscountPercent: p.effectiveDiscountPercent || 0,
     image: p.imageUrl || '/placeholder.svg',
     category: p.category?.name || 'Uncategorized',
     brand: '',
@@ -51,6 +66,23 @@ const Deals: React.FC = () => {
     reviewCount: p.reviewCount ?? 0,
     sku: p.sku || '',
   });
+
+  const copyCouponCode = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCode(code);
+      setTimeout(() => setCopiedCode(null), 2000);
+    } catch (error) {
+      console.error('Failed to copy coupon code:', error);
+    }
+  };
+
+  const formatCouponDiscount = (coupon: ApiCoupon) => {
+    if (coupon.discountType === 'percentage') {
+      return `${coupon.discountValue}% OFF`;
+    }
+    return `${formatLKR(coupon.discountValue)} OFF`;
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -71,16 +103,20 @@ const Deals: React.FC = () => {
             HOT <span className="text-primary">DEALS</span>
           </h1>
           <p className="text-muted-foreground max-w-md mx-auto">
-            Don't miss out on these incredible savings. Shop now while supplies last!
+            Only products with active seller discounts are shown here. Grab these price drops before they end.
           </p>
         </motion.div>
 
         {/* Deal Highlights */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
           {[
-            { icon: Percent, title: 'Up to 30% Off', desc: 'On select performance parts' },
-            { icon: Tag, title: 'Bundle Deals', desc: 'Save more when you buy together' },
-            { icon: Clock, title: 'Flash Sales', desc: 'New deals every week' },
+            {
+              icon: Percent,
+              title: products.length ? `Up to ${Math.round(Math.max(...products.map((p) => p.effectiveDiscountPercent || 0)))}% Off` : 'Seller Discounts',
+              desc: 'Shop-wide and product-level markdowns',
+            },
+            { icon: Tag, title: `${products.length} Discounted Products`, desc: 'Filtered live from active seller offers' },
+            { icon: Clock, title: 'Limited Time Savings', desc: 'Deals update whenever sellers change discounts' },
           ].map((item, i) => (
             <motion.div
               key={i}
@@ -100,6 +136,47 @@ const Deals: React.FC = () => {
           ))}
         </div>
 
+        {coupons.length > 0 && (
+          <div className="mb-12">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-display text-2xl font-bold">Available Coupons</h2>
+              <p className="text-sm text-muted-foreground">Copy a code and apply it in checkout</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {coupons.map((coupon, index) => (
+                <motion.div
+                  key={coupon.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  className="glass-card p-4 border border-primary/20"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-lg font-bold text-primary">{coupon.code}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{coupon.description || 'Limited-time offer'}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => copyCouponCode(coupon.code)}
+                      className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-border hover:border-primary/40"
+                    >
+                      {copiedCode === coupon.code ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      {copiedCode === coupon.code ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-sm">
+                    <span className="font-semibold text-green-500">{formatCouponDiscount(coupon)}</span>
+                    {(coupon.minimumOrderAmount || 0) > 0 && (
+                      <span className="text-muted-foreground">Min {formatLKR(coupon.minimumOrderAmount || 0)}</span>
+                    )}
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {loading ? (
           <div className="flex justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -111,7 +188,7 @@ const Deals: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {paginatedProducts.map((product, i) => (
                 <motion.div
-                  key={product.id}
+                  key={product.id || product._id || i}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}

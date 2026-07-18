@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
-  Search, ShoppingCart, User, Menu, Car, LogOut, Store, Shield, UserCircle, Star, ChevronDown 
+  Search, ShoppingCart, User, Menu, Car, LogOut, Store, Shield, UserCircle, FileText 
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Button } from '@/components/ui/button';
@@ -18,17 +18,15 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
-import { api, ApiUserVehicle } from '@/lib/api';
+import NotificationBell from '@/components/notifications/NotificationBell';
 
 const Navbar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { cart, getCartCount, userVehicle, setUserVehicle, vehicleRefreshKey } = useStore();
+  const { cart, getCartCount, userVehicle } = useStore();
   const { user, profile, role, signOut, loading } = useAuth();
   const cartCount = getCartCount();
   const [searchQuery, setSearchQuery] = useState('');
-  const [savedVehicles, setSavedVehicles] = useState<ApiUserVehicle[]>([]);
-  const [vehiclesLoading, setVehiclesLoading] = useState(false);
 
   const navLinks = [
     { href: '/shop', label: 'Shop' },
@@ -36,44 +34,17 @@ const Navbar: React.FC = () => {
     { href: '/deals', label: 'Deals' },
   ];
 
-  const fetchSavedVehicles = useCallback(async () => {
-    if (!user) return;
-    setVehiclesLoading(true);
-    try {
-      const data = await api.getUserVehicles();
-      setSavedVehicles(data || []);
-    } catch {
-      // fail silently
-    }
-    setVehiclesLoading(false);
-  }, [user]);
-
-  useEffect(() => {
-    fetchSavedVehicles();
-  }, [fetchSavedVehicles, vehicleRefreshKey]);
+  const policyLinks = [
+    { href: '/policy/return', label: 'Return Policy' },
+    { href: '/policy/shipping', label: 'Shipping Policy' },
+    { href: '/policy/cancellation', label: 'Cancellation Policy' },
+    { href: '/policy/terms', label: 'Terms & Conditions' },
+  ];
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     setSearchQuery(params.get('search') ?? '');
   }, [location.pathname, location.search]);
-
-  const handleSwitchVehicle = async (vehicle: ApiUserVehicle) => {
-    try {
-      await api.setActiveVehicle(vehicle.id);
-      setUserVehicle({
-        id: vehicle.id,
-        brand: vehicle.brand?.name ?? '',
-        model: vehicle.model?.name ?? '',
-        year: vehicle.year,
-        registrationNumber: vehicle.registrationNumber,
-      });
-      setSavedVehicles((prev) =>
-        prev.map((v) => ({ ...v, isActive: v.id === vehicle.id }))
-      );
-    } catch {
-      // fail silently
-    }
-  };
 
   const handleSignOut = async () => {
     await signOut();
@@ -125,13 +96,30 @@ const Navbar: React.FC = () => {
             <Link
               key={link.href}
               to={link.href}
-              className={`text-sm font-medium transition-colors hover:text-primary ${
-                location.pathname === link.href ? 'text-primary' : 'text-muted-foreground'
-              }`}
+              className={`text-sm font-medium transition-colors ${location.pathname === link.href ? 'text-primary' : 'text-muted-foreground hover:text-black dark:hover:text-black font-semibold'}`}
             >
               {link.label}
             </Link>
           ))}
+          
+          {/* Policies Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="text-sm font-medium text-muted-foreground hover:text-black dark:hover:text-black hover:font-semibold transition-all">
+                <FileText className="h-4 w-4 mr-1" />
+                Policies
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="glass-card border-border/50 w-48">
+              {policyLinks.map((link) => (
+                <DropdownMenuItem key={link.href} asChild>
+                  <Link to={link.href} className="w-full">
+                    {link.label}
+                  </Link>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </nav>
 
         {/* Search Bar */}
@@ -157,67 +145,29 @@ const Navbar: React.FC = () => {
           </form>
         </div>
 
-        {/* Vehicle Switcher */}
-        {user && (
-          <div className="hidden md:flex items-center">
-            {savedVehicles.length > 0 ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-2 border-primary/50 text-primary hover:border-primary">
-                    <Car className="h-3.5 w-3.5" />
-                    {userVehicle
-                      ? `${userVehicle.year} ${userVehicle.brand} ${userVehicle.model}`
-                      : 'Select Vehicle'}
-                    <ChevronDown className="h-3 w-3 opacity-50" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64 glass-card border-border/50">
-                  <div className="px-2 py-1.5">
-                    <p className="text-xs font-medium text-muted-foreground">My Vehicles</p>
-                  </div>
-                  <DropdownMenuSeparator />
-                  {savedVehicles.map((v) => (
-                    <DropdownMenuItem
-                      key={v.id}
-                      onClick={() => handleSwitchVehicle(v)}
-                      className="flex items-center justify-between gap-2 cursor-pointer"
-                    >
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium">
-                          {`${v.brand?.name} ${v.model?.name}`}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {v.year} {v.brand?.name} {v.model?.name}
-                        </span>
-                      </div>
-                      {v.isActive && (
-                        <Star className="h-3.5 w-3.5 text-primary fill-primary shrink-0" />
-                      )}
-                    </DropdownMenuItem>
-                  ))}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem asChild>
-                    <Link to="/my-vehicle" className="flex items-center gap-2 text-primary">
-                      <Car className="h-4 w-4" />
-                      Manage Vehicles
-                    </Link>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
-          </div>
+        {/* Vehicle Badge */}
+        {user && userVehicle && (
+          <Link to="/my-vehicle">
+            <Badge variant="outline" className="hidden md:flex items-center gap-2 border-primary/50 text-primary">
+              <Car className="h-3 w-3" />
+              {userVehicle.year} {userVehicle.brand} {userVehicle.model}
+            </Badge>
+          </Link>
         )}
 
         {/* Actions */}
         <div className="flex items-center gap-2">
           {/* Theme Toggle */}
           <ThemeToggle />
+
+          {/* Notifications */}
+          {user && <NotificationBell />}
           
           {/* Cart */}
           <Link to="/cart">
             <Button variant="ghost" size="icon" className="relative">
               <ShoppingCart className="h-5 w-5" />
-              {user && cartCount > 0 && (
+              {cartCount > 0 && (
                 <motion.span
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
@@ -262,6 +212,9 @@ const Navbar: React.FC = () => {
                   <DropdownMenuItem asChild>
                     <Link to="/orders">My Orders</Link>
                   </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/returns">Returns & Refunds</Link>
+                  </DropdownMenuItem>
                   {role === 'admin' && (
                     <DropdownMenuItem asChild>
                       <Link to="/admin">Admin Dashboard</Link>
@@ -296,7 +249,7 @@ const Navbar: React.FC = () => {
                   <DropdownMenuItem asChild>
                     <Link to="/auth/admin" className="flex items-center gap-2 text-muted-foreground">
                       <Shield className="h-4 w-4" />
-                      Admin Login
+                      Admin Portal
                     </Link>
                   </DropdownMenuItem>
                 </>
@@ -317,20 +270,36 @@ const Navbar: React.FC = () => {
                   <Link
                     key={link.href}
                     to={link.href}
-                    className="text-lg font-medium transition-colors hover:text-primary"
+                    className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold"
                   >
                     {link.label}
                   </Link>
                 ))}
+                
+                {/* Mobile Policies Section */}
+                <DropdownMenuSeparator />
+                <div className="text-lg font-medium text-primary flex items-center gap-2 mb-2">
+                  <FileText className="h-5 w-5" />
+                  Policies
+                </div>
+                {policyLinks.map((link) => (
+                  <Link
+                    key={link.href}
+                    to={link.href}
+                    className="text-sm text-muted-foreground hover:text-black dark:hover:text-black hover:font-semibold transition-all pl-7"
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+                
                 <DropdownMenuSeparator />
                 {user ? (
                   <>
-                    <Link to="/my-vehicle" className="text-lg font-medium transition-colors hover:text-primary flex items-center gap-2">
-                      <Car className="h-5 w-5" />
-                      My Vehicles
-                    </Link>
-                    <Link to="/orders" className="text-lg font-medium transition-colors hover:text-primary">
+                    <Link to="/orders" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
                       My Orders
+                    </Link>
+                    <Link to="/returns" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
+                      Returns & Refunds
                     </Link>
                     {role === 'admin' && (
                       <Link to="/admin" className="text-lg font-medium transition-colors hover:text-primary">
@@ -361,7 +330,7 @@ const Navbar: React.FC = () => {
                     </Link>
                     <Link to="/auth/admin" className="text-lg font-medium transition-colors hover:text-primary text-muted-foreground flex items-center gap-2">
                       <Shield className="h-5 w-5" />
-                      Admin Login
+                      Admin Portal
                     </Link>
                   </>
                 )}

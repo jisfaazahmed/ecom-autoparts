@@ -225,19 +225,6 @@ const shippingSchema = new mongoose.Schema({
     },
 
 
-    courierPartner: {
-        name: {
-            type: String,
-            
-            enum: ['pronto', 'aramex', 'dhl', 'fedex', 'courier_service', 'self_delivery'],
-            required: true
-        },
-        trackingId: String,
-        apiTrackingUrl: String,
-        contactNumber: String,
-        email: String
-    },
-
     issues: [{
         type: {
             type: String,
@@ -292,7 +279,6 @@ shippingSchema.pre('save', async function (next) {
     next();
 });
 
-shippingSchema.index({ trackingNumber: 1 });
 shippingSchema.index({ order: 1 });
 shippingSchema.index({ status: 1 });
 shippingSchema.index({ 'courierPartner.name': 1 });

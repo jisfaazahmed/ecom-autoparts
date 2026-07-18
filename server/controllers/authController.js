@@ -2,6 +2,8 @@ const User = require('../models/user')
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const emailService = require('../services/email.service');
+const NotificationService = require('../services/notification.service');
 const { sendSignupOtpEmail, sendPasswordReset } = require('../services/mailer');
 
 const OTP_TTL_MINUTES = Number(process.env.SIGNUP_OTP_TTL_MINUTES || 10);
@@ -83,7 +85,8 @@ function canSendOtpNow(user) {
   return { ok: true };
 }
 
-async function issueTokensAndRespond(res, user) {
+async function issueTokensAndRespond(res, user, options = {}) {
+  const { statusCode = 200, message } = options;
   const payload = { user: { id: user.id, role: user.role } };
   const token = await new Promise((resolve, reject) => {
     jwt.sign(payload, process.env.JWT_SECRET || 'secret123', { expiresIn: '1d' }, (err, tok) => {
@@ -93,7 +96,7 @@ async function issueTokensAndRespond(res, user) {
   });
 
   const mappedRole = mapRoleForClient(user.role);
-  return res.status(200).json({
+  const body = {
     accessToken: token,
     refreshToken: token,
     user: {
@@ -106,7 +109,9 @@ async function issueTokensAndRespond(res, user) {
       commissionRate: user.commissionRate,
       createdAt: user.createdAt,
     },
-  });
+  };
+  if (message) body.message = message;
+  return res.status(statusCode).json(body);
 }
 
 exports.register = async (req, res) => {
@@ -167,21 +172,26 @@ exports.registerStart = async (req, res) => {
       return res.status(400).json({ message: 'Name, email, and password are required' });
     }
 
+    if (password.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
     if (normalizedRole === 'ADMIN' && !shopName) {
       return res.status(400).json({ message: 'Shop name is required for seller registration' });
     }
 
     const existing = await User.findOne({ email: normalizedEmail });
     if (existing) {
-      // Do not allow re-registering; user should login or use resend with verification id.
-      return res.status(400).json({ message: 'User already exists' });
+      if (isEmailVerified(existing)) {
+        return res.status(400).json({ message: 'An account with this email already exists.' });
+      }
+      await User.deleteOne({ _id: existing._id });
     }
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
     const otp = generateOtp6();
-    console.log(`OTP for ${normalizedEmail}: ${otp}`);
     const now = new Date();
     const expiresAt = new Date(now.getTime() + OTP_TTL_MINUTES * 60 * 1000);
 
@@ -202,11 +212,12 @@ exports.registerStart = async (req, res) => {
       },
     });
 
-    // Customers should not be able to login until verified; keep status as ACTIVE
-    // Vendors will be set to PENDING by pre-save hook.
+    // Customers become ACTIVE after verify; vendors remain PENDING for approval.
     await user.save();
 
-    await sendSignupOtpEmail({ to: normalizedEmail, otp, minutesValid: OTP_TTL_MINUTES });
+    sendSignupOtpEmail({ to: normalizedEmail, otp, minutesValid: OTP_TTL_MINUTES }).catch(err =>
+      console.error('Error sending signup OTP:', err)
+    );
 
     res.status(201).json({
       message: 'OTP sent to your email',
@@ -251,7 +262,9 @@ exports.registerResend = async (req, res) => {
     user.emailVerification.sendCount = Number(user.emailVerification.sendCount || 0) + 1;
 
     await user.save();
-    await sendSignupOtpEmail({ to: user.email, otp, minutesValid: OTP_TTL_MINUTES });
+    sendSignupOtpEmail({ to: user.email, otp, minutesValid: OTP_TTL_MINUTES }).catch(err =>
+      console.error('Error resending OTP:', err)
+    );
 
     res.status(200).json({
       message: 'OTP resent to your email',
@@ -276,7 +289,6 @@ exports.registerVerify = async (req, res) => {
     if (!user) return res.status(404).json({ message: 'Verification request not found' });
 
     if (isEmailVerified(user)) {
-      // already verified, allow login token issuance
       return issueTokensAndRespond(res, user);
     }
 
@@ -300,18 +312,31 @@ exports.registerVerify = async (req, res) => {
       return res.status(400).json({ message: 'OTP is invalid or has expired' });
     }
 
-    // Mark verified + clear code
     user.emailVerification.verifiedAt = new Date();
     user.emailVerification.codeHash = null;
     user.emailVerification.expiresAt = null;
     user.emailVerification.attempts = 0;
 
-    // Ensure final status: customers become ACTIVE; vendors remain pending for approval.
     if (user.role === 'CUSTOMER') user.status = 'ACTIVE';
     if (user.role === 'ADMIN') user.status = 'PENDING';
 
     await user.save();
-    return issueTokensAndRespond(res, user);
+
+    if (user.role === 'ADMIN') {
+      NotificationService.notifySuperAdminVendorApplied(user).catch(err =>
+        console.error('Error notifying super admin vendor application:', err)
+      );
+    } else if (user.role === 'CUSTOMER') {
+      NotificationService.notifySuperAdminCustomerSignup(user).catch(err =>
+        console.error('Error notifying super admin customer signup:', err)
+      );
+    }
+
+    const message = user.role === 'ADMIN'
+      ? 'Email verified. Your vendor application is pending admin approval.'
+      : 'Registration complete! Welcome.';
+
+    return issueTokensAndRespond(res, user, { message });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error' });
@@ -321,19 +346,22 @@ exports.registerVerify = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
 
-    const user = await User.findOne({ email: email.trim().toLowerCase() });
+    if (!normalizedEmail || !password) {
+      return res.status(400).json({ message: 'Email and password are required' });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) return res.status(400).json({ message: 'Invalid Credentials' });
 
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ message: 'Invalid Credentials' });
 
-    // Email verification gatekeeper
     if (!isEmailVerified(user)) {
       return res.status(403).json({ message: 'Email verification required.' });
     }
 
-    // GATEKEEPER CHECK
     if (user.status === 'PENDING') return res.status(403).json({ message: 'Account pending approval.' });
     if (user.status === 'REJECTED') return res.status(403).json({ message: 'Account rejected.' });
 
@@ -344,7 +372,6 @@ exports.login = async (req, res) => {
   }
 };
 
-// Map backend status to client-friendly (for getMe shop)
 const STATUS_TO_CLIENT = { ACTIVE: 'approved', PENDING: 'pending', REJECTED: 'rejected', SUSPENDED: 'suspended' };
 
 // GET /auth/me - return current user from JWT with profile and shop (for admins)
@@ -352,8 +379,7 @@ exports.getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found' });
-    const roleLower = (user.role || '').toLowerCase().replace('_', '');
-    const role = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
+    const role = mapRoleForClient(user.role);
 
     const response = {
       id: user.id,
@@ -364,8 +390,12 @@ exports.getMe = async (req, res) => {
       city: user.city || null,
       postalCode: user.postalCode || null,
       role,
+      status: user.status,
+      shopName: user.shopName,
+      commissionRate: user.commissionRate,
+      createdAt: user.createdAt,
       userRoles: [{ role }],
-      emailVerified: user.emailVerified || false,
+      emailVerified: isEmailVerified(user),
       profile: {
         id: user._id.toString(),
         userId: user._id.toString(),
@@ -399,47 +429,13 @@ exports.getMe = async (req, res) => {
     }
 
     res.json(response);
-
   } catch (err) {
     console.error(err);
     res.status(500).send('Server error');
   }
 };
 
-// PUT /auth/profile - update current user profile
-exports.updateProfile = async (req, res) => {
-  try {
-    const { fullName, phone, address, city, postalCode } = req.body;
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
-    if (fullName !== undefined) user.name = fullName.trim();
-    if (phone !== undefined) user.phone = phone || null;
-    if (address !== undefined) user.address = address || null;
-    if (city !== undefined) user.city = city || null;
-    if (postalCode !== undefined) user.postalCode = postalCode || null;
-
-    await user.save();
-
-    const roleLower = (user.role || '').toLowerCase().replace('_', '');
-    const mappedRole = roleLower === 'superadmin' ? 'superadmin' : roleLower === 'admin' ? 'admin' : 'customer';
-    res.json({
-      id: user.id,
-      email: user.email,
-      fullName: user.name,
-      phone: user.phone || null,
-      address: user.address || null,
-      city: user.city || null,
-      postalCode: user.postalCode || null,
-      avatarUrl: user.avatarUrl || null,
-      role: mappedRole,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Failed to update profile' });
-  }
-};
-
+// POST /auth/forgot-password - Request password reset
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -451,16 +447,14 @@ exports.forgotPassword = async (req, res) => {
 
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
-      // For security, don't reveal if email exists
       return res.status(200).json({
-        message: 'If an account with this email exists, a password reset link will be sent.'
+        message: 'If an account with this email exists, a password reset link will be sent.',
       });
     }
 
-    // Generate reset token (valid for 1 hour)
     const resetToken = crypto.randomBytes(32).toString('hex');
     const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
-    const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000);
 
     user.resetToken = resetTokenHash;
     user.resetTokenExpiry = resetTokenExpiry;
@@ -468,17 +462,11 @@ exports.forgotPassword = async (req, res) => {
 
     const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/reset-password?token=${resetToken}`;
 
-    console.log(`Password reset link for ${normalizedEmail}: ${resetLink}`);
-
-    const emailResult = await sendPasswordReset(normalizedEmail, resetLink);
-    if (!emailResult.delivered) {
-      console.warn(`Password reset email failed to send for ${normalizedEmail}`);
-    }
+    await sendPasswordReset(normalizedEmail, resetLink);
 
     res.status(200).json({
       message: 'Password reset link has been sent to your email',
-      // Only in development - remove in production
-      ...(process.env.NODE_ENV !== 'production' && { resetToken, resetLink })
+      ...(process.env.NODE_ENV !== 'production' && { resetToken, resetLink }),
     });
   } catch (err) {
     console.error(err);
@@ -486,6 +474,7 @@ exports.forgotPassword = async (req, res) => {
   }
 };
 
+// POST /auth/reset-password - Reset password with token
 exports.resetPassword = async (req, res) => {
   try {
     const { token, password, passwordConfirm } = req.body;
@@ -502,24 +491,20 @@ exports.resetPassword = async (req, res) => {
       return res.status(400).json({ message: 'Password must be at least 6 characters' });
     }
 
-    // Hash the token to compare with stored hash
     const resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
 
-    // Find user with matching reset token and non-expired token
     const user = await User.findOne({
       resetToken: resetTokenHash,
-      resetTokenExpiry: { $gt: new Date() }
+      resetTokenExpiry: { $gt: new Date() },
     });
 
     if (!user) {
       return res.status(400).json({ message: 'Reset token is invalid or has expired' });
     }
 
-    // Hash new password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Update password and clear reset token
     user.password = hashedPassword;
     user.resetToken = null;
     user.resetTokenExpiry = null;
@@ -532,30 +517,89 @@ exports.resetPassword = async (req, res) => {
   }
 };
 
-// POST /auth/change-password
+// POST /auth/change-password - Change password when logged in
 exports.changePassword = async (req, res) => {
   try {
-    const { currentPassword, newPassword } = req.body;
-    if (!currentPassword || !newPassword) {
-      return res.status(400).json({ message: 'Current and new password are required' });
-    }
-    if (newPassword.length < 6) {
-      return res.status(400).json({ message: 'New password must be at least 6 characters' });
+    const { currentPassword, newPassword, passwordConfirm } = req.body;
+    const userId = req.user?.id || req.user?._id;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required' });
     }
 
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Current password and new password are required' });
+    }
+
+    if (passwordConfirm !== undefined && newPassword !== passwordConfirm) {
+      return res.status(400).json({ message: 'New passwords do not match' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'Password must be at least 6 characters' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
 
     const isMatch = await bcrypt.compare(currentPassword, user.password);
-    if (!isMatch) return res.status(400).json({ message: 'Current password is incorrect' });
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Current password is incorrect' });
+    }
 
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(newPassword, salt);
     await user.save();
 
-    res.json({ message: 'Password changed successfully' });
+    res.status(200).json({ message: 'Password has been changed successfully' });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ message: 'Failed to change password' });
+    res.status(500).json({ message: 'Error changing password' });
+  }
+};
+
+// PUT /auth/profile - Update user profile
+exports.updateProfile = async (req, res) => {
+  try {
+    const { name, fullName, phone, address, city, postalCode } = req.body;
+    const userId = req.user?.id || req.user?._id;
+
+    if (!userId) {
+      return res.status(401).json({ message: 'Authentication required' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (name !== undefined || fullName !== undefined) user.name = (name || fullName || user.name).trim();
+    if (phone !== undefined) user.phone = phone || null;
+    if (address !== undefined) user.address = address || null;
+    if (city !== undefined) user.city = city || null;
+    if (postalCode !== undefined) user.postalCode = postalCode || null;
+
+    await user.save();
+
+    const mappedRole = mapRoleForClient(user.role);
+    res.status(200).json({
+      message: 'Profile updated successfully',
+      id: user.id,
+      email: user.email,
+      fullName: user.name,
+      role: mappedRole,
+      status: user.status,
+      phone: user.phone || null,
+      address: user.address || null,
+      city: user.city || null,
+      postalCode: user.postalCode || null,
+      avatarUrl: user.avatarUrl || null,
+      createdAt: user.createdAt,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error updating profile' });
   }
 };

@@ -1,126 +1,225 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { CartItem, Vehicle, Product } from '@/types';
-import { api, ApiCart, ApiCartItem, ApiProduct } from '@/lib/api';
+import type { Vehicle } from '@/types';
+import { api, ApiCartItem, ApiProduct } from '@/lib/api';
 
-// Helper to map an API product (from backend cart) to the frontend Product type
-const mapApiProductToProduct = (p: ApiProduct): Product => ({
-  id: p.id || p._id || '',
-  name: p.name,
-  description: p.description || '',
-  price: p.price,
-  image: p.imageUrl || p.image_url || p.image || '/placeholder.svg',
-  images: p.images,
-  category: p.category?.name || 'Uncategorized',
-  categoryId: p.categoryId,
-  brand: '',
-  shopId: p.shopId || '',
-  shopName: p.shop?.name || 'Unknown Shop',
-  stock: p.stock,
-  compatibleVehicles: (p.compatibleVehicles || []).map((v) =>
-    typeof v === 'string' ? v : `${v.year} ${v.make} ${v.model}`
-  ),
-  rating: 0,
-  reviewCount: 0,
-  sku: p.sku || '',
-  specifications: p.specifications,
-  isActive: p.isActive,
-});
+interface CartItem {
+  id: string;
+  product: {
+    id: string;
+    _id?: string;
+    name: string;
+    price: number;
+    weight?: number;
+    image: string;
+    shopId?: string;
+    brand?: string;
+    sku?: string;
+    description?: string;
+    category?: string;
+    shopName?: string;
+    stock?: number;
+    compatibleVehicles?: any[];
+    rating?: number;
+    reviewCount?: number;
+  };
+  quantity: number;
+}
 
-interface AppState {
-  // Vehicle
-  userVehicle: Vehicle | null;
-  setUserVehicle: (vehicle: Vehicle | null) => void;
-  vehicleRefreshKey: number;
-  triggerVehicleRefresh: () => void;
-  
-  // Cart
+interface StoreState {
   cart: CartItem[];
-  addToCart: (product: Product) => void;
-  removeFromCart: (productId: string) => void;
-  updateQuantity: (productId: string, quantity: number) => void;
-  clearCart: () => void;
+  userVehicle: Vehicle | null;
+  vehicleRefreshKey: number;
+  addToCart: (item: CartItem) => Promise<void>;
+  removeFromCart: (id: string) => Promise<void>;
+  updateQuantity: (id: string, quantity: number) => Promise<void>;
+  clearCart: () => Promise<void>;
+  /** Clears local cart/vehicle without calling the API (e.g. on sign-out). */
+  resetLocalCart: () => void;
   getCartTotal: () => number;
   getCartCount: () => number;
+  setUserVehicle: (vehicle: Vehicle | null) => void;
+  triggerVehicleRefresh: () => void;
   syncCartFromApi: () => Promise<void>;
 }
 
-export const useStore = create<AppState>()(
+/**
+ * Maps an API cart item (with populated product) to the local CartItem shape.
+ */
+const mapApiCartItemToLocal = (apiItem: ApiCartItem): CartItem | null => {
+  const p = apiItem.product;
+  // If the product was not populated (just an ID string), skip it
+  if (!p || typeof p === 'string') return null;
+
+  const product = p as ApiProduct & { _id?: string | { toString(): string } };
+  const rawId = product.id || product._id;
+  const productId = rawId ? String(typeof rawId === 'object' ? rawId.toString() : rawId) : '';
+  if (!productId) return null;
+
+  const categoryName =
+    product.category && typeof product.category === 'object'
+      ? product.category.name || ''
+      : '';
+
+  return {
+    id: productId,
+    product: {
+      id: productId,
+      _id: productId,
+      name: product.name,
+      price: product.price,
+      weight: product.weight,
+      image: product.imageUrl || product.image_url || product.image || '/placeholder.svg',
+      shopId: product.shopId,
+      brand: '',
+      sku: product.sku || '',
+      description: product.description || '',
+      category: categoryName,
+      shopName: product.shop?.name || '',
+      stock: product.stock,
+      compatibleVehicles: product.compatibleVariants || [],
+      rating: product.rating || 0,
+      reviewCount: product.reviewCount || 0,
+    },
+    quantity: apiItem.quantity,
+  };
+};
+
+export const useStore = create<StoreState>()(
   persist(
     (set, get) => ({
-      // Vehicle
-      userVehicle: null,
-      setUserVehicle: (vehicle) => set({ userVehicle: vehicle }),
-      vehicleRefreshKey: 0,
-      triggerVehicleRefresh: () => set((state) => ({ vehicleRefreshKey: state.vehicleRefreshKey + 1 })),
-      
-      // Cart
       cart: [],
-      addToCart: (product) =>
+      userVehicle: null,
+      vehicleRefreshKey: 0,
+
+      addToCart: async (item) => {
+        // Optimistic update
+        const prevCart = get().cart;
         set((state) => {
-          const existing = state.cart.find((item) => item.product.id === product.id);
+          const existing = state.cart.find((i) => i.id === item.id);
           if (existing) {
-            // Sync to backend (fire and forget)
-            api.addToCart({ productId: product.id, quantity: 1 }).catch(() => {});
             return {
-              cart: state.cart.map((item) =>
-                item.product.id === product.id
-                  ? { ...item, quantity: item.quantity + 1 }
-                  : item
+              cart: state.cart.map((i) =>
+                i.id === item.id ? { ...i, quantity: i.quantity + item.quantity } : i
               ),
             };
           }
-          api.addToCart({ productId: product.id, quantity: 1 }).catch(() => {});
-          return { cart: [...state.cart, { product, quantity: 1 }] };
-        }),
-      removeFromCart: (productId) =>
-        set((state) => {
-          api.removeFromCart(productId).catch(() => {});
-          return {
-            cart: state.cart.filter((item) => item.product.id !== productId),
-          };
-        }),
-      updateQuantity: (productId, quantity) =>
-        set((state) => {
-          api.updateCartItem(productId, quantity).catch(() => {
-            // Keep local state aligned with server when optimistic update fails.
-            get().syncCartFromApi().catch(() => {});
-          });
-          return {
-            cart: state.cart.map((item) =>
-              item.product.id === productId ? { ...item, quantity } : item
-            ),
-          };
-        }),
-      clearCart: () => {
-        api.clearCart().catch(() => {});
-        set({ cart: [] });
+          return { cart: [...state.cart, item] };
+        });
+
+        try {
+          const productId = item.product._id || item.product.id || item.id;
+          const response = await api.addToCart({ productId, quantity: item.quantity });
+          // Sync with server response
+          const serverCart = (response.cart?.items || [])
+            .map(mapApiCartItemToLocal)
+            .filter((i): i is CartItem => i !== null);
+          set({ cart: serverCart });
+        } catch (error) {
+          // Rollback on failure
+          set({ cart: prevCart });
+          throw error;
+        }
       },
-      getCartTotal: () =>
-        get().cart.reduce((total, item) => total + item.product.price * item.quantity, 0),
-      getCartCount: () =>
-        get().cart.reduce((count, item) => count + item.quantity, 0),
+
+      removeFromCart: async (id) => {
+        const prevCart = get().cart;
+        // Optimistic update
+        set((state) => ({
+          cart: state.cart.filter((item) => item.id !== id),
+        }));
+
+        try {
+          const response = await api.removeFromCart(id);
+          const serverCart = (response.cart?.items || [])
+            .map(mapApiCartItemToLocal)
+            .filter((i): i is CartItem => i !== null);
+          set({ cart: serverCart });
+        } catch (error) {
+          set({ cart: prevCart });
+          throw error;
+        }
+      },
+
+      updateQuantity: async (id, quantity) => {
+        const prevCart = get().cart;
+        // Optimistic update
+        set((state) => ({
+          cart: state.cart.map((item) =>
+            item.id === id ? { ...item, quantity } : item
+          ),
+        }));
+
+        try {
+          const response = await api.updateCartItem(id, quantity);
+          const serverCart = (response.cart?.items || [])
+            .map(mapApiCartItemToLocal)
+            .filter((i): i is CartItem => i !== null);
+          set({ cart: serverCart });
+        } catch (error) {
+          set({ cart: prevCart });
+          throw error;
+        }
+      },
+
+      clearCart: async () => {
+        const prevCart = get().cart;
+        set({ cart: [] });
+
+        try {
+          await api.clearCart();
+        } catch (error) {
+          set({ cart: prevCart });
+          throw error;
+        }
+      },
+
+      resetLocalCart: () => {
+        set({ cart: [], userVehicle: null });
+      },
+
+      getCartTotal: () => {
+        const { cart } = get();
+        return cart.reduce((total, item) => total + ((item.product?.price || 0) * item.quantity), 0);
+      },
+
+      getCartCount: () => {
+        const { cart } = get();
+        return cart.reduce((count, item) => count + item.quantity, 0);
+      },
+
+      setUserVehicle: (vehicle) => set({ userVehicle: vehicle }),
+
+      triggerVehicleRefresh: () =>
+        set((state) => ({ vehicleRefreshKey: state.vehicleRefreshKey + 1 })),
+
       syncCartFromApi: async () => {
         try {
-          const { cart: apiCart } = await api.getCart();
-          const items: CartItem[] = (apiCart.items || [])
-            .filter((item: ApiCartItem) => typeof item.product === 'object' && item.product !== null)
-            .map((item: ApiCartItem) => ({
-              product: mapApiProductToProduct(item.product as ApiProduct),
-              quantity: item.quantity,
-            }));
-          set({ cart: items });
+          // Avoid race where persist rehydration overwrites a freshly synced cart.
+          await new Promise<void>((resolve) => {
+            if (useStore.persist.hasHydrated()) {
+              resolve();
+              return;
+            }
+            const unsub = useStore.persist.onFinishHydration(() => {
+              unsub();
+              resolve();
+            });
+          });
+
+          const response = await api.getCart();
+          const serverCart = (response.cart?.items || [])
+            .map(mapApiCartItemToLocal)
+            .filter((i): i is CartItem => i !== null);
+          set({ cart: serverCart });
         } catch {
-          // If API call fails (e.g. not authenticated), keep existing cart
+          // If fetch fails (e.g. not authenticated), keep local cart
         }
       },
     }),
     {
-      name: 'automatrix-storage',
-      partialize: (state) => ({
-        cart: state.cart,
-        userVehicle: state.userVehicle,
-      }),
+      name: 'cart-storage',
+      partialize: (state) => ({ cart: state.cart, userVehicle: state.userVehicle }),
     }
   )
 );

@@ -12,16 +12,30 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     trim: true,
   },
+  phone: {
+    type: String,
+    trim: true,
+    default: null,
+  },
+  address: {
+    type: String,
+    trim: true,
+    default: null,
+  },
+  city: {
+    type: String,
+    trim: true,
+    default: null,
+  },
+  postalCode: {
+    type: String,
+    trim: true,
+    default: null,
+  },
   password: {
     type: String,
     required: true,
   },
-  phone: { type: String },
-  address: { type: String },
-  city: { type: String },
-  postalCode: { type: String },
-  avatarUrl: { type: String },
-
   role: {
     type: String,
     enum: ['SUPER_ADMIN', 'ADMIN', 'CUSTOMER'],
@@ -76,6 +90,66 @@ const userSchema = new mongoose.Schema({
   logoUrl: { type: String },
   commissionRate: { type: Number, default: 10 },
   rejectionReason: { type: String },
+  commissionRate: {
+    type: Number,
+    default: 10,
+    min: 0,
+    max: 100,
+  },
+  shopWideDiscountPercent: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 90,
+  },
+  // Password reset fields
+  resetToken: {
+    type: String,
+    default: null
+  },
+  resetTokenExpiry: {
+    type: Date,
+    default: null
+  },
+  wallet: {
+    balance: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    otp: {
+      code: {
+        type: String,
+        default: null,
+      },
+      expiresAt: {
+        type: Date,
+        default: null,
+      },
+      attempts: {
+        type: Number,
+        default: 0,
+      },
+      lastSentAt: {
+        type: Date,
+        default: null,
+      },
+    },
+  },
+  notificationPreferences: {
+    orderUpdates: {
+      inApp: { type: Boolean, default: true },
+      email: { type: Boolean, default: true }
+    },
+    promotions: {
+      inApp: { type: Boolean, default: true },
+      email: { type: Boolean, default: false }
+    },
+    security: {
+      inApp: { type: Boolean, default: true },
+      email: { type: Boolean, default: true }
+    }
+  },
   createdAt: {
     type: Date,
     default: Date.now,
@@ -95,12 +169,12 @@ const userSchema = new mongoose.Schema({
 
 }, { timestamps: true });
 
+
 // MIDDLEWARE: Force PENDING status for new Admins (Vendors)
 userSchema.pre('save', function(next) {
   if (this.isModified('role') && this.role === 'ADMIN' && this.isNew) {
     this.status = 'PENDING';
   }
-  this.updatedAt = new Date();
   next();
 });
 

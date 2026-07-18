@@ -5,8 +5,35 @@ function buildMockUser() {
   return {
     _id: process.env.MOCK_AUTH_USER_ID || '000000000000000000000001',
     id: process.env.MOCK_AUTH_USER_ID || '000000000000000000000001',
-    role: process.env.MOCK_AUTH_ROLE || 'customer',
+    userId: process.env.MOCK_AUTH_USER_ID || '000000000000000000000001',
+    role: process.env.MOCK_AUTH_ROLE || 'CUSTOMER',
     email: process.env.MOCK_AUTH_EMAIL || 'mock-customer@example.com',
+  };
+}
+
+async function hydrateUserFromDatabase(authUser) {
+  const userId = authUser?.id || authUser?._id || authUser?.userId;
+  if (!userId || !/^[a-fA-F0-9]{24}$/.test(String(userId))) {
+    return authUser;
+  }
+
+  const dbUser = await User.findById(userId).select('role email status shopName commissionRate name createdAt');
+  if (!dbUser) {
+    return null;
+  }
+
+  return {
+    ...authUser,
+    id: dbUser.id,
+    _id: dbUser._id,
+    userId: dbUser.id,
+    role: dbUser.role,
+    email: dbUser.email,
+    status: dbUser.status,
+    shopName: dbUser.shopName,
+    commissionRate: dbUser.commissionRate,
+    name: dbUser.name,
+    createdAt: dbUser.createdAt,
   };
 }
 
@@ -21,12 +48,12 @@ function decodeAuthToken(req) {
 }
 
 // 1. Verify Token (Is user logged in?)
-exports.verifyToken = (req, res, next) => {
+exports.verifyToken = async (req, res, next) => {
   const allowMock = process.env.USE_AUTH_MOCK === 'true';
 
   try {
-    const user = decodeAuthToken(req);
-    if (!user) {
+    const tokenUser = decodeAuthToken(req);
+    if (!tokenUser) {
       if (!allowMock) {
         return res.status(401).json({ message: 'No token, authorization denied' });
       }
@@ -34,7 +61,12 @@ exports.verifyToken = (req, res, next) => {
       return next();
     }
 
-    req.user = user;
+    const hydratedUser = await hydrateUserFromDatabase(tokenUser);
+    if (!hydratedUser) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+
+    req.user = hydratedUser;
     next();
   } catch (err) {
     if (allowMock) {
@@ -46,13 +78,13 @@ exports.verifyToken = (req, res, next) => {
 };
 
 // Optional authentication for mixed guest/auth endpoints (e.g., COD guest checkout)
-exports.attachUserIfPresent = (req, _res, next) => {
+exports.attachUserIfPresent = async (req, _res, next) => {
   const allowMock = process.env.USE_AUTH_MOCK === 'true';
 
   try {
-    const user = decodeAuthToken(req);
-    if (user) {
-      req.user = user;
+    const tokenUser = decodeAuthToken(req);
+    if (tokenUser) {
+      req.user = await hydrateUserFromDatabase(tokenUser);
     } else if (allowMock) {
       req.user = buildMockUser();
     }
@@ -65,7 +97,7 @@ exports.attachUserIfPresent = (req, _res, next) => {
   next();
 };
 
-// 2. Verify Super Admin
+// 2. Verify Super Admin (Is user the Boss?)
 exports.isSuperAdmin = async (req, res, next) => {
   try {
     if (!req.user) {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // API Client for Express Backend
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
@@ -28,6 +29,9 @@ export interface ApiUser {
   email: string;
   fullName: string;
   role: 'customer' | 'admin' | 'superadmin';
+  status?: string;
+  shopName?: string;
+  commissionRate?: number;
   avatarUrl?: string;
   phone?: string;
   address?: string;
@@ -54,6 +58,24 @@ export interface Profile {
   updated_at: string;
 }
 
+export interface ApiAddress {
+  _id: string;
+  user: string;
+  fullName: string;
+  phone: string;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  isDefaultShipping: boolean;
+  isDefaultBilling: boolean;
+  addressType: 'home' | 'office' | 'other';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface ApiShop {
   id: string;
   name: string;
@@ -66,6 +88,7 @@ export interface ApiShop {
   address?: string;
   businessRegistration?: string;
   commissionRate?: number;
+  shopWideDiscountPercent?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -96,24 +119,33 @@ export interface ApiProduct {
   name: string;
   description?: string;
   price: number;
+  weight?: number;
   stock: number;
-  rating?: number;
-  reviewCount?: number;
   imageUrl?: string;
   image_url?: string;
   image?: string;
   images?: string[];
   sku?: string;
   categoryId?: string;
-  shopId?: string;
+  shopId: string;
   isActive: boolean;
   compatibleVehicles?: ApiCompatibleVehicle[];
   compatibleVehicleModels?: ApiCompatibleModel[];
+  status?: "Pending" | "Approved" | "Rejected";
+  featured?: boolean;
+  hasDiscount?: boolean;
+  originalPrice?: number;
+  productDiscountPercent?: number;
+  shopDiscountPercent?: number;
+  effectiveDiscountPercent?: number;
+  compatibleVariants?: string[];
   specifications?: Record<string, string>;
   createdAt: string;
   updatedAt: string;
   category?: ApiCategory;
   shop?: ApiShop;
+  rating?: number;
+  reviewCount?: number;
 }
 
 export interface ApiCategory {
@@ -127,16 +159,25 @@ export interface ApiCategory {
 
 export interface ApiOrder {
   id: string;
+  _id?: string;
+  orderNumber?: string;
   customerId: string;
   shopId: string;
   status: 'pending' | 'processing' | 'shipped' | 'delivered' | 'cancelled';
+  overallStatus?: string;
+  paymentStatus?: 'pending' | 'processing' | 'completed' | 'failed' | 'refunded' | 'partially_refunded';
+  paymentMethod?: string;
   totalAmount: number;
-  shippingAddress: string;
+  shippingAddress: string | { fullName: string; phone: string; addressLine1: string; city?: string; state?: string; postalCode?: string };
   shippingCity?: string;
   shippingPostalCode?: string;
   trackingNumber?: string;
+  estimatedDeliveryDate?: string;
   notes?: string;
   stripePaymentId?: string;
+  stripeSessionId?: string;
+  transactionId?: string;
+  guestInvoiceToken?: string;
   couponId?: string;
   discountAmount?: number;
   commissionAmount?: number;
@@ -149,6 +190,7 @@ export interface ApiOrder {
 
 export interface ApiOrderItem {
   id: string;
+  _id?: string;
   orderId: string;
   productId: string;
   productName: string;
@@ -156,6 +198,8 @@ export interface ApiOrderItem {
   unitPrice: number;
   totalPrice: number;
   product?: ApiProduct;
+  status?: string;
+  vendor?: string;
 }
 
 export interface ApiCartItem {
@@ -179,7 +223,7 @@ export interface ApiCoupon {
   id: string;
   code: string;
   description?: string;
-  discountType: 'percentage' | 'fixed';
+  discountType: 'percentage' | 'fixed' | 'fixed_amount';
   discountValue: number;
   minimumOrderAmount?: number;
   maxUses?: number;
@@ -208,6 +252,15 @@ export interface ApiVehicleModel {
 
 
 
+export interface ApiVehicleVariant {
+  id: string;
+  name: string;
+  modelId: string;
+  yearStart: number;
+  yearEnd?: number;
+  created_at?: string;
+}
+
 export interface ApiResolvedVehicle {
   id: string;
   year: number;
@@ -223,6 +276,8 @@ export interface ApiUserVehicle {
   modelId: string;
   year: number;
   registrationNumber?: string;
+  nickname?: string;
+  vin?: string;
   isActive: boolean;
   brand?: ApiVehicleBrand;
   model?: ApiVehicleModel;
@@ -278,18 +333,222 @@ export interface StockCheckResult {
   sufficient: boolean;
 }
 
+export interface ApiNotification {
+  _id: string;
+  user: string;
+  type: string;
+  title: string;
+  message: string;
+  data?: {
+    orderNumber?: string;
+    trackingNumber?: string;
+    courierPartner?: string;
+    refundAmount?: number;
+    paymentMethod?: string;
+    reason?: string;
+  };
+  priority: 'low' | 'normal' | 'high';
+  channel: 'in_app' | 'email' | 'sms' | 'push';
+  isRead: boolean;
+  readAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiNotificationListResponse {
+  notifications: ApiNotification[];
+  total: number;
+  page: number;
+  limit: number;
+  pages: number;
+}
+
+export interface ApiStockSummary {
+  totalStock: number;
+  reserved: number;
+  available: number;
+  reservationCount: number;
+}
+
+export interface ApiOrderTimelineEvent {
+  event: string;
+  title: string;
+  description?: string;
+  createdAt: string;
+}
+
+export interface ShippingCalculationRequest {
+  items: Array<{
+    product: {
+      price: number;
+      weight?: number;
+    };
+    quantity: number;
+  }>;
+  deliveryAddress: {
+    district: string;
+    city?: string;
+  };
+  shippingMethod?: 'standard' | 'express' | 'same_day';
+}
+
+export interface ShippingCalculationResponse {
+  baseCharge: number;
+  weightCharge: number;
+  zoneCharge: number;
+  totalCharge: number;
+  freeShipping: boolean;
+  weight: number;
+  zone: string;
+  estimatedDays: {
+    min: number;
+    max: number;
+  };
+}
+
+export interface ApiRefund {
+  _id?: string;
+  id?: string;
+  order?: string;
+  orderItem?: string;
+  payment?: string;
+  amount?: number;
+  vendor?: {
+    _id?: string;
+    name?: string;
+    email?: string;
+    shopName?: string;
+  };
+  requestNumber?: string;
+  status: string;
+  refundType?: string;
+  refundTransactionId?: string;
+  returnStatus?: 'pending' | 'picked' | 'received' | 'not_required';
+  returnReason?: {
+    category?: string;
+    description?: string;
+  };
+  product?: {
+    name?: string;
+    quantity?: number;
+    totalAmount?: number;
+  };
+  refundAmount?: {
+    totalRefund?: number;
+    currency?: string;
+  };
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ApiRefundListResponse {
+  refunds: ApiRefund[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    pages: number;
+  };
+}
+
 class ApiClient {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
 
   constructor() {
-    // Load tokens from localStorage
-    this.accessToken = localStorage.getItem('accessToken');
+    // Load tokens from localStorage (handling different keys based on auth)
+    this.accessToken = localStorage.getItem('auth_token') || localStorage.getItem('accessToken');
     this.refreshToken = localStorage.getItem('refreshToken');
   }
 
   getToken(): string | null {
-    return this.accessToken;
+    // Ensure we always return the latest token directly from storage
+    return localStorage.getItem('auth_token') || localStorage.getItem('accessToken');
+  }
+
+  private mapVendorStatusToShopStatus(status?: string): ApiShop['status'] {
+    const normalized = String(status || '').toUpperCase();
+    switch (normalized) {
+      case 'ACTIVE':
+        return 'approved';
+      case 'REJECTED':
+        return 'rejected';
+      case 'SUSPENDED':
+        return 'suspended';
+      case 'PENDING':
+      default:
+        return 'pending';
+    }
+  }
+
+  private mapShopStatusToVendorStatus(status?: string): string | undefined {
+    switch (status) {
+      case 'approved':
+      case 'active':
+        return 'ACTIVE';
+      case 'rejected':
+        return 'REJECTED';
+      case 'suspended':
+        return 'SUSPENDED';
+      case 'pending':
+        return 'PENDING';
+      default:
+        return undefined;
+    }
+  }
+
+  private mapVendorToShop(vendor: any): ApiShop {
+    const id = vendor?.id || vendor?._id || '';
+    const createdAt = vendor?.createdAt || vendor?.created_at || new Date().toISOString();
+    return {
+      id,
+      name: vendor?.shopName || vendor?.name || 'Unnamed Shop',
+      description: vendor?.description ?? null,
+      logoUrl: vendor?.logoUrl ?? undefined,
+      ownerId: vendor?.ownerId || vendor?._id || vendor?.id || '',
+      status: this.mapVendorStatusToShopStatus(vendor?.status),
+      email: vendor?.email ?? undefined,
+      phone: vendor?.phone ?? undefined,
+      address: vendor?.address ?? undefined,
+      businessRegistration: vendor?.businessRegistration || vendor?.businessRegistrationNumber || undefined,
+      commissionRate: vendor?.commissionRate ?? 10,
+      shopWideDiscountPercent: vendor?.shopWideDiscountPercent ?? 0,
+      createdAt,
+      updatedAt: vendor?.updatedAt || vendor?.updated_at || createdAt,
+    };
+  }
+
+  private normalizeOrderItem(item: any): ApiOrderItem {
+    return {
+      ...item,
+      id: item?.id || item?._id || '',
+      _id: item?._id,
+      orderId: item?.orderId || item?.order || '',
+      productId: item?.productId || item?.product?._id || item?.product || '',
+      productName: item?.productName || item?.name || item?.product?.name || '',
+      unitPrice: item?.unitPrice ?? item?.price ?? 0,
+      totalPrice: item?.totalPrice ?? item?.finalPrice ?? ((item?.price || 0) * (item?.quantity || 0)),
+    };
+  }
+
+  private normalizeOrder(order: any): ApiOrder {
+    const items = Array.isArray(order?.items)
+      ? order.items.map((item: any) => this.normalizeOrderItem(item))
+      : undefined;
+
+    const normalizedStatus =
+      order?.status ||
+      order?.subOrder?.status ||
+      order?.overallStatus ||
+      'pending';
+
+    return {
+      ...order,
+      id: order?.id || order?._id || '',
+      _id: order?._id,
+      status: normalizedStatus,
+      items,
+    };
   }
 
   private async request<T>(
@@ -301,8 +560,9 @@ class ApiClient {
       ...(options.headers as Record<string, string>),
     };
 
-    if (this.accessToken) {
-      headers['Authorization'] = `Bearer ${this.accessToken}`;
+    const token = this.getToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
     const response = await fetch(`${API_BASE}${endpoint}`, {
@@ -311,20 +571,22 @@ class ApiClient {
     });
 
     // Handle 401 - try token refresh
-    if (response.status === 401 && this.refreshToken) {
-      const refreshed = await this.refreshAccessToken();
-      if (refreshed) {
-        headers['Authorization'] = `Bearer ${this.accessToken}`;
-        const retryResponse = await fetch(`${API_BASE}${endpoint}`, {
-          ...options,
-          headers,
-        });
-        if (!retryResponse.ok) {
-          throw new Error(await this.getErrorMessage(retryResponse));
+    if (response.status === 401) {
+      if (this.refreshToken) {
+        const refreshed = await this.refreshAccessToken();
+        if (refreshed) {
+          headers['Authorization'] = `Bearer ${this.accessToken}`;
+          const retryResponse = await fetch(`${API_BASE}${endpoint}`, {
+            ...options,
+            headers,
+          });
+          if (!retryResponse.ok) {
+            throw new Error(await this.getErrorMessage(retryResponse));
+          }
+          return retryResponse.json();
         }
-        return retryResponse.json();
       }
-      
+
       // If no refresh token or refresh failed, clear tokens and redirect
       localStorage.removeItem('auth_token');
       localStorage.removeItem('accessToken');
@@ -380,6 +642,7 @@ class ApiClient {
   setTokens(accessToken: string, refreshToken: string) {
     this.accessToken = accessToken;
     this.refreshToken = refreshToken;
+    localStorage.setItem('auth_token', accessToken);
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
   }
@@ -402,9 +665,10 @@ class ApiClient {
   // ============ AUTH ============
 
   async login(email: string, password: string): Promise<AuthResponse> {
+    const normalizedEmail = email.trim().toLowerCase();
     const response = await this.request<AuthResponse>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email: normalizedEmail, password }),
     });
     this.setTokens(response.accessToken, response.refreshToken);
     return response;
@@ -419,7 +683,12 @@ class ApiClient {
     const normalizedEmail = data.email.trim().toLowerCase();
     return this.request<StartRegisterResponse>('/auth/register/start', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({
+        name: data.fullName,
+        email: normalizedEmail,
+        password: data.password,
+        role: 'CUSTOMER',
+      }),
     });
   }
 
@@ -536,6 +805,30 @@ class ApiClient {
     });
   }
 
+  // ============ ADDRESSES ============
+
+  async getAddresses(): Promise<ApiAddress[]> {
+    return this.request<ApiAddress[]>('/addresses');
+  }
+
+  async createAddress(data: Omit<ApiAddress, '_id' | 'user' | 'createdAt' | 'updatedAt'>): Promise<{ message: string; address: ApiAddress }> {
+    return this.request<{ message: string; address: ApiAddress }>('/addresses', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAddress(id: string, data: Partial<ApiAddress>): Promise<{ message: string; address: ApiAddress }> {
+    return this.request<{ message: string; address: ApiAddress }>(`/addresses/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAddress(id: string): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/addresses/${id}`, { method: 'DELETE' });
+  }
+
   // ============ PRODUCTS ============
 
   async getProducts(params?: {
@@ -545,6 +838,7 @@ class ApiClient {
     categoryId?: string;
     shopId?: string;
     shop?: string;
+    status?: string;
     minPrice?: number;
     maxPrice?: number;
     sortBy?: string;
@@ -552,7 +846,7 @@ class ApiClient {
     isActive?: boolean;
     make?: string;
     model?: string;
-    year?: number;
+    vehicleId?: string;
   }): Promise<PaginatedResponse<ApiProduct>> {
     const searchParams = new URLSearchParams();
     if (params) {
@@ -564,23 +858,60 @@ class ApiClient {
         }
       });
     }
-    const response = await this.request<{
-      products: ApiProduct[];
-      pagination: { page: number; limit: number; total: number; totalPages: number };
-    }>(`/products?${searchParams.toString()}`);
-    
+    const response = await this.request<any>(`/products?${searchParams.toString()}`);
+
     // Transform backend response to match PaginatedResponse
+    // It might be a plain array or { products: [], pagination: {} }
+    const data = Array.isArray(response) ? response : (response.products || response.data || []);
+    const pagination = response.pagination || {};
+
     return {
-      data: response.products,
-      total: response.pagination.total,
-      page: response.pagination.page,
-      limit: response.pagination.limit,
-      totalPages: response.pagination.totalPages,
+      data: data,
+      total: pagination.total || data.length || 0,
+      page: pagination.page || 1,
+      limit: pagination.limit || data.length || 10,
+      totalPages: pagination.totalPages || 1,
+    };
+  }
+
+  async getSuperAdminProducts(params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    categoryId?: string;
+    status?: string;
+    vehicleId?: string;
+  }): Promise<PaginatedResponse<ApiProduct>> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          const paramKey = key === 'categoryId' ? 'category' : key;
+          searchParams.set(paramKey, String(value));
+        }
+      });
+    }
+
+    const response = await this.request<any>(`/products/admin/all?${searchParams.toString()}`);
+    const data = Array.isArray(response) ? response : (response.products || response.data || []);
+    const pagination = response.pagination || {};
+
+    return {
+      data,
+      total: pagination.total || data.length || 0,
+      page: pagination.page || 1,
+      limit: pagination.limit || data.length || 10,
+      totalPages: pagination.totalPages || 1,
     };
   }
 
   async getProduct(id: string): Promise<ApiProduct> {
     return this.request<ApiProduct>(`/products/${id}`);
+  }
+
+  async getFeaturedProducts(): Promise<ApiProduct[]> {
+    const response = await this.request<any>('/products/featured');
+    return Array.isArray(response) ? response : (response.products || response.data || []);
   }
 
   async createProduct(data: Omit<ApiProduct, 'id' | 'createdAt' | 'updatedAt'>): Promise<ApiProduct> {
@@ -594,6 +925,20 @@ class ApiClient {
     return this.request<ApiProduct>(`/products/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
+    });
+  }
+
+  async updateProductStatus(id: string, status: "Pending" | "Approved" | "Rejected"): Promise<ApiProduct> {
+    return this.request<ApiProduct>(`/products/${id}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  async updateProductFeatured(id: string, featured: boolean): Promise<ApiProduct> {
+    return this.request<ApiProduct>(`/products/${id}/featured`, {
+      method: 'PUT',
+      body: JSON.stringify({ featured }),
     });
   }
 
@@ -642,7 +987,6 @@ class ApiClient {
     page?: number;
     limit?: number;
     status?: string;
-    shopId?: string;
   }): Promise<PaginatedResponse<ApiOrder>> {
     const searchParams = new URLSearchParams();
     if (params) {
@@ -652,18 +996,89 @@ class ApiClient {
         }
       });
     }
+
+    // Backend route is /orders/my_orders and wraps data in { success, data: { orders, pagination } }
     const response = await this.request<{
-      orders: ApiOrder[];
-      pagination: { page: number; limit: number; total: number; totalPages: number };
-    }>(`/orders?${searchParams.toString()}`);
-    
-    // Transform backend response to match PaginatedResponse
+      success: boolean;
+      data: {
+        orders: ApiOrder[];
+        pagination: { page: number; limit: number; total: number; pages: number };
+      };
+    }>(`/orders/my_orders?${searchParams.toString()}`);
+    const payload = response.data || { orders: [], pagination: { page: 1, limit: 10, total: 0, pages: 1 } };
+
     return {
-      data: response.orders,
-      total: response.pagination.total,
-      page: response.pagination.page,
-      limit: response.pagination.limit,
-      totalPages: response.pagination.totalPages,
+      data: (payload.orders || []).map((order) => this.normalizeOrder(order)),
+      total: payload.pagination.total,
+      page: payload.pagination.page,
+      limit: payload.pagination.limit,
+      totalPages: payload.pagination.pages,
+    };
+  }
+
+  async getPlatformOrders(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<PaginatedResponse<ApiOrder>> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const response = await this.request<{
+      success: boolean;
+      data: {
+        orders: ApiOrder[];
+        pagination: { page: number; limit: number; total: number; pages: number };
+      };
+    }>(`/orders/admin/all?${searchParams.toString()}`);
+
+    const payload = response.data || { orders: [], pagination: { page: 1, limit: 20, total: 0, pages: 1 } };
+
+    return {
+      data: (payload.orders || []).map((order) => this.normalizeOrder(order)),
+      total: payload.pagination.total,
+      page: payload.pagination.page,
+      limit: payload.pagination.limit,
+      totalPages: payload.pagination.pages,
+    };
+  }
+
+  async getVendorOrders(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<PaginatedResponse<ApiOrder>> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const response = await this.request<{
+      success: boolean;
+      data: {
+        orders: ApiOrder[];
+        pagination: { page: number; limit: number; total: number; pages: number };
+      };
+    }>(`/orders/seller/orders?${searchParams.toString()}`);
+
+    const payload = response.data || { orders: [], pagination: { page: 1, limit: 10, total: 0, pages: 1 } };
+
+    return {
+      data: (payload.orders || []).map((order) => this.normalizeOrder(order)),
+      total: payload.pagination.total,
+      page: payload.pagination.page,
+      limit: payload.pagination.limit,
+      totalPages: payload.pagination.pages,
     };
   }
 
@@ -680,13 +1095,89 @@ class ApiClient {
         }
       });
     }
-    return this.request<PaginatedResponse<ApiOrder>>(
-      `/orders/my?${searchParams.toString()}`
-    );
+    const response = await this.request<any>(`/orders/my_orders?${searchParams.toString()}`);
+
+    // Legacy format support: { data, total, page, limit, totalPages }
+    if (Array.isArray(response?.data)) {
+      return {
+        data: response.data.map((order: any) => this.normalizeOrder(order)),
+        total: response.total || 0,
+        page: response.page || 1,
+        limit: response.limit || params?.limit || 10,
+        totalPages: response.totalPages || 1,
+      };
+    }
+
+    // Current backend format: { success, data: { orders, pagination } }
+    const orders = (response?.data?.orders || []).map((order: any) => this.normalizeOrder(order));
+    const pagination = response?.data?.pagination || {};
+
+    return {
+      data: orders,
+      total: pagination.total || orders.length,
+      page: pagination.page || 1,
+      limit: pagination.limit || params?.limit || 10,
+      totalPages: pagination.pages || 1,
+    };
   }
 
   async getOrder(id: string): Promise<ApiOrder> {
-    return this.request<ApiOrder>(`/orders/${id}`);
+    const response = await this.request<any>(`/orders/${id}`);
+    const rawOrder = response?.order || response;
+    return this.normalizeOrder(rawOrder);
+  }
+
+  async getOrderWithTimeline(id: string): Promise<{
+    order: ApiOrder;
+    timeline: ApiOrderTimelineEvent[];
+  }> {
+    const response = await this.request<any>(`/orders/${id}`);
+    return {
+      order: this.normalizeOrder(response?.order || response),
+      timeline: response?.timeline || [],
+    };
+  }
+
+  async downloadInvoice(orderId: string, options?: { guestToken?: string }): Promise<boolean> {
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    const guestToken = options?.guestToken;
+
+    if (guestToken) {
+      headers['x-guest-invoice-token'] = guestToken;
+    } else if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const endpoint = guestToken
+      ? `${API_BASE}/orders/${orderId}/invoice/guest`
+      : `${API_BASE}/orders/${orderId}/invoice`;
+
+    const resp = await fetch(endpoint, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!resp.ok) {
+      let message = 'Failed to download invoice';
+      try {
+        const data = await resp.json();
+        message = data.message || message;
+      }
+      catch {}
+      throw new Error(message);
+    }
+
+    const blob = await resp.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `invoice-${orderId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+    return true;
   }
 
   async createOrder(data: {
@@ -694,20 +1185,39 @@ class ApiClient {
     shippingAddress: string;
     shippingCity: string;
     shippingPostalCode: string;
-    shopId: string;
+    fullName?: string;
+    phone?: string;
+    shippingCountry?: string;
+    paymentMethod?: 'cod' | 'card' | 'wallet' | 'bank_transfer' | 'installment';
+    shopId?: string;
     couponCode?: string;
     notes?: string;
   }): Promise<ApiOrder> {
-    return this.request<ApiOrder>('/orders', {
+    const response = await this.request<ApiOrder | { order?: ApiOrder; data?: ApiOrder; guestInvoiceToken?: string }>('/orders', {
       method: 'POST',
       body: JSON.stringify(data),
     });
+
+    const rawOrder = (response as any)?.order || (response as any)?.data || response;
+    const normalizedOrder = this.normalizeOrder(rawOrder);
+    const guestInvoiceToken = (response as any)?.guestInvoiceToken;
+    if (guestInvoiceToken) {
+      normalizedOrder.guestInvoiceToken = guestInvoiceToken;
+    }
+    return normalizedOrder;
   }
 
   async updateOrderStatus(id: string, status: string, trackingNumber?: string): Promise<ApiOrder> {
     return this.request<ApiOrder>(`/orders/${id}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status, trackingNumber }),
+    });
+  }
+
+  async updateOrderItemStatus(orderId: string, itemId: string, status: string, note?: string): Promise<ApiOrder> {
+    return this.request<ApiOrder>(`/orders/${orderId}/item-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ id: itemId, status, note }),
     });
   }
 
@@ -735,6 +1245,22 @@ class ApiClient {
     }>;
   }> {
     return this.request(`/orders/track/${trackingNumber}`);
+  }
+
+  async recoverGuestOrders(email: string): Promise<{ message: string; orders: ApiOrder[] }> {
+    return this.request<{ message: string; orders: ApiOrder[] }>('/orders/recover-guest', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  // ============ SHIPPING ============
+
+  async calculateShipping(data: ShippingCalculationRequest): Promise<ShippingCalculationResponse> {
+    return this.request<ShippingCalculationResponse>('/shipping/calculate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   // ============ CART ============
@@ -771,7 +1297,7 @@ class ApiClient {
 
   async reorder(orderId: string): Promise<{ message: string }> {
     const order = await this.getOrder(orderId);
-    
+
     // Add all order items to cart
     for (const item of order.items || []) {
       await this.addToCart({
@@ -779,7 +1305,7 @@ class ApiClient {
         quantity: item.quantity,
       });
     }
-    
+
     return { message: 'Items added to cart successfully' };
   }
 
@@ -798,18 +1324,15 @@ class ApiClient {
         }
       });
     }
-    const response = await this.request<{
-      shops: ApiShop[];
-      pagination: { page: number; limit: number; total: number; totalPages: number };
-    }>(`/shops?${searchParams.toString()}`);
-    
-    // Transform backend response to match PaginatedResponse
+    // Call consolidated /api/shops endpoint instead of /api/vendors
+    const response = await this.request<{ shops: any[]; pagination: any }>(`/shops?${searchParams.toString()}`);
+    const shops = Array.isArray(response?.shops) ? response.shops : [];
     return {
-      data: response.shops,
-      total: response.pagination.total,
-      page: response.pagination.page,
-      limit: response.pagination.limit,
-      totalPages: response.pagination.totalPages,
+      data: shops,
+      total: response?.pagination?.total || shops.length,
+      page: response?.pagination?.page || 1,
+      limit: response?.pagination?.limit || shops.length,
+      totalPages: response?.pagination?.totalPages || 1,
     };
   }
 
@@ -826,17 +1349,15 @@ class ApiClient {
         }
       });
     }
-    const response = await this.request<{
-      shops: ApiShop[];
-      pagination: { page: number; limit: number; total: number; totalPages: number };
-    }>(`/shops/all?${searchParams.toString()}`);
-    
+    // Call consolidated /api/shops endpoint instead of /api/vendors
+    const response = await this.request<{ shops: any[]; pagination: any }>(`/shops?${searchParams.toString()}`);
+    const shops = Array.isArray(response?.shops) ? response.shops : [];
     return {
-      data: response.shops,
-      total: response.pagination.total,
-      page: response.pagination.page,
-      limit: response.pagination.limit,
-      totalPages: response.pagination.totalPages,
+      data: shops,
+      total: response?.pagination?.total || shops.length,
+      page: response?.pagination?.page || 1,
+      limit: response?.pagination?.limit || shops.length,
+      totalPages: response?.pagination?.totalPages || 1,
     };
   }
 
@@ -862,18 +1383,52 @@ class ApiClient {
     });
   }
 
-  async updateShopStatus(id: string, status: string, reason?: string): Promise<ApiShop> {
-    return this.request<ApiShop>(`/shops/${id}/status`, {
+  async updateShopStatus(id: string, status: string): Promise<ApiShop> {
+    // Call consolidated /api/shops/:id/status endpoint (returns ApiShop directly)
+    const response = await this.request<ApiShop>(`/shops/${id}/status`, {
       method: 'PUT',
-      body: JSON.stringify({ status, ...(reason != null && reason !== '' ? { reason } : {}) }),
+      body: JSON.stringify({ status }),
     });
+    if (response) return response;
+    return {
+      id,
+      name: 'Unnamed Shop',
+      description: undefined,
+      ownerId: id,
+      status: 'pending' as const,
+      email: undefined,
+      phone: undefined,
+      address: undefined,
+      businessRegistration: undefined,
+      logoUrl: undefined,
+      commissionRate: 10,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   async updateShopCommission(id: string, commissionRate: number): Promise<ApiShop> {
-    return this.request<ApiShop>(`/shops/${id}/commission`, {
+    // Call consolidated /api/shops/:id/commission endpoint (returns ApiShop directly)
+    const response = await this.request<ApiShop>(`/shops/${id}/commission`, {
       method: 'PUT',
       body: JSON.stringify({ commissionRate }),
     });
+    if (response) return response;
+    return {
+      id,
+      name: 'Unnamed Shop',
+      description: undefined,
+      ownerId: id,
+      status: 'approved' as const,
+      email: undefined,
+      phone: undefined,
+      address: undefined,
+      businessRegistration: undefined,
+      logoUrl: undefined,
+      commissionRate,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   async getShopOwnerProfile(userId: string): Promise<Profile | null> {
@@ -882,6 +1437,93 @@ class ApiClient {
     } catch {
       return null;
     }
+  }
+
+  // ============ VENDOR ANALYTICS ============
+
+  async getVendorAnalytics(vendorId: string, params?: {
+    range?: '7d' | '30d' | '90d' | '1y';
+  }): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (params?.range) searchParams.set('range', params.range);
+    return this.request<any>(`/vendors/${vendorId}/analytics?${searchParams.toString()}`);
+  }
+
+  async getVendorTimeSeriesAnalytics(vendorId: string, params?: {
+    range?: '7d' | '30d' | '90d' | '1y';
+    granularity?: 'daily' | 'weekly' | 'monthly';
+  }): Promise<{ timeSeries: any[] }> {
+    const searchParams = new URLSearchParams();
+    if (params?.range) searchParams.set('range', params.range);
+    if (params?.granularity) searchParams.set('granularity', params.granularity);
+    return this.request<{ timeSeries: any[] }>(`/vendors/${vendorId}/analytics/timeseries?${searchParams.toString()}`);
+  }
+
+  async getVendorEarningsBreakdown(vendorId: string, params?: {
+    range?: '7d' | '30d' | '90d' | '1y';
+  }): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (params?.range) searchParams.set('range', params.range);
+    return this.request<any>(`/vendors/${vendorId}/analytics/earnings?${searchParams.toString()}`);
+  }
+
+  // ============ SYSTEM ANALYTICS ============
+
+  async getSuperAdminAnalytics(params?: {
+    range?: '7d' | '30d' | '90d' | '1y';
+  }): Promise<{
+    totalSales: number;
+    totalCommission: number;
+    totalOrders: number;
+    totalVendors: number;
+    ordersByStatus: Record<string, number>;
+    salesByMonth: Array<{ month: string; sales: number; commission: number; orders: number }>;
+    topCategories: Array<{ categoryId: string; earnings: number }>;
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params?.range) searchParams.set('range', params.range);
+    const response = await this.request<{ success: boolean; data: any }>(`/admin-analytics/superadmin?${searchParams.toString()}`);
+    return response.data;
+  }
+
+  // ============ SETTLEMENT / PAYOUT ============
+
+  async getSettlementSummary(vendorId: string): Promise<any> {
+    return this.request<any>(`/vendors/${vendorId}/settlement/summary`);
+  }
+
+  async getVendorSettlements(vendorId: string, params?: {
+    status?: string;
+    page?: number;
+    limit?: number;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
+    return this.request<any>(`/vendors/${vendorId}/settlements?${searchParams.toString()}`);
+  }
+
+  async getVendorSettlementRangeSummary(vendorId: string, params?: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<{ totalSettlements: number; totalCommission: number; totalPayable: number; totalOrderAmount: number; totalRefunded: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
+    return this.request<{ totalSettlements: number; totalCommission: number; totalPayable: number; totalOrderAmount: number; totalRefunded: number }>(`/vendors/${vendorId}/settlements/summary?${searchParams.toString()}`);
+  }
+
+  async getSettlementDetails(settlementId: string): Promise<any> {
+    return this.request<any>(`/settlements/${settlementId}`);
+  }
+
+  async getTotalPayable(vendorId: string): Promise<{ totalPayable: number; totalSettlements: number }> {
+    return this.request<{ totalPayable: number; totalSettlements: number }>(`/vendors/${vendorId}/payable`);
   }
 
   // ============ COUPONS ============
@@ -903,7 +1545,7 @@ class ApiClient {
       coupons: ApiCoupon[];
       pagination: { page: number; limit: number; total: number; totalPages: number };
     }>(`/coupons?${searchParams.toString()}`);
-    
+
     // Transform backend response to match PaginatedResponse
     return {
       data: response.coupons,
@@ -928,6 +1570,11 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ code, orderTotal, shopId }),
     });
+  }
+
+  async getPublicActiveCoupons(limit = 20): Promise<ApiCoupon[]> {
+    const response = await this.request<{ coupons: ApiCoupon[] }>(`/coupons/public/active?limit=${limit}`);
+    return response?.coupons || [];
   }
 
   async createCoupon(data: Omit<ApiCoupon, 'id' | 'usedCount'>): Promise<ApiCoupon> {
@@ -1034,6 +1681,30 @@ class ApiClient {
     });
   }
 
+  async createVehicleVariant(data: {
+    name: string;
+    modelId: string;
+    yearStart: number;
+    yearEnd?: number;
+  }): Promise<ApiVehicleVariant> {
+    return this.request<ApiVehicleVariant>('/vehicles/variants', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateVehicleVariant(id: string, data: {
+    name?: string;
+    modelId?: string;
+    yearStart?: number;
+    yearEnd?: number;
+  }): Promise<ApiVehicleVariant> {
+    return this.request<ApiVehicleVariant>(`/vehicles/variants/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
   // ============ USER VEHICLES ============
 
   async getUserVehicles(): Promise<ApiUserVehicle[]> {
@@ -1045,6 +1716,8 @@ class ApiClient {
     modelId: string;
     year: number;
     registrationNumber?: string;
+    nickname?: string;
+    vin?: string;
   }): Promise<ApiUserVehicle> {
     return this.request<ApiUserVehicle>('/vehicles/user', {
       method: 'POST',
@@ -1081,13 +1754,6 @@ class ApiClient {
     return this.createReview(productId, data);
   }
 
-  async updateReview(productId: string, reviewId: string, data: { rating: number; comment?: string }): Promise<ApiReview> {
-    return this.request<ApiReview>(`/products/${productId}/reviews/${reviewId}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
-  }
-
   async deleteReview(productId: string, reviewId: string): Promise<void> {
     await this.request(`/products/${productId}/reviews/${reviewId}`, { method: 'DELETE' });
   }
@@ -1095,20 +1761,478 @@ class ApiClient {
   // ============ CHECKOUT ============
 
   async createCheckoutSession(data: {
-    items: { productId: string; quantity: number }[];
-    shippingAddress: string;
-    shippingCity: string;
-    shippingPostalCode: string;
-    shopId: string;
-    couponCode?: string;
+    orderId: string;
   }): Promise<{ sessionId: string; url: string }> {
-    return this.request<{ sessionId: string; url: string }>(
-      '/checkout/create-session',
+    const response = await this.request<{ sessionId: string; url: string; data?: { sessionId: string; url: string } }>(
+      '/payments/create-checkout-session',
       {
         method: 'POST',
         body: JSON.stringify(data),
       }
     );
+
+    return response.data || response;
+  }
+
+  async createPaymentIntent(data: { orderId: string; email?: string }): Promise<{
+    paymentIntentId: string;
+    clientSecret: string;
+    amount: number;
+    currency: string;
+    requiresAction?: boolean;
+    nextAction?: any;
+  }> {
+    const response = await this.request<{
+      paymentIntentId: string;
+      clientSecret: string;
+      amount: number;
+      currency: string;
+      requiresAction?: boolean;
+      nextAction?: any;
+      data?: {
+        paymentIntentId: string;
+        clientSecret: string;
+        amount: number;
+        currency: string;
+        requiresAction?: boolean;
+        nextAction?: any;
+      };
+    }>('/payments/create-payment-intent', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    return response.data || response;
+  }
+
+  async confirmPaymentIntent(data: { orderId: string; paymentIntentId: string; otp?: string }): Promise<{
+    orderId: string;
+    paymentIntentId: string;
+    paymentStatus: string;
+    requiresAction?: boolean;
+    retryCount?: number;
+    retryEligible?: boolean;
+    nextAction?: any;
+  }> {
+    const response = await this.request<{
+      orderId: string;
+      paymentIntentId: string;
+      paymentStatus: string;
+      requiresAction?: boolean;
+      retryCount?: number;
+      retryEligible?: boolean;
+      nextAction?: any;
+      data?: {
+        orderId: string;
+        paymentIntentId: string;
+        paymentStatus: string;
+        requiresAction?: boolean;
+        retryCount?: number;
+        retryEligible?: boolean;
+        nextAction?: any;
+      };
+    }>('/payments/confirm-payment-intent', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    return response.data || response;
+  }
+
+  async retryPaymentIntent(data: { orderId: string; paymentIntentId: string; otp?: string }): Promise<{
+    orderId: string;
+    paymentIntentId: string;
+    paymentStatus: string;
+    requiresAction?: boolean;
+    retryCount?: number;
+    retryEligible?: boolean;
+    nextAction?: any;
+  }> {
+    const response = await this.request<any>('/payments/retry-payment-intent', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    return response.data || response;
+  }
+
+  async getWalletBalance(): Promise<{ balance: number }> {
+    const response = await this.request<any>('/payments/wallet/balance');
+    return response.data || response;
+  }
+
+  async payWithWallet(data: { orderId: string; otp?: string }): Promise<{
+    orderId?: string;
+    paymentId?: string;
+    paymentStatus?: string;
+    balance?: number;
+    requiresOtp?: boolean;
+    expiresAt?: string;
+  }> {
+    const response = await this.request<any>('/payments/wallet/pay', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    return response.data || response;
+  }
+
+  // ============ PAYMENTS ============
+
+  async getPaymentDetails(paymentId: string): Promise<any> {
+    return this.request(`/payments/${paymentId}`);
+  }
+
+  async getUserPayments(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+    return this.request(`/payments/my-payments?${searchParams.toString()}`);
+  }
+
+  async confirmPayment(sessionId: string, orderId: string): Promise<any> {
+    return this.request('/payments/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ sessionId, orderId }),
+    });
+  }
+
+  // ============ REFUNDS ============
+
+  async getCustomerRefunds(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<ApiRefundListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const response = await this.request<{ success: boolean; data: ApiRefundListResponse }>(
+      `/refunds/my-refunds?${searchParams.toString()}`
+    );
+
+    return response?.data || { refunds: [], pagination: { page: 1, limit: 10, total: 0, pages: 1 } };
+  }
+
+  async getAdminRefunds(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+    returnStatus?: 'pending' | 'picked' | 'received' | 'not_required';
+  }): Promise<ApiRefundListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const response = await this.request<{ success: boolean; data: ApiRefundListResponse }>(
+      `/refunds/admin/list?${searchParams.toString()}`
+    );
+
+    return response?.data || { refunds: [], pagination: { page: 1, limit: 20, total: 0, pages: 1 } };
+  }
+
+  async createRefundRequestByOrder(data: {
+    orderId: string;
+    orderItemId?: string;
+    paymentId?: string;
+    amount: number;
+    reason: string;
+    refundType?: 'return' | 'refund' | 'exchange';
+    details?: string;
+    returnStatus?: 'pending' | 'picked' | 'received' | 'not_required';
+  }): Promise<ApiRefund> {
+    const response = await this.request<{ success: boolean; data: ApiRefund }>('/refunds', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    return response?.data;
+  }
+
+  async getVendorRefunds(params?: {
+    page?: number;
+    limit?: number;
+    status?: string;
+  }): Promise<ApiRefundListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const response = await this.request<{ success: boolean; data: ApiRefundListResponse }>(
+      `/refunds/vendor/refunds?${searchParams.toString()}`
+    );
+
+    return response?.data || { refunds: [], pagination: { page: 1, limit: 10, total: 0, pages: 1 } };
+  }
+
+  async createRefundRequest(orderItemId: string, data: {
+    refundType?: 'return' | 'refund' | 'exchange';
+    returnReason: {
+      category: string;
+      description: string;
+      detailedExplanation?: string;
+    };
+    productCondition?: {
+      packaging?: 'unopened' | 'opened' | 'damaged' | 'missing';
+      productState?: 'new_unused' | 'used' | 'damaged' | 'defective';
+      accessories?: 'all_included' | 'missing_some' | 'missing_all' | 'not_applicable';
+    };
+    quantity?: number;
+    refundMethod?: 'original_payment' | 'bank_transfer';
+    pickupAddress?: {
+      fullName?: string;
+      phone?: string;
+      addressLine1?: string;
+      addressLine2?: string;
+      district?: string;
+      postalCode?: string;
+    };
+  }): Promise<ApiRefund> {
+    const response = await this.request<{ success: boolean; data: ApiRefund }>(
+      `/refunds/create/${orderItemId}`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+
+    return response?.data;
+  }
+
+  async approveOrRejectRefund(refundId: string, data: {
+    status: 'Approved' | 'Rejected' | 'approved' | 'rejected';
+    comments?: string;
+    reason?: string;
+  }): Promise<ApiRefund> {
+    const response = await this.request<{ success: boolean; data: ApiRefund }>(`/refunds/${refundId}/approve`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+
+    return response?.data;
+  }
+
+  async updateRefundReturnStatus(refundId: string, returnStatus: 'pending' | 'picked' | 'received' | 'not_required'): Promise<ApiRefund> {
+    const response = await this.request<{ success: boolean; data: ApiRefund }>(`/refunds/${refundId}/return-status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ returnStatus }),
+    });
+
+    return response?.data;
+  }
+
+  // ============ POLICIES ============
+
+  async getPolicy(policyType: string): Promise<any> {
+    return this.request(`/policies/${policyType}`);
+  }
+
+  async getAllPublicPolicies(): Promise<any[]> {
+    const response = await this.request<{ success: boolean; data: any[] }>('/policies');
+    return response?.data || [];
+  }
+
+  async getPolicyWithFAQ(policyType: string): Promise<any> {
+    return this.request(`/policies/${policyType}/faq`);
+  }
+
+  async searchPolicies(query: string, isActive?: boolean): Promise<any[]> {
+    const searchParams = new URLSearchParams();
+    searchParams.set('q', query);
+    if (isActive !== undefined) searchParams.set('isActive', String(isActive));
+    const response = await this.request<{ success: boolean; data: any[] }>(`/policies/search?${searchParams.toString()}`);
+    return response?.data || [];
+  }
+
+  async getReturnPolicyForCategory(category?: string): Promise<any> {
+    const searchParams = new URLSearchParams();
+    if (category) searchParams.set('category', category);
+    const response = await this.request<{ success: boolean; data: any }>(`/policies/utils/return-policy?${searchParams.toString()}`);
+    return response?.data;
+  }
+
+  async getShippingPolicy(): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>('/policies/utils/shipping-policy');
+    return response?.data;
+  }
+
+  // Admin policy methods
+  async createPolicy(data: {
+    policyType: 'return' | 'shipping' | 'cancellation' | 'terms_conditions' | 'privacy' | 'warranty';
+    title: string;
+    description: string;
+    content: string;
+    sections?: Array<{ title: string; content: string; order: number }>;
+    metadata?: any;
+    displaySettings?: any;
+  }): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>('/policies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return response?.data;
+  }
+
+  async updatePolicy(policyType: string, data: any): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>(`/policies/${policyType}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return response?.data;
+  }
+
+  async getAllPolicies(filters?: { policyType?: string; isActive?: boolean }): Promise<any[]> {
+    const searchParams = new URLSearchParams();
+    if (filters?.policyType) searchParams.set('policyType', filters.policyType);
+    if (filters?.isActive !== undefined) searchParams.set('isActive', String(filters.isActive));
+    const response = await this.request<{ success: boolean; data: any[] }>(`/policies/admin/all?${searchParams.toString()}`);
+    return response?.data || [];
+  }
+
+  async getPolicyVersionHistory(policyType: string): Promise<any[]> {
+    const response = await this.request<{ success: boolean; data: any[] }>(`/policies/admin/versions/${policyType}`);
+    return response?.data || [];
+  }
+
+  async addPolicyFAQ(policyType: string, data: { question: string; answer: string; category?: string }): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>(`/policies/${policyType}/faq`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return response?.data;
+  }
+
+  async deactivatePolicy(policyType: string): Promise<any> {
+    const response = await this.request<{ success: boolean; data: any }>(`/policies/${policyType}/deactivate`, {
+      method: 'PATCH',
+    });
+    return response?.data;
+  }
+
+  // ============ NOTIFICATIONS ============
+
+  async getNotifications(params?: {
+    page?: number;
+    limit?: number;
+    type?: string;
+    isRead?: boolean;
+    priority?: 'low' | 'normal' | 'high';
+  }): Promise<ApiNotificationListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const queryString = searchParams.toString();
+    const response = await this.request<{ success: boolean; data: ApiNotificationListResponse }>(
+      `/notifications${queryString ? `?${queryString}` : ''}`
+    );
+
+    return response?.data || {
+      notifications: [],
+      total: 0,
+      page: params?.page || 1,
+      limit: params?.limit || 10,
+      pages: 0,
+    };
+  }
+
+  async getUnreadNotificationCount(): Promise<number> {
+    const response = await this.request<{ success: boolean; unreadCount: number }>(
+      '/notifications/unread/count'
+    );
+    return response?.unreadCount ?? 0;
+  }
+
+  async markNotificationAsRead(notificationId: string): Promise<ApiNotification> {
+    const response = await this.request<{ success: boolean; data: ApiNotification }>(
+      `/notifications/${notificationId}/read`,
+      { method: 'PUT' }
+    );
+    return response.data;
+  }
+
+  async markAllNotificationsAsRead(): Promise<{ modifiedCount?: number; matchedCount?: number }> {
+    const response = await this.request<{ success: boolean; data: { modifiedCount?: number; matchedCount?: number } }>(
+      '/notifications/read/all',
+      { method: 'PUT' }
+    );
+    return response?.data || {};
+  }
+
+  async deleteNotification(notificationId: string): Promise<void> {
+    await this.request(`/notifications/${notificationId}`, { method: 'DELETE' });
+  }
+
+  async deleteAllNotifications(): Promise<{ deletedCount?: number }> {
+    const response = await this.request<{ success: boolean; data: { deletedCount?: number } }>(
+      '/notifications',
+      { method: 'DELETE' }
+    );
+    return response?.data || {};
+  }
+
+  // ============ INVENTORY ============
+
+  async checkStockAvailability(productId: string, quantity: number): Promise<boolean> {
+    const response = await this.request<{ success: boolean; available?: boolean }>(
+      '/inventory/check-availability',
+      {
+        method: 'POST',
+        body: JSON.stringify({ productId, quantity }),
+      }
+    );
+
+    return !!response?.available;
+  }
+
+  async getAvailableStock(productId: string): Promise<number> {
+    const response = await this.request<{ success: boolean; data?: { available?: number } }>(
+      `/inventory/available/${productId}`
+    );
+    return response?.data?.available ?? 0;
+  }
+
+  async getStockSummary(productId: string): Promise<ApiStockSummary> {
+    const response = await this.request<{ success: boolean; data: ApiStockSummary }>(
+      `/inventory/summary/${productId}`
+    );
+
+    return response?.data || {
+      totalStock: 0,
+      reserved: 0,
+      available: 0,
+      reservationCount: 0,
+    };
   }
 
   // ============ FILE UPLOAD ============

@@ -187,13 +187,14 @@
   }
 
   .neon-button:hover {
+    @apply text-black;
     box-shadow: var(--shadow-glow-intense);
     transform: translateY(-2px);
   }
 
   .neon-button::before {
     content: '';
-    @apply absolute inset-0 opacity-0 transition-opacity duration-300;
+    @apply absolute inset-0 opacity-0 transition-opacity duration-300 -z-10;
     background: linear-gradient(135deg, hsl(190 100% 70%), hsl(210 100% 70%));
     z-index: -1;
   }

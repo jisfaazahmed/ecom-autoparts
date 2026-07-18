@@ -1,8 +1,9 @@
 const Stripe = require('stripe');
 
-if (!process.env.STRIPE_SECRET_KEY) {
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+
+if (!stripeSecretKey) {
     throw new Error('STRIPE_SECRET_KEY environment variable is not set');
 }
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-module.exports = stripe;
+module.exports = new Stripe(stripeSecretKey);

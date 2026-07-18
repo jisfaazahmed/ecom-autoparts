@@ -21,6 +21,7 @@ interface ShopFormData {
   address: string;
   business_registration: string;
   logo_url: string;
+  shop_wide_discount_percent: string;
 }
 
 const AdminSettings: React.FC = () => {
@@ -37,6 +38,7 @@ const AdminSettings: React.FC = () => {
     address: '',
     business_registration: '',
     logo_url: '',
+    shop_wide_discount_percent: '0',
   });
 
   useEffect(() => {
@@ -49,6 +51,7 @@ const AdminSettings: React.FC = () => {
         address: shop.address || '',
         business_registration: shop.business_registration || '',
         logo_url: shop.logo_url || '',
+        shop_wide_discount_percent: String((shop as any).shopWideDiscountPercent ?? 0),
       });
       setLoading(false);
     }
@@ -72,10 +75,11 @@ const AdminSettings: React.FC = () => {
         address: formData.address || undefined,
         businessRegistration: formData.business_registration || undefined,
         logoUrl: formData.logo_url || undefined,
+        shopWideDiscountPercent: Math.max(0, Math.min(90, Number(formData.shop_wide_discount_percent || 0))),
       });
       toast({ title: 'Saved', description: 'Shop settings updated successfully' });
     } catch (error) {
-      toast({ title: 'Error', description: error.message || 'Failed to save settings', variant: 'destructive' });
+      toast({ title: 'Error', description: (error as Error).message || 'Failed to save settings', variant: 'destructive' });
     }
     setSaving(false);
   };
@@ -142,6 +146,28 @@ const AdminSettings: React.FC = () => {
               {shop?.status === 'pending' && (
                 <p className="text-sm text-warning mt-4 p-3 bg-warning/10 rounded-lg border border-warning/20">Your shop is pending approval. You can add products, but they won't be visible to customers until your shop is approved.</p>
               )}
+            </CardContent>
+          </Card>
+
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Percent className="h-5 w-5" />Deals & Discounts</CardTitle>
+              <CardDescription>Configure a shop-wide discount that applies to all your approved active products.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="max-w-sm">
+                <Label htmlFor="shop_wide_discount_percent">Shop-wide Discount (%)</Label>
+                <Input
+                  id="shop_wide_discount_percent"
+                  type="number"
+                  min={0}
+                  max={90}
+                  value={formData.shop_wide_discount_percent}
+                  onChange={(e) => setFormData({ ...formData, shop_wide_discount_percent: e.target.value })}
+                  className="mt-1"
+                />
+                <p className="text-xs text-muted-foreground mt-2">Range: 0 to 90. The higher of product discount and shop-wide discount is used.</p>
+              </div>
             </CardContent>
           </Card>
 

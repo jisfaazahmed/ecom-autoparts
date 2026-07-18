@@ -14,54 +14,62 @@ interface ProductCardProps {
   product: Product;
   isCompatible?: boolean;
   variant?: 'grid' | 'list';
+  showCompatibilityBadge?: boolean;
 }
 
 const ProductCard: React.FC<ProductCardProps> = ({
   product,
   isCompatible,
   variant = 'grid',
+  showCompatibilityBadge = true,
 }) => {
   const { addToCart } = useStore();
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  const handleAddToCart = (e: React.MouseEvent) => {
+  const handleAddToCart = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
     if (!user) {
-      toast.error('Please login to add items to cart');
+      toast.error('Please sign in to add items to cart');
       navigate('/auth/customer');
       return;
     }
 
-    addToCart(product);
-    toast.success(`${product.name} added to cart`);
+    try {
+      await addToCart({ id: product.id, product, quantity: 1 });
+      toast.success(`${product.name} added to cart`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to add to cart';
+      toast.error(message);
+    }
   };
 
   const stockBadge =
     product.stock > 10 ? (
-      <Badge variant="outline" className="border-success/50 text-success shrink-0">
+      <Badge variant="outline" className="bg-success/15 border-success/50 text-success shrink-0">
         In Stock
       </Badge>
     ) : product.stock > 0 ? (
-      <Badge variant="outline" className="border-warning/50 text-warning shrink-0">
+      <Badge variant="outline" className="bg-warning/15 border-warning/50 text-warning shrink-0">
         Low Stock
       </Badge>
     ) : (
-      <Badge variant="outline" className="border-destructive/50 text-destructive shrink-0">
+      <Badge variant="outline" className="bg-destructive/15 border-destructive/50 text-destructive shrink-0">
         Out of Stock
       </Badge>
     );
 
-  const compatibilityBadge =
-    isCompatible === false ? (
+  const compatibilityBadge = !showCompatibilityBadge
+    ? null
+    : isCompatible === false ? (
       <Badge variant="destructive" className="flex items-center gap-1 shrink-0">
         <AlertCircle className="h-3 w-3" />
         Not Compatible
       </Badge>
     ) : isCompatible === true ? (
-      <Badge className="bg-success/20 text-success border-success/30 flex items-center gap-1 shrink-0">
+      <Badge variant="outline" className="bg-success/20 text-success border-success/30 flex items-center gap-1 shrink-0">
         <Check className="h-3 w-3" />
         Compatible
       </Badge>
@@ -157,14 +165,24 @@ const ProductCard: React.FC<ProductCardProps> = ({
           <div className="absolute top-3 left-3 z-10">{compatibilityBadge}</div>
         )}
 
+        {/* Discount Badge */}
+        {!!(product.effectiveDiscountPercent && product.effectiveDiscountPercent > 0) && (
+          <div className="absolute bottom-3 left-3 z-10">
+            <Badge className="bg-destructive/90 text-white border-destructive/80">
+              -{Math.round(product.effectiveDiscountPercent)}%
+            </Badge>
+          </div>
+        )}
+
         <div className="absolute top-3 right-3 z-10">{stockBadge}</div>
 
+        {/* Image */}
         <div className="relative aspect-square bg-secondary/50 overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent" />
           <img
             src={product.image}
             alt={product.name}
-            className="w-full h-full transition-transform duration-500 group-hover:scale-110"
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
         </div>
@@ -186,9 +204,16 @@ const ProductCard: React.FC<ProductCardProps> = ({
           </p>
 
           <div className="flex items-center justify-between pt-2 border-t border-border/50">
-            <span className="font-display text-lg font-bold text-primary">
-              {formatLKR(product.price)}
-            </span>
+            <div>
+              <span className="font-display text-lg font-bold text-primary">
+                {formatLKR(product.price)}
+              </span>
+              {!!(product.originalPrice && product.originalPrice > product.price) && (
+                <p className="text-xs text-muted-foreground line-through">
+                  {formatLKR(product.originalPrice)}
+                </p>
+              )}
+            </div>
             <Button
               size="sm"
               onClick={handleAddToCart}

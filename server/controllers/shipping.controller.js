@@ -3,9 +3,10 @@ const shippingService = require('../services/shipping.service');
 
 module.exports.createShipping = async (req, res) => {
     try {
+        const userId = req.user?._id || req.user?.id;
         const shipping = await shippingService.createShipping(
             req.params.orderId,
-            req.user._id
+            userId
         );
 
         res.status(200).json({
@@ -33,14 +34,14 @@ module.exports.calculateShipping = async (req, res) => {
     }
 };
 
-module.exports.schdulePickup = async (res, req) => {
+module.exports.schedulePickup = async (req, res) => {
 
     try {
         const shipping = await shippingService.schedulePickup(
             req.params.shippingId,
             req.body
         );
-        res.status.json(shipping);
+        res.status(200).json(shipping);
     } catch (error) {
         res.status(500).json({
             success: false,
@@ -52,8 +53,8 @@ module.exports.schdulePickup = async (res, req) => {
 module.exports.updateStatus = async (req, res) => {
     try {
         const status = await shippingService.updateStatus(
-            req.body,
-            req.params.shippingId
+            req.params.shippingId,
+            req.body
         );
         res.status(200).json(status);
     } catch (error) {
@@ -64,7 +65,7 @@ module.exports.updateStatus = async (req, res) => {
     }
 }
 
-module.exports.recordDelivery = async (res, req) => {
+module.exports.recordDeliveryAttempt = async (req, res) => {
     try {
         const shipping = await shippingService.recordDeliveryAttempt(
             req.params.shippingId,
@@ -82,7 +83,7 @@ module.exports.recordDelivery = async (res, req) => {
     }
 }
 
-module.exports.confirmDelivery = async (res, req) => {
+module.exports.confirmDelivery = async (req, res) => {
     try {
         const shipping = await shippingService.confirmDelivery(
             req.params.shippingId,
@@ -98,13 +99,26 @@ module.exports.confirmDelivery = async (res, req) => {
     }
 }
 
-module.exports.trackShipment = async (res, req) => {
+module.exports.trackShipment = async (req, res) => {
     try {
-        const tracking = await shippingService.trackShipment(
-            req.params.trackingNumber
-        );
+        const { trackingNumber } = req.params;
+        
+        if (!trackingNumber || trackingNumber.trim() === '') {
+            return res.status(400).json({
+                success: false,
+                message: 'Tracking number is required'
+            });
+        }
+        
+        const tracking = await shippingService.trackShipment(trackingNumber);
         res.status(200).json(tracking);
     } catch (error) {
+        if (error.message && error.message.includes('not found')) {
+            return res.status(404).json({
+                success: false,
+                message: error.message
+            });
+        }
         res.status(500).json({
             success: false,
             message: error.message
@@ -112,11 +126,12 @@ module.exports.trackShipment = async (res, req) => {
     }
 }
 
-exports.getVendorShipments = async (req, res) => {
+module.exports.getVendorShipments = async (req, res) => {
     try {
         const { status, page = 1, limit = 10 } = req.query;
 
-        const query = { vendor: req.user._id };
+        const userId = req.user?._id || req.user?.id;
+        const query = { vendor: userId };
         if (status) query.status = status;
 
         const shipments = await shipping.find(query)
@@ -151,15 +166,16 @@ exports.getVendorShipments = async (req, res) => {
 exports.getCustomerShipments = async (req, res) => {
     try {
         const { page = 1, limit = 10 } = req.query;
+        const userId = req.user?._id || req.user?.id;
 
-        const shipments = await shipping.find({ customer: req.user._id })
+        const shipments = await shipping.find({ customer: userId })
             .populate('order', 'orderNumber totalAmount')
             .populate('vendor', 'name storeName')
             .sort({ createdAt: -1 })
             .limit(limit * 1)
             .skip((page - 1) * limit);
 
-        const total = await shipping.countDocuments({ customer: req.user._id });
+        const total = await shipping.countDocuments({ customer: userId });
 
         res.json({
             success: true,
@@ -226,12 +242,10 @@ exports.submitRating = async (req, res) => {
 
 exports.getShippingDetails = async (req, res) => {
     try {
-        const shipping = await shipping.findById(req.params.shippingId)
-            .populate('order')
-            .populate('vendor', 'name storeName phone')
-            .populate('customer', 'name phone email');
+        const shipment = await shipping.findById(req.params.shippingId)
+            .populate('order');
 
-        if (!shipping) {
+        if (!shipment) {
             return res.status(404).json({
                 success: false,
                 message: 'Shipping not found'
@@ -240,10 +254,27 @@ exports.getShippingDetails = async (req, res) => {
 
         res.json({
             success: true,
-            data: shipping
+            data: shipment
         });
     } catch (error) {
         res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
+exports.generateShippingLabel = async (req, res) => {
+    try {
+        const label = await shippingService.generateShippingLabel(req.params.shippingId);
+
+        res.json({
+            success: true,
+            message: 'Shipping label generated successfully',
+            data: label
+        });
+    } catch (error) {
+        res.status(400).json({
             success: false,
             message: error.message
         });

@@ -8,6 +8,7 @@ import {
   Building2,
   BarChart3,
   Database,
+  CheckCircle,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -21,6 +22,8 @@ import { cn } from '@/lib/utils';
 import {
   Sheet,
   SheetContent,
+  SheetHeader,
+  SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
 
@@ -32,13 +35,14 @@ const adminLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/products', label: 'Products', icon: Package },
   { href: '/admin/orders', label: 'Orders', icon: ShoppingBag },
+  { href: '/admin/refunds', label: 'Refunds', icon: CheckCircle },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 
 const superAdminLinks = [
-  { href: '/superadmin', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/superadmin/vendors', label: 'Vendors', icon: Building2 },
+  { href: '/superadmin', label: 'Dashboard', icon: LayoutDashboard },    { href: '/superadmin/products', label: 'Products', icon: Package },  { href: '/superadmin/vendors', label: 'Vendors', icon: Building2 },
   { href: '/superadmin/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/superadmin/refunds', label: 'Refunds', icon: CheckCircle },
   { href: '/superadmin/vehicles', label: 'Vehicles', icon: Car },
   { href: '/superadmin/categories', label: 'Categories', icon: Database },
   { href: '/superadmin/coupons', label: 'Coupons', icon: Package },
@@ -49,7 +53,9 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { role, signOut } = useAuth();
+  const { user, logout } = useAuth();
+  const role = user?.role;
+  const signOut = logout;
 
   const links = role === 'superadmin' ? superAdminLinks : adminLinks;
 
@@ -156,6 +162,9 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="p-0 w-64 bg-card">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Admin Navigation</SheetTitle>
+              </SheetHeader>
               <SidebarContent isMobile />
             </SheetContent>
           </Sheet>

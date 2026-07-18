@@ -31,6 +31,7 @@ const emptyProduct = {
   category_id: '',
   compatible_models: [] as string[],
   image_url: '',
+  product_discount_percent: '0',
 };
 
 const AdminProducts: React.FC = () => {
@@ -94,6 +95,7 @@ const AdminProducts: React.FC = () => {
       category_id: product.categoryId || '',
       compatible_models: modelIds,
       image_url: product.imageUrl || '',
+      product_discount_percent: String(product.productDiscountPercent ?? 0),
     });
     setProductDialogOpen(true);
   };
@@ -114,14 +116,15 @@ const AdminProducts: React.FC = () => {
       categoryId: formData.category_id || null,
       compatibleModels: formData.compatible_models.length > 0 ? formData.compatible_models : undefined,
       imageUrl: formData.image_url || null,
+      productDiscountPercent: Math.max(0, Math.min(90, Number(formData.product_discount_percent || 0))),
     };
 
     try {
       if (editingProduct) {
-        await api.updateProduct(editingProduct.id, productData);
+        await api.updateProduct(editingProduct.id, productData as any);
         toast({ title: 'Success', description: 'Product updated successfully' });
       } else {
-        await api.createProduct({ ...productData, shopId: shop.id, isActive: true });
+        await api.createProduct({ ...productData, shopId: shop.id, isActive: true } as any);
         toast({ title: 'Success', description: 'Product added successfully' });
       }
       setProductDialogOpen(false);
@@ -234,16 +237,17 @@ const AdminProducts: React.FC = () => {
                 <TableHead className="hidden lg:table-cell">Category</TableHead>
                 <TableHead className="text-right">Price</TableHead>
                 <TableHead className="text-center hidden sm:table-cell">Stock</TableHead>
-                <TableHead className="text-center">Status</TableHead>
+                <TableHead className="text-center">Approval</TableHead>
+                <TableHead className="text-center">Active</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {paginatedProducts.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="text-center py-12 text-muted-foreground">{searchQuery || statusFilter !== 'all' ? 'No products match your filters' : 'No products yet. Add your first product!'}</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-12 text-muted-foreground">{searchQuery || statusFilter !== 'all' ? 'No products match your filters' : 'No products yet. Add your first product!'}</TableCell></TableRow>
               ) : (
-                paginatedProducts.map((product) => (
-                  <TableRow key={product.id} className="border-border/50">
+                paginatedProducts.map((product, i) => (
+                  <TableRow key={product.id || `temp-${i}`} className="border-border/50">
                     <TableCell>
                       <div className="w-12 h-12 rounded-lg bg-secondary/50 overflow-hidden flex-shrink-0">
                         {product.imageUrl ? <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><ImagePlus className="h-5 w-5 text-muted-foreground" /></div>}
@@ -255,6 +259,15 @@ const AdminProducts: React.FC = () => {
                     <TableCell className="text-right font-medium">{formatLKR(product.price)}</TableCell>
                     <TableCell className="text-center hidden sm:table-cell">
                       <Badge variant="outline" className={product.stock === 0 ? 'text-destructive border-destructive/30' : product.stock < 10 ? 'text-warning border-warning/30' : 'text-success border-success/30'}>{product.stock}</Badge>
+                    </TableCell>
+                    <TableCell className="text-center">
+                        <Badge variant="outline" className={
+                          product.status === 'Approved' ? 'bg-success/10 text-success border-success/20' : 
+                          product.status === 'Rejected' ? 'bg-destructive/10 text-destructive border-destructive/20' : 
+                          'bg-warning/10 text-warning border-warning/20'
+                        }>
+                          {product.status || 'Pending'}
+                        </Badge>
                     </TableCell>
                     <TableCell className="text-center"><Switch checked={product.isActive} onCheckedChange={() => toggleProductActive(product)} /></TableCell>
                     <TableCell className="text-right">
@@ -289,6 +302,18 @@ const AdminProducts: React.FC = () => {
             <div className="grid grid-cols-2 gap-4">
               <div><Label>Price (LKR) *</Label><Input type="number" value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} placeholder="0.00" /></div>
               <div><Label>Stock Quantity</Label><Input type="number" value={formData.stock} onChange={(e) => setFormData({ ...formData, stock: e.target.value })} placeholder="0" /></div>
+            </div>
+            <div>
+              <Label>Product Discount (%)</Label>
+              <Input
+                type="number"
+                min={0}
+                max={90}
+                value={formData.product_discount_percent}
+                onChange={(e) => setFormData({ ...formData, product_discount_percent: e.target.value })}
+                placeholder="0"
+              />
+              <p className="text-xs text-muted-foreground mt-1">Applied on top of your base product price. Shop-wide discount can also apply from Settings.</p>
             </div>
             <div><Label>SKU</Label><Input value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} placeholder="e.g., BP-001" /></div>
             <div>

@@ -32,11 +32,11 @@ const Index: React.FC = () => {
       
       try {
         const [productsRes, categoriesRes] = await Promise.all([
-          api.getProducts({ isActive: true, limit: 4 }),
+          api.getFeaturedProducts(),
           api.getCategories()
         ]);
 
-        setProducts(productsRes.data || []);
+        setProducts((productsRes || []).slice(0, 8));
         setCategories(categoriesRes || []);
       } catch (error) {
         console.error('Failed to fetch data:', error);
@@ -56,7 +56,7 @@ const Index: React.FC = () => {
   ];
 
   const mapToProductCard = (p: ApiProduct) => ({
-    id: p.id,
+    id: p.id || p._id || '',
     name: p.name,
     description: p.description || '',
     price: p.price,
@@ -66,9 +66,7 @@ const Index: React.FC = () => {
     shopId: p.shopId,
     shopName: p.shop?.name || 'Unknown Shop',
     stock: p.stock,
-    compatibleVehicles: (p.compatibleVehicles || []).map((v) =>
-      typeof v === 'string' ? v : `${v.year} ${v.make} ${v.model}`
-    ),
+    compatibleVehicles: (p.compatibleVariants || []),
     rating: p.rating ?? 0,
     reviewCount: p.reviewCount ?? 0,
     sku: p.sku || '',
@@ -312,13 +310,13 @@ const Index: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               {products.map((product, i) => (
                 <motion.div
-                  key={product.id}
+                  key={product.id || product._id || i}
                   initial={{ opacity: 0, y: 20 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.1 }}
                   viewport={{ once: true }}
                 >
-                  <ProductCard product={mapToProductCard(product)} />
+                  <ProductCard product={mapToProductCard(product)} showCompatibilityBadge={false} />
                 </motion.div>
               ))}
             </div>
@@ -355,7 +353,7 @@ const Index: React.FC = () => {
                 Join our marketplace and reach thousands of automotive enthusiasts. 
                 Start selling your parts today with our easy vendor onboarding.
               </p>
-              <Link to="/seller/auth">
+              <Link to="/auth/seller">
                 <Button size="lg" className="neon-button px-8">
                   Apply Now
                   <ArrowRight className="ml-2 h-5 w-5" />
@@ -421,7 +419,8 @@ const Index: React.FC = () => {
               <h4 className="font-display font-semibold mb-4">Sellers</h4>
               <ul className="space-y-3">
                 <li><Link to="/auth/seller" className="text-sm text-muted-foreground hover:text-primary transition-colors">Become a Seller</Link></li>
-                <li><Link to="/auth/admin" className="text-sm text-muted-foreground hover:text-primary transition-colors">Seller Login</Link></li>
+                <li><Link to="/auth/seller" className="text-sm text-muted-foreground hover:text-primary transition-colors">Seller Portal</Link></li>
+                <li><Link to="/auth/admin" className="text-sm text-muted-foreground hover:text-primary transition-colors">Admin Portal</Link></li>
                 <li><a href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">Seller Guidelines</a></li>
                 <li><a href="#" className="text-sm text-muted-foreground hover:text-primary transition-colors">Commission Rates</a></li>
               </ul>
