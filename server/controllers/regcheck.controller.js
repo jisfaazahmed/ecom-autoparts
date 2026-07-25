@@ -2,7 +2,6 @@ const xml2js = require('xml2js');
 const VehicleBrand = require('../models/vehicleBrand.model');
 const VehicleModel = require('../models/vehicleModel.model');
 const UserVehicle = require('../models/userVehicle.model');
-const { xml } = require('../xml.js')
 
 const REGCHECK_BASE = 'https://www.regcheck.org.uk/api/reg.asmx/CheckSriLanka';
 const REGCHECK_USERNAME = process.env.REGCHECK_USERNAME || '';
