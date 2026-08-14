@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -17,6 +18,19 @@ import { useAuth } from '@/hooks/useAuth';
 import { api, ApiCoupon, ApiAddress } from '@/lib/api';
 import { toast } from 'sonner';
 import { formatLKR } from '@/lib/currency';
+import {
+  normalizeWhitespace,
+  normalizeSriLankanPhone,
+  normalizeSriLankanPostalCode,
+  isValidSriLankanPhone,
+  isValidSriLankanPostalCode,
+  isSriLankanCountry,
+  isValidSriLankanPersonName,
+  isValidSriLankanCity,
+  isValidSriLankanAddress,
+  SRI_LANKA_DISTRICTS,
+  resolveSriLankanDistrict,
+} from '@/lib/sriLankaValidation';
 
 interface StockIssue {
   productId: string;
@@ -39,7 +53,7 @@ const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY as stri
 const stripePromise = stripePublishableKey ? loadStripe(stripePublishableKey) : null;
 
 const ZONE_1_CITIES = ['colombo'];
-const ZONE_2_CITIES = ['gampaha', 'kaluthara'];
+const ZONE_2_CITIES = ['gampaha', 'kalutara', 'kaluthara'];
 const ZONE_3_CITIES = [
   'kurunegala',
   'kandy',
@@ -65,11 +79,28 @@ const ZONE_3_CITIES = [
   'mullaitivu',
 ];
 
+function generateIdempotencyKey(prefix: string) {
+  const randomPart = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${prefix}-${randomPart}`;
+}
+
 function getZoneMultiplier(city: string) {
-  const normalizedCity = String(city || '').trim().toLowerCase();
-  if (ZONE_1_CITIES.includes(normalizedCity)) return 100;
-  if (ZONE_2_CITIES.includes(normalizedCity)) return 200;
-  if (ZONE_3_CITIES.includes(normalizedCity)) return 300;
+  const normalizedCity = String(city || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[.,]/g, '');
+  const zoneKey = normalizedCity.startsWith('colombo')
+    ? 'colombo'
+    : normalizedCity.startsWith('gampaha')
+      ? 'gampaha'
+      : normalizedCity.startsWith('kalutara') || normalizedCity.startsWith('kaluthara')
+        ? 'kalutara'
+        : normalizedCity;
+  if (ZONE_1_CITIES.includes(zoneKey)) return 100;
+  if (ZONE_2_CITIES.includes(zoneKey)) return 200;
+  if (ZONE_3_CITIES.includes(zoneKey)) return 300;
   return 0;
 }
 
@@ -321,14 +352,21 @@ export default function Checkout() {
       api.getAddresses().then(addresses => {
         setSavedAddresses(addresses);
         if (addresses.length > 0) {
-           setSelectedAddressId(addresses[0]._id);
-           const addr = addresses[0];
+           const sriLankaAddress = addresses.find((address) => isSriLankanCountry(address.country));
+           if (!sriLankaAddress) {
+             setSelectedAddressId('new');
+             toast.info('Saved addresses must be in Sri Lanka. Please enter a new delivery address.');
+             return;
+           }
+
+           setSelectedAddressId(sriLankaAddress._id);
+           const addr = sriLankaAddress;
            setForm((prev) => ({
              ...prev,
              fullName: addr.fullName,
              phone: addr.phone,
              address: addr.addressLine1,
-             city: addr.city,
+             city: resolveSriLankanDistrict(addr.city) || '',
              postalCode: addr.postalCode,
            }));
         }
@@ -360,12 +398,17 @@ export default function Checkout() {
     } else {
         const addr = savedAddresses.find(a => a._id === addrId);
         if (addr) {
+        if (!isSriLankanCountry(addr.country)) {
+          toast.error('Only Sri Lankan saved addresses can be used for delivery');
+          setSelectedAddressId('new');
+          return;
+        }
             setForm((prev) => ({
                  ...prev,
                  fullName: addr.fullName,
                  phone: addr.phone,
                  address: addr.addressLine1,
-                 city: addr.city,
+                city: resolveSriLankanDistrict(addr.city) || '',
                  postalCode: addr.postalCode,
             }));
         }
@@ -378,6 +421,9 @@ export default function Checkout() {
   const validCart = cart.filter(item => item && item.product);
 
   const skipEmptyCartRedirect = useRef(false);
+  const orderPlacementKeyRef = useRef<string | null>(null);
+  const paymentConfirmationKeyRef = useRef<string | null>(null);
+  const paymentMethodRef = useRef<'stripe' | 'wallet' | 'cod'>(paymentMethod);
 
   // Get unique shop IDs from cart
   const shopIds = [...new Set(validCart.map((item) => item.product.shopId))].filter(Boolean);
@@ -459,6 +505,11 @@ export default function Checkout() {
     setConfirmInlineCard(() => fn);
   }, []);
 
+  const updatePaymentMethod = useCallback((method: 'stripe' | 'wallet' | 'cod') => {
+    paymentMethodRef.current = method;
+    setPaymentMethod(method);
+  }, []);
+
   const handleInputChange = (field: keyof ShippingForm, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
@@ -474,10 +525,58 @@ export default function Checkout() {
 
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(form.email)) {
+    if (!emailRegex.test(form.email.trim().toLowerCase())) {
       toast.error('Please enter a valid email address');
       return false;
     }
+
+    const normalizedFullName = normalizeWhitespace(form.fullName);
+    if (!isValidSriLankanPersonName(normalizedFullName)) {
+      toast.error('Full name can only include letters, spaces, periods, apostrophes, and hyphens');
+      return false;
+    }
+
+    if (!isValidSriLankanPhone(form.phone)) {
+      toast.error('Please enter a valid Sri Lankan phone number (e.g. 0771234567 or +94771234567)');
+      return false;
+    }
+
+    if (!isValidSriLankanPostalCode(form.postalCode)) {
+      toast.error('Please enter a valid Sri Lankan postal code (5 digits)');
+      return false;
+    }
+
+    const normalizedAddress = normalizeWhitespace(form.address);
+    if (!isValidSriLankanAddress(normalizedAddress)) {
+      toast.error('Please enter a complete Sri Lankan street address (8-160 characters)');
+      return false;
+    }
+
+    const normalizedCity = normalizeWhitespace(form.city);
+    const resolvedDistrict = resolveSriLankanDistrict(normalizedCity);
+    if (!resolvedDistrict || !isValidSriLankanCity(normalizedCity)) {
+      toast.error('Please select a valid Sri Lankan district');
+      return false;
+    }
+
+    if (selectedAddressId !== 'new') {
+      const selectedAddress = savedAddresses.find((address) => address._id === selectedAddressId);
+      if (selectedAddress?.country && !isSriLankanCountry(selectedAddress.country)) {
+        toast.error('Only Sri Lankan addresses can be used for delivery');
+        return false;
+      }
+    }
+
+    const sanitizedForm: ShippingForm = {
+      fullName: normalizedFullName,
+      email: form.email.trim().toLowerCase(),
+      phone: normalizeSriLankanPhone(form.phone),
+      address: normalizedAddress,
+      city: resolvedDistrict,
+      postalCode: normalizeSriLankanPostalCode(form.postalCode),
+    };
+
+    setForm(sanitizedForm);
 
     return true;
   };
@@ -519,6 +618,9 @@ export default function Checkout() {
         quantity: item.quantity,
       }));
 
+      const orderPlacementKey = orderPlacementKeyRef.current || generateIdempotencyKey('order');
+      orderPlacementKeyRef.current = orderPlacementKey;
+
       const order = await api.createOrder({
         items: orderItems,
         shippingAddress: form.address,
@@ -530,6 +632,7 @@ export default function Checkout() {
         paymentMethod: 'card',
         shopId,
         couponCode: appliedCoupon?.code,
+        idempotencyKey: orderPlacementKey,
       });
 
       const orderId = order.id || order._id;
@@ -548,13 +651,19 @@ export default function Checkout() {
         phone: form.phone,
       });
 
+      const paymentConfirmationKey = paymentConfirmationKeyRef.current || generateIdempotencyKey('confirm-payment');
+      paymentConfirmationKeyRef.current = paymentConfirmationKey;
+
       await api.confirmPaymentIntent({
         orderId,
         paymentIntentId,
+        idempotencyKey: paymentConfirmationKey,
       });
 
       skipEmptyCartRedirect.current = true;
       clearCart();
+      orderPlacementKeyRef.current = null;
+      paymentConfirmationKeyRef.current = null;
       toast.success('Card payment completed successfully!');
       navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId)}${order.guestInvoiceToken ? `&guest_token=${encodeURIComponent(order.guestInvoiceToken)}` : ''}`);
     } catch (error) {
@@ -583,6 +692,9 @@ export default function Checkout() {
         quantity: item.quantity,
       }));
 
+      const orderPlacementKey = orderPlacementKeyRef.current || generateIdempotencyKey('order');
+      orderPlacementKeyRef.current = orderPlacementKey;
+
       const order = await api.createOrder({
         items: orderItems,
         shippingAddress: form.address,
@@ -595,23 +707,15 @@ export default function Checkout() {
         shopId,
         couponCode: appliedCoupon?.code,
         notes: 'Cash on Delivery',
+        idempotencyKey: orderPlacementKey,
       });
 
       skipEmptyCartRedirect.current = true;
       clearCart();
+      orderPlacementKeyRef.current = null;
+      paymentConfirmationKeyRef.current = null;
       toast.success('Order placed successfully!');
-      
-      // Check if user is logged in
-      if (user) {
-        navigate('/orders', { replace: true });
-      } else {
-        // For guest users, redirect to login with success message
-        toast.info('Please log in to view your orders');
-        navigate('/auth/customer', { 
-          replace: true, 
-          state: { message: 'Order placed successfully! Please log in to view your order details.' }
-        });
-      }
+      navigate(`/payment/success?order_id=${encodeURIComponent(order.id || order._id || '')}${order.guestInvoiceToken ? `&guest_token=${encodeURIComponent(order.guestInvoiceToken)}` : ''}&method=cod`, { replace: true });
     } catch (error) {
       console.error('COD order error:', error);
       toast.error( 'Failed to place order');
@@ -650,6 +754,9 @@ export default function Checkout() {
           quantity: item.quantity,
         }));
 
+        const orderPlacementKey = orderPlacementKeyRef.current || generateIdempotencyKey('order');
+        orderPlacementKeyRef.current = orderPlacementKey;
+
         const order = await api.createOrder({
           items: orderItems,
           shippingAddress: form.address,
@@ -661,6 +768,7 @@ export default function Checkout() {
           paymentMethod: 'wallet',
           shopId,
           couponCode: appliedCoupon?.code,
+          idempotencyKey: orderPlacementKey,
         });
 
         orderId = order.id || order._id || null;
@@ -686,6 +794,8 @@ export default function Checkout() {
 
       skipEmptyCartRedirect.current = true;
       clearCart();
+      orderPlacementKeyRef.current = null;
+      paymentConfirmationKeyRef.current = null;
       toast.success('Wallet payment completed successfully!');
       navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&method=wallet`);
     } catch (error) {
@@ -697,9 +807,11 @@ export default function Checkout() {
   };
 
   const handleCheckout = () => {
-    if (paymentMethod === 'stripe') {
+    const currentPaymentMethod = paymentMethodRef.current;
+
+    if (currentPaymentMethod === 'stripe') {
       handleInlineCardCheckout();
-    } else if (paymentMethod === 'wallet') {
+    } else if (currentPaymentMethod === 'wallet') {
       handleWalletCheckout();
     } else {
       handleCODCheckout();
@@ -711,6 +823,10 @@ export default function Checkout() {
     { number: 2, title: 'Payment', icon: CreditCard },
     { number: 3, title: 'Review', icon: Check },
   ];
+
+  const selectPaymentMethod = (method: 'stripe' | 'wallet' | 'cod') => {
+    updatePaymentMethod(method);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30 py-8">
@@ -880,7 +996,7 @@ export default function Checkout() {
                           <Input
                             value={form.phone}
                             onChange={(e) => handleInputChange('phone', e.target.value)}
-                            placeholder="+1 234 567 8900"
+                            placeholder="0771234567"
                           />
                         </div>
 
@@ -889,25 +1005,33 @@ export default function Checkout() {
                           <Input
                             value={form.address}
                             onChange={(e) => handleInputChange('address', e.target.value)}
-                            placeholder="123 Main Street"
+                            placeholder="No 12, Galle Road"
                           />
                         </div>
 
                         <div className="grid sm:grid-cols-2 gap-4">
                           <div>
                             <Label>City *</Label>
-                            <Input
+                            <Select
                               value={form.city}
-                              onChange={(e) => handleInputChange('city', e.target.value)}
-                              placeholder="New York"
-                            />
+                              onValueChange={(value) => handleInputChange('city', value)}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select district" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {SRI_LANKA_DISTRICTS.map((district) => (
+                                  <SelectItem key={district} value={district}>{district}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
                           <div>
                             <Label>Postal Code *</Label>
                             <Input
                               value={form.postalCode}
                               onChange={(e) => handleInputChange('postalCode', e.target.value)}
-                              placeholder="10001"
+                              placeholder="00300"
                             />
                           </div>
                         </div>
@@ -951,7 +1075,7 @@ export default function Checkout() {
                       value={paymentMethod}
                       onValueChange={(value) => {
                         if (value === 'stripe' || value === 'wallet' || value === 'cod') {
-                          setPaymentMethod(value as 'stripe' | 'wallet' | 'cod');
+                          updatePaymentMethod(value as 'stripe' | 'wallet' | 'cod');
                         }
                       }}
                       className="space-y-4 mb-8"
@@ -960,6 +1084,7 @@ export default function Checkout() {
                       <motion.div
                         whileHover={{ scale: 1.01 }}
                         whileTap={{ scale: 0.98 }}
+                        onClick={() => selectPaymentMethod('stripe')}
                         className={`
                           relative p-6 rounded-xl border-2 cursor-pointer transition-all
                           ${paymentMethod === 'stripe'
@@ -998,6 +1123,7 @@ export default function Checkout() {
                       <motion.div
                         whileHover={{ scale: 1.01 }}
                         whileTap={{ scale: 0.98 }}
+                        onClick={() => selectPaymentMethod('wallet')}
                         className={`
                           relative p-6 rounded-xl border-2 cursor-pointer transition-all
                           ${paymentMethod === 'wallet'
@@ -1031,6 +1157,7 @@ export default function Checkout() {
                       <motion.div
                         whileHover={{ scale: 1.01 }}
                         whileTap={{ scale: 0.98 }}
+                        onClick={() => selectPaymentMethod('cod')}
                         className={`
                           relative p-6 rounded-xl border-2 cursor-pointer transition-all
                           ${paymentMethod === 'cod'

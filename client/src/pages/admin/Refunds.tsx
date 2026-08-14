@@ -45,6 +45,11 @@ const titleCase = (value?: string) =>
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
 
+type RefundWithRelations = ApiRefund & {
+  order?: string | { _id?: string; orderNumber?: string };
+  customer?: { email?: string; name?: string };
+};
+
 const AdminRefunds: React.FC = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
@@ -64,10 +69,10 @@ const AdminRefunds: React.FC = () => {
         returnStatus: returnStatusFilter === 'all' ? undefined : (returnStatusFilter as 'pending' | 'picked' | 'received' | 'not_required'),
       });
       setRefunds(data.refunds || []);
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: 'Error',
-        description: error.message || 'Failed to load refunds',
+        description: error instanceof Error ? error.message : 'Failed to load refunds',
         variant: 'destructive',
       });
     } finally {
@@ -84,9 +89,10 @@ const AdminRefunds: React.FC = () => {
     if (!q) return refunds;
 
     return refunds.filter((refund) => {
+      const mappedRefund = refund as RefundWithRelations;
       const requestNumber = String(refund.requestNumber || '').toLowerCase();
-      const orderId = String((refund as any).order?._id || refund.order || '').toLowerCase();
-      const customer = String((refund as any).customer?.email || (refund as any).customer?.name || '').toLowerCase();
+      const orderId = String(typeof mappedRefund.order === 'object' ? mappedRefund.order?._id : mappedRefund.order || '').toLowerCase();
+      const customer = String(mappedRefund.customer?.email || mappedRefund.customer?.name || '').toLowerCase();
       const product = String(refund.product?.name || '').toLowerCase();
       return requestNumber.includes(q) || orderId.includes(q) || customer.includes(q) || product.includes(q);
     });
@@ -98,8 +104,8 @@ const AdminRefunds: React.FC = () => {
       await api.approveOrRejectRefund(refundId, { status });
       toast({ title: 'Updated', description: `Refund ${status.toLowerCase()}` });
       await fetchRefunds();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to update refund', variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to update refund', variant: 'destructive' });
     } finally {
       setActionLoading(null);
     }
@@ -114,8 +120,8 @@ const AdminRefunds: React.FC = () => {
       await api.updateRefundReturnStatus(refundId, returnStatus);
       toast({ title: 'Updated', description: `Return status set to ${titleCase(returnStatus)}` });
       await fetchRefunds();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to update return status', variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to update return status', variant: 'destructive' });
     } finally {
       setActionLoading(null);
     }
@@ -198,6 +204,7 @@ const AdminRefunds: React.FC = () => {
                   </TableRow>
                 ) : (
                   filteredRefunds.map((refund, index) => {
+                    const mappedRefund = refund as RefundWithRelations;
                     const id = String(refund._id || refund.id || `refund-${index}`);
                     const status = String(refund.status || 'requested');
                     const returnStatus = String(refund.returnStatus || 'pending');
@@ -213,10 +220,10 @@ const AdminRefunds: React.FC = () => {
                           </div>
                         </TableCell>
                         <TableCell className="hidden md:table-cell font-mono text-xs">
-                          {String((refund as any).order?.orderNumber || (refund as any).order?._id || refund.order || '-').slice(0, 18)}
+                          {String(typeof mappedRefund.order === 'object' ? mappedRefund.order?.orderNumber || mappedRefund.order?._id : mappedRefund.order || '-').slice(0, 18)}
                         </TableCell>
                         <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                          {(refund as any).customer?.email || (refund as any).customer?.name || '-'}
+                          {mappedRefund.customer?.email || mappedRefund.customer?.name || '-'}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className={statusColorMap[status] || 'bg-muted/40'}>

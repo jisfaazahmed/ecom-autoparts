@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-/* eslint-disable react-refresh/only-export-components */
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
 
@@ -10,6 +9,7 @@ interface User {
   email: string;
   name: string;
   fullName?: string;
+  avatarUrl?: string;
   phone?: string;
   role: string;
   status?: string;
@@ -105,12 +105,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<any | null>(null);
 
   const mapUser = (apiUser: any): User => ({
     id: apiUser?.id || apiUser?._id || apiUser?.userId || '',
     email: apiUser?.email || '',
     name: apiUser?.fullName || apiUser?.name || 'User',
     fullName: apiUser?.fullName || apiUser?.name,
+    avatarUrl: apiUser?.avatarUrl || apiUser?.avatar_url || null,
     phone: apiUser?.phone,
     role: (apiUser?.role || apiUser?.userRoles?.[0]?.role || 'customer').toString().toLowerCase(),
     status: apiUser?.status,
@@ -152,6 +154,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setUser(mapped);
           }
         }
+        const currentProfile = await api.getMyProfile().catch(() => null);
+        setProfile(currentProfile);
       } catch (e) {
         console.warn('Failed to hydrate user, clearing session');
         localStorage.removeItem('auth_token');
@@ -197,6 +201,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('user');
     api.logout();
     setUser(null);
+    setProfile(null);
   };
 
   const signIn = async (email: string, password: string) => {
@@ -248,6 +253,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('user', JSON.stringify(mapped));
         setUser(mapped);
       }
+      const currentProfile = await api.getMyProfile().catch(() => null);
+      setProfile(currentProfile);
     } catch (error) {
       console.warn('Failed to refresh profile', error);
     }
@@ -264,7 +271,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: user?.role || null,
       shop,
       loading,
-      profile: null,
+      profile,
       signUp,
       signIn,
       signOut,

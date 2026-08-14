@@ -4,6 +4,8 @@ const OrderTimeLine = require('../models/timeline.model');
 const Shipping = require('../models/shipping.model');
 const OrderItem = require('../models/orderItem.model');
 const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
+const crypto = require('crypto');
 
 const GUEST_INVOICE_TOKEN_EXPIRY = process.env.GUEST_INVOICE_TOKEN_EXPIRY || '7d';
 
@@ -28,6 +30,73 @@ function verifyGuestInvoiceToken(token, orderId) {
     }
 }
 
+function assertValidOrderId(res, orderId) {
+    if (!mongoose.Types.ObjectId.isValid(String(orderId || ''))) {
+        res.status(400).json({ message: 'Invalid order id' });
+        return false;
+    }
+    return true;
+}
+
+function getIdempotencyKey(req) {
+    const headerKey = String(req.get('Idempotency-Key') || req.get('idempotency-key') || '').trim();
+    const bodyKey = String(req.body?.idempotencyKey || '').trim();
+    const key = headerKey || bodyKey;
+    if (!key) return null;
+    return key.slice(0, 128);
+}
+
+function getOrderPlacementScope(req, userId) {
+    if (userId) {
+        return `user:${String(userId)}`;
+    }
+
+    const ip = String(req.ip || '').trim();
+    const userAgent = String(req.get('user-agent') || '').trim();
+    return `guest:${ip}:${userAgent}`;
+}
+
+function normalizeId(value) {
+    return String(value || '').trim();
+}
+
+function normalizeText(value) {
+    return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function buildServerSideDedupeKey(req, userId) {
+    const body = req.body || {};
+    const rawItems = Array.isArray(body.items) ? body.items : [];
+    const items = rawItems
+        .map((item) => {
+            const productId = normalizeId(item?.productId || item?.product);
+            const quantity = Number(item?.quantity || 0);
+            return `${productId}:${quantity}`;
+        })
+        .filter((token) => !token.startsWith(':0') && !token.startsWith(':'))
+        .sort();
+
+    const fingerprintPayload = {
+        scope: getOrderPlacementScope(req, userId),
+        paymentMethod: normalizeText(body.paymentMethod),
+        shopId: normalizeId(body.shopId),
+        shippingAddress: normalizeText(body.shippingAddress),
+        shippingCity: normalizeText(body.shippingCity),
+        shippingPostalCode: normalizeText(body.shippingPostalCode),
+        fullName: normalizeText(body.fullName),
+        phone: normalizeText(body.phone),
+        couponCode: normalizeText(body.couponCode),
+        items,
+    };
+
+    const hash = crypto
+        .createHash('sha256')
+        .update(JSON.stringify(fingerprintPayload))
+        .digest('hex');
+
+    return `srv:${hash}`;
+}
+
 //new order
 module.exports.createOrder = async (req, res) => {
     try {
@@ -39,8 +108,50 @@ module.exports.createOrder = async (req, res) => {
         }
 
         const userId = req.user?.id || req.user?._id || null;
+        const clientIdempotencyKey = getIdempotencyKey(req);
+        const idempotencyScope = getOrderPlacementScope(req, userId);
+        const idempotencyKey = clientIdempotencyKey || buildServerSideDedupeKey(req, userId);
+        const dedupeWindowMs = 2 * 60 * 1000;
+        const dedupeCutoff = new Date(Date.now() - dedupeWindowMs);
+
+        if (idempotencyKey) {
+            const existingQuery = {
+                'idempotency.orderPlacement.key': idempotencyKey,
+                'idempotency.orderPlacement.scope': idempotencyScope,
+            };
+
+            // For server-generated fallback keys, only dedupe recent requests.
+            if (!clientIdempotencyKey) {
+                existingQuery.createdAt = { $gte: dedupeCutoff };
+            }
+
+            const existingOrder = await order.findOne(existingQuery);
+
+            if (existingOrder) {
+                const replayPayload = {
+                    order: existingOrder,
+                    message: 'order placed successfully',
+                };
+
+                if (!userId) {
+                    replayPayload.guestInvoiceToken = generateGuestInvoiceToken(existingOrder._id);
+                }
+
+                return res.status(200).json(replayPayload);
+            }
+        }
+
         const newOrder = await orderService.createOrder(userId, {
             ...req.body,
+            idempotency: idempotencyKey
+                ? {
+                    orderPlacement: {
+                        key: idempotencyKey,
+                        scope: idempotencyScope,
+                        createdAt: new Date(),
+                    },
+                }
+                : undefined,
             ipAddress: req.ip,
             userAgent: req.get('user-agent')
         });
@@ -58,18 +169,59 @@ module.exports.createOrder = async (req, res) => {
         res.status(200).json(payload);
     }
     catch (error) {
+        // If two identical requests race, recover by returning the already-created order.
+        if (error?.code === 11000) {
+            try {
+                const userId = req.user?.id || req.user?._id || null;
+                const clientIdempotencyKey = getIdempotencyKey(req);
+                const idempotencyScope = getOrderPlacementScope(req, userId);
+                const idempotencyKey = clientIdempotencyKey || buildServerSideDedupeKey(req, userId);
+
+                if (idempotencyKey) {
+                    const existingOrder = await order.findOne({
+                        'idempotency.orderPlacement.key': idempotencyKey,
+                        'idempotency.orderPlacement.scope': idempotencyScope,
+                    });
+
+                    if (existingOrder) {
+                        const replayPayload = {
+                            order: existingOrder,
+                            message: 'order placed successfully',
+                        };
+
+                        if (!userId) {
+                            replayPayload.guestInvoiceToken = generateGuestInvoiceToken(existingOrder._id);
+                        }
+
+                        return res.status(200).json(replayPayload);
+                    }
+                }
+            } catch (_dedupeRecoveryError) {
+                // Fall through to default error handling below.
+            }
+        }
+
         const message = String(error?.message || 'Failed to place order');
-        const isValidationError =
-            message.includes('not assigned to a vendor') ||
-            message.includes('does not own product') ||
-            message.includes('unavailable for purchase') ||
-            message.includes('Shipping address is incomplete') ||
-            message.includes('No items provided for order') ||
-            message.includes('Product not found') ||
-            message.includes('stock not available') ||
-            message.includes('coupon') ||
-            message.includes('Coupon') ||
-            message.includes('Minimum order amount');
+        const validationFragments = [
+            'not assigned to a vendor',
+            'does not own product',
+            'unavailable for purchase',
+            'shipping address is incomplete',
+            'no items provided for order',
+            'product not found',
+            'stock not available',
+            'coupon',
+            'minimum order amount',
+            'invalid',
+            'must be',
+            'is required',
+            'duplicate product in items',
+            'order cannot contain more than',
+        ];
+        const normalizedMessage = message.toLowerCase();
+        const isValidationError = validationFragments.some((fragment) =>
+            normalizedMessage.includes(fragment)
+        );
 
         res.status(isValidationError ? 400 : 500).json({ message });
     }
@@ -78,6 +230,8 @@ module.exports.createOrder = async (req, res) => {
 //Get order by ID
 module.exports.getOrderById = async (req, res) => {
     try {
+        if (!assertValidOrderId(res, req.params.id)) return;
+
         const userId = req.user?.id || req.user?._id;
         const { order, timeline } = await orderService.getOrderDetails(req.params.id, userId);
 
@@ -177,6 +331,7 @@ module.exports.getPlatformOrders = async (req, res) => {
 // Update Order status
 module.exports.updateOrderStatus = async (req, res) => {
     try {
+        if (!assertValidOrderId(res, req.params.id)) return;
 
         const { id, status, note } = req.body;
 
@@ -204,6 +359,8 @@ module.exports.updateOrderStatus = async (req, res) => {
 // Update Overall Order status by Admin
 module.exports.adminUpdateOrderStatus = async (req, res) => {
     try {
+        if (!assertValidOrderId(res, req.params.id)) return;
+
         const { status, trackingNumber } = req.body;
         const userId = req.user?._id || req.user?.id;
         
@@ -223,6 +380,8 @@ module.exports.adminUpdateOrderStatus = async (req, res) => {
 // Cancel order
 module.exports.cancelOrder = async (req, res) => {
     try {
+        if (!assertValidOrderId(res, req.params.id)) return;
+
         const { reason } = req.body;
         const userId = req.user?.id || req.user?._id;
 
@@ -245,6 +404,8 @@ module.exports.cancelOrder = async (req, res) => {
 // Update Payment Status (Pending → Paid lifecycle)
 module.exports.updatePaymentStatus = async (req, res) => {
     try {
+        if (!assertValidOrderId(res, req.params.id)) return;
+
         const role = String(req.user?.role || '').toLowerCase().replace('_', '');
         if (!['admin', 'superadmin'].includes(role)) {
             return res.status(403).json({
@@ -273,6 +434,8 @@ module.exports.updatePaymentStatus = async (req, res) => {
 
 module.exports.verifyCOD = async (req, res) => {
     try {
+        if (!assertValidOrderId(res, req.params.id)) return;
+
         const { status, notes } = req.body;
 
         const order = await orderService.verifyCOD(
@@ -492,6 +655,8 @@ module.exports.getInvoice = async (req, res) => {
         const invoiceService = require('../services/invoice.service');
         const orderId = req.params.id;
 
+        if (!assertValidOrderId(res, orderId)) return;
+
         const ord = await order.findById(orderId).select('user invoiceUrl');
         if (!ord) return res.status(404).json({ message: 'Order not found' });
 
@@ -523,6 +688,8 @@ module.exports.getGuestInvoice = async (req, res) => {
         const orderId = req.params.id;
         const token = req.query?.token || req.header('x-guest-invoice-token');
 
+        if (!assertValidOrderId(res, orderId)) return;
+
         const ord = await order.findById(orderId).select('user invoiceUrl');
         if (!ord) return res.status(404).json({ message: 'Order not found' });
 
@@ -536,6 +703,47 @@ module.exports.getGuestInvoice = async (req, res) => {
 
         const { filePath, fileName } = await invoiceService.generateInvoicePdf(orderId);
         return res.download(filePath, fileName);
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+// GET /api/orders/seller/customers - aggregated customer list for seller dashboard
+module.exports.getSellerCustomers = async (req, res) => {
+    try {
+        const sellerId = req.user?.id || req.user?._id;
+        const SubOrder = require('../models/orderItem.model');
+
+        const rows = await SubOrder.aggregate([
+            { $match: { seller: new mongoose.Types.ObjectId(String(sellerId)) } },
+            { $lookup: { from: 'orders', localField: 'order', foreignField: '_id', as: 'orderDoc' } },
+            { $unwind: '$orderDoc' },
+            {
+                $group: {
+                    _id: '$orderDoc.user',
+                    guestEmail: { $first: '$orderDoc.guestEmail' },
+                    totalOrders: { $sum: 1 },
+                    totalSpent: { $sum: '$subtotal' },
+                    lastOrderAt: { $max: '$orderDoc.createdAt' },
+                },
+            },
+            { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'userDoc' } },
+            { $unwind: { path: '$userDoc', preserveNullAndEmpty: true } },
+            {
+                $project: {
+                    _id: 0,
+                    customerId: '$_id',
+                    name: { $ifNull: ['$userDoc.name', 'Guest'] },
+                    email: { $ifNull: ['$userDoc.email', '$guestEmail'] },
+                    totalOrders: 1,
+                    totalSpent: 1,
+                    lastOrderAt: 1,
+                },
+            },
+            { $sort: { totalSpent: -1 } },
+        ]);
+
+        return res.json({ success: true, data: rows, total: rows.length });
     } catch (error) {
         return res.status(500).json({ message: error.message });
     }

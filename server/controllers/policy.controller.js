@@ -1,7 +1,6 @@
 const policyService = require('../services/policy.service');
 
 const normalizeRole = (role) => String(role || '').toLowerCase().replace(/_/g, '');
-const Policy = require('../models/policy.model');
 
 // Public endpoints
 exports.getPolicy = async (req, res) => {

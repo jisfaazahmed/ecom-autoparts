@@ -32,6 +32,21 @@ export function useNotifications(options: UseNotificationsOptions = {}): UseNoti
   const pageSize = options.pageSize ?? 20;
   const pollIntervalMs = options.pollIntervalMs ?? 30000;
 
+  const extractErrorMessage = (err: unknown): string => {
+    if (err instanceof Error && err.message) {
+      return err.message;
+    }
+
+    if (typeof err === 'object' && err !== null && 'message' in err) {
+      const message = (err as { message?: unknown }).message;
+      if (typeof message === 'string' && message.trim().length > 0) {
+        return message;
+      }
+    }
+
+    return 'Failed to load notifications';
+  };
+
   const loadNotifications = useCallback(async (isBackground = false) => {
     if (!isAuthenticated || !user) {
       if (isMounted.current) {
@@ -62,13 +77,17 @@ export function useNotifications(options: UseNotificationsOptions = {}): UseNoti
       setNotifications(listResponse.notifications || []);
       setUnreadCount(countResponse);
       setError(null);
-    } catch (err: any) {
-      if (!isMounted.current) return;
-      setError(err?.message || 'Failed to load notifications');
+    } catch (err: unknown) {
+      if (!isMounted.current) {
+        return;
+      }
+
+      setError(extractErrorMessage(err));
     } finally {
-      if (!isMounted.current) return;
-      setLoading(false);
-      setRefreshing(false);
+      if (isMounted.current) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [isAuthenticated, pageSize, user]);
 

@@ -49,10 +49,10 @@ const SuperAdminCategories: React.FC = () => {
     const data = { name: formData.name, description: formData.description || undefined, parentId: formData.parentId || null };
     try {
       if (editingItem) {
-        await api.updateCategory(editingItem.id, data as any);
+        await api.updateCategory(editingItem.id, data as unknown as Parameters<typeof api.updateCategory>[1]);
         toast({ title: 'Updated', description: 'Category updated successfully' });
       } else {
-        await api.createCategory(data as any);
+        await api.createCategory(data as unknown as Parameters<typeof api.createCategory>[0]);
         toast({ title: 'Created', description: 'Category created successfully' });
       }
       setDialogOpen(false);

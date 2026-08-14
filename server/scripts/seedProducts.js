@@ -8,12 +8,12 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const slugify = require('slugify');
-const config = require('./config/config');
+const config = require('../config/config');
 
-const Category = require('./models/category');
-const Product = require('./models/product');
-const Vehicle = require('./models/vehicle');
-const User = require('./models/user');
+const Category = require('../models/category');
+const Product = require('../models/product');
+const Vehicle = require('../models/vehicle');
+const User = require('../models/user');
 
 async function seedProducts() {
   const { MONGO_IP, MONGO_PORT, MONGO_USER, MONGO_PASSWORD, MONGO_DB } = config;

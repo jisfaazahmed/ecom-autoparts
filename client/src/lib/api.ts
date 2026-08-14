@@ -719,6 +719,10 @@ class ApiClient {
     return this.request<ApiUser>('/auth/me');
   }
 
+  async getMyProfile(): Promise<any> {
+    return this.request<any>('/users/profile');
+  }
+
   async updateProfile(data: Partial<ApiUser>): Promise<ApiUser> {
     return this.request<ApiUser>('/users/profile', {
       method: 'PUT',
@@ -1109,8 +1113,12 @@ class ApiClient {
       try {
         const data = await resp.json();
         message = data.message || message;
-      } 
-      catch {}
+      } catch (_parseError) {
+        const fallbackText = await resp.text().catch(() => '');
+        if (fallbackText) {
+          message = fallbackText;
+        }
+      }
       throw new Error(message);
     }
 
@@ -1138,10 +1146,13 @@ class ApiClient {
     shopId?: string;
     couponCode?: string;
     notes?: string;
+    idempotencyKey?: string;
   }): Promise<ApiOrder> {
+    const { idempotencyKey, ...payload } = data;
     const response = await this.request<ApiOrder | { order?: ApiOrder; data?: ApiOrder; guestInvoiceToken?: string }>('/orders', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
     });
 
     const rawOrder = (response as any)?.order || (response as any)?.data || response;
@@ -1739,7 +1750,7 @@ class ApiClient {
     return response.data || response;
   }
 
-  async confirmPaymentIntent(data: { orderId: string; paymentIntentId: string; otp?: string }): Promise<{
+  async confirmPaymentIntent(data: { orderId: string; paymentIntentId: string; otp?: string; idempotencyKey?: string }): Promise<{
     orderId: string;
     paymentIntentId: string;
     paymentStatus: string;
@@ -1748,6 +1759,7 @@ class ApiClient {
     retryEligible?: boolean;
     nextAction?: any;
   }> {
+    const { idempotencyKey, ...payload } = data;
     const response = await this.request<{
       orderId: string;
       paymentIntentId: string;
@@ -1767,7 +1779,8 @@ class ApiClient {
       };
     }>('/payments/confirm-payment-intent', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(payload),
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
     });
 
     return response.data || response;
@@ -2213,6 +2226,45 @@ class ApiClient {
 
     const result = await response.json();
     return result.files.map((f: { url: string }) => f.url);
+  }
+
+  // ============ WISHLIST ============
+
+  async getWishlist(): Promise<{ products: ApiProduct[] }> {
+    return this.request<{ products: ApiProduct[] }>('/wishlist');
+  }
+
+  async getWishlistIds(): Promise<{ productIds: string[] }> {
+    return this.request<{ productIds: string[] }>('/wishlist/ids');
+  }
+
+  async addToWishlist(productId: string): Promise<{ message: string; productIds: string[] }> {
+    return this.request<{ message: string; productIds: string[] }>(`/wishlist/${productId}`, {
+      method: 'POST',
+    });
+  }
+
+  async removeFromWishlist(productId: string): Promise<{ message: string; productIds: string[] }> {
+    return this.request<{ message: string; productIds: string[] }>(`/wishlist/${productId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // ============ SELLER CUSTOMERS ============
+
+  async getSellerCustomers(): Promise<{
+    success: boolean;
+    data: Array<{
+      customerId: string;
+      name: string;
+      email: string;
+      totalOrders: number;
+      totalSpent: number;
+      lastOrderAt: string;
+    }>;
+    total: number;
+  }> {
+    return this.request('/orders/seller/customers');
   }
 }
 
