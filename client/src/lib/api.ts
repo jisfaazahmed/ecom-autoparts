@@ -1433,6 +1433,9 @@ class ApiClient {
     totalCommission: number;
     totalOrders: number;
     totalVendors: number;
+    aov: number;
+    totalRefunds: number;
+    topVendors: any[];
     ordersByStatus: Record<string, number>;
     salesByMonth: Array<{ month: string; sales: number; commission: number; orders: number }>;
     topCategories: Array<{ categoryId: string; earnings: number }>;
@@ -1441,6 +1444,21 @@ class ApiClient {
     if (params?.range) searchParams.set('range', params.range);
     const response = await this.request<{ success: boolean; data: any }>(`/admin-analytics/superadmin?${searchParams.toString()}`);
     return response.data;
+  }
+
+  async askAnalyticsAI(
+    question: string,
+    analyticsData: any,
+    dateRange: string
+  ): Promise<{ answer: string }> {
+    const response = await this.request<{ answer: string }>(
+      '/admin-analytics/superadmin/ask',
+      {
+        method: 'POST',
+        body: JSON.stringify({ question, analyticsData, dateRange })
+      }
+    );
+    return response;
   }
 
   // ============ SETTLEMENT / PAYOUT ============

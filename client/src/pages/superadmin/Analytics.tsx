@@ -11,6 +11,7 @@ import { formatLKR, formatLKRCompact } from '@/lib/currency';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend } from 'recharts';
 import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
+import AnalyticsAIChat from './AnalyticsAIChat';
 // Use live data via API; remove mock fallbacks
 
 const SuperAdminAnalytics: React.FC = () => {
@@ -28,6 +29,7 @@ const SuperAdminAnalytics: React.FC = () => {
   const [aov, setAov] = useState(0);
   const [totalRefunds, setTotalRefunds] = useState(0);
   const [topVendors, setTopVendors] = useState<{ shopName: string; name: string; sales: number; orders: number }[]>([]);
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
 
   useEffect(() => { fetchAnalytics(); }, [timeRange]);
 
@@ -64,6 +66,7 @@ const SuperAdminAnalytics: React.FC = () => {
     try {
       const data = await api.getSuperAdminAnalytics({ range: timeRange });
 
+      setAnalyticsData(data);
       setTotalVendors(data.totalVendors || 0);
       setTotalSales(data.totalSales || 0);
       setTotalCommission(data.totalCommission || 0);
@@ -240,7 +243,7 @@ const SuperAdminAnalytics: React.FC = () => {
             <Button onClick={handleExportPDF} variant="outline" className="bg-secondary/50 border border-primary/20 hover:bg-primary/10">
               <Download className="h-4 w-4 mr-2 text-primary" /> Export PDF
             </Button>
-            <Select value={timeRange} onValueChange={setTimeRange}>
+            <Select value={timeRange} onValueChange={(val: any) => setTimeRange(val)}>
               <SelectTrigger className="w-40 bg-secondary/50"><Calendar className="h-4 w-4 mr-2" /><SelectValue /></SelectTrigger>
               <SelectContent className="glass-card"><SelectItem value="7d">Last 7 days</SelectItem><SelectItem value="30d">Last 30 days</SelectItem><SelectItem value="90d">Last 90 days</SelectItem><SelectItem value="1y">Last year</SelectItem></SelectContent>
             </Select>
@@ -376,6 +379,8 @@ const SuperAdminAnalytics: React.FC = () => {
             </CardContent>
           </Card>
         </div>
+
+        <AnalyticsAIChat analyticsData={analyticsData} dateRange={timeRange} />
       </motion.div>
     </AdminLayout>
   );
