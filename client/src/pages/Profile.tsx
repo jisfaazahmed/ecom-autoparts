@@ -134,7 +134,7 @@ const Profile: React.FC = () => {
     setAvatarUploading(true);
     try {
       const imageUrl = await api.uploadFile(file, 'avatars');
-      await api.updateProfile({ avatarUrl: imageUrl } as any);
+      await api.updateProfile({ avatarUrl: imageUrl });
       await refreshProfile();
       toast({
         title: 'Profile Photo Updated',
