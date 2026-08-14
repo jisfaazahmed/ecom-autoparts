@@ -54,6 +54,16 @@ jobs:
           cache-from: type=gha,scope=server
           cache-to: type=gha,mode=max,scope=server
 
+      # Compiled into the bundle, so an unset value cannot be corrected later by
+      # restarting the container - it ships a client pointing at localhost.
+      - name: Warn if client API URL is unset
+        env:
+          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        run: |
+          if [ -z "$VITE_API_URL" ]; then
+            echo "::warning title=VITE_API_URL not set::The client bundle falls back to http://localhost:5000/api, which a browser cannot reach unless it is running on the server itself. Set the VITE_API_URL secret and re-run."
+          fi
+
       # VITE_* values are compiled into the bundle here and cannot be changed
       # later by the running container, so they must be supplied as build args.
       - name: Build and push client
@@ -81,7 +91,69 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Runs before anything touches SSH. Without this, an unset secret surfaces
+      # as `ssh-keyscan` exiting 1 against an empty host, which says nothing
+      # about the actual cause.
+      - name: Check deployment configuration
+        id: preflight
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          MONGO_USER: ${{ secrets.MONGO_USER }}
+          MONGO_PASSWORD: ${{ secrets.MONGO_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          CLIENT_URL: ${{ secrets.CLIENT_URL }}
+        run: |
+          access_set=0
+          for v in SSH_HOST SSH_USER SSH_PRIVATE_KEY; do
+            if [ -n "${!v}" ]; then access_set=1; fi
+          done
+
+          # No VPS configured at all: images are still built and pushed, but
+          # there is nowhere to deploy to. Report it clearly and succeed rather
+          # than failing every push to main until someone sets the secrets.
+          if [ "$access_set" -eq 0 ]; then
+            echo "::warning title=Deploy skipped::No SSH secrets are set, so there is no VPS to deploy to. See DEPLOYMENT.md."
+            {
+              echo "### Deploy skipped - no VPS configured"
+              echo
+              echo "Images were built and pushed to GHCR, but \`SSH_HOST\`, \`SSH_USER\` and"
+              echo "\`SSH_PRIVATE_KEY\` are unset, so nothing was deployed."
+              echo
+              echo "See \`DEPLOYMENT.md\` for the full list of required secrets."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Partially configured is a real mistake - name every missing secret
+          # at once instead of failing on whichever is reached first.
+          missing=""
+          for v in SSH_HOST SSH_USER SSH_PRIVATE_KEY MONGO_USER MONGO_PASSWORD \
+                   JWT_SECRET SESSION_SECRET STRIPE_SECRET_KEY CLIENT_URL; do
+            if [ -z "${!v}" ]; then missing="$missing $v"; fi
+          done
+
+          if [ -n "$missing" ]; then
+            echo "::error title=Incomplete deploy configuration::Missing required secrets:$missing"
+            {
+              echo "### Deploy failed - incomplete configuration"
+              echo
+              echo "These required secrets are not set:"
+              for v in $missing; do echo "- \`$v\`"; done
+              echo
+              echo "See \`DEPLOYMENT.md\`."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
       - name: Configure SSH
+        if: steps.preflight.outputs.configured == 'true'
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
@@ -91,17 +163,22 @@ jobs:
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
+          touch ~/.ssh/known_hosts
           if [ -n "$SSH_KNOWN_HOSTS" ]; then
             # Preferred: pinned host key, immune to a spoofed host.
             printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           else
             # Fallback: trust-on-first-use. Set the SSH_KNOWN_HOSTS secret to
             # remove this window.
-            ssh-keyscan -p "${SSH_PORT:-22}" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+            if ! ssh-keyscan -p "${SSH_PORT:-22}" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null; then
+              echo "::error title=Cannot reach host::ssh-keyscan failed for $SSH_HOST:${SSH_PORT:-22}. Check SSH_HOST, SSH_PORT, and that the VPS allows inbound SSH."
+              exit 1
+            fi
           fi
           chmod 600 ~/.ssh/known_hosts
 
       - name: Write deployment env file
+        if: steps.preflight.outputs.configured == 'true'
         env:
           SERVER_IMAGE: ${{ needs.build-and-push.outputs.server_image }}
           CLIENT_IMAGE: ${{ needs.build-and-push.outputs.client_image }}
@@ -139,6 +216,7 @@ jobs:
           chmod 600 deploy.env
 
       - name: Copy files to VPS
+        if: steps.preflight.outputs.configured == 'true'
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
@@ -154,6 +232,7 @@ jobs:
             deploy.env "$SSH_USER@$SSH_HOST:$path/.env"
 
       - name: Pull and restart
+        if: steps.preflight.outputs.configured == 'true'
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
@@ -178,6 +257,7 @@ jobs:
           REMOTE
 
       - name: Verify health
+        if: steps.preflight.outputs.configured == 'true'
         env:
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
