@@ -29,7 +29,7 @@ const SuperAdminAnalytics: React.FC = () => {
   const [aov, setAov] = useState(0);
   const [totalRefunds, setTotalRefunds] = useState(0);
   const [topVendors, setTopVendors] = useState<{ shopName: string; name: string; sales: number; orders: number }[]>([]);
-  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [analyticsData, setAnalyticsData] = useState<Awaited<ReturnType<typeof api.getSuperAdminAnalytics>> | null>(null);
 
   useEffect(() => { fetchAnalytics(); }, [timeRange]);
 
@@ -243,7 +243,7 @@ const SuperAdminAnalytics: React.FC = () => {
             <Button onClick={handleExportPDF} variant="outline" className="bg-secondary/50 border border-primary/20 hover:bg-primary/10">
               <Download className="h-4 w-4 mr-2 text-primary" /> Export PDF
             </Button>
-            <Select value={timeRange} onValueChange={(val: any) => setTimeRange(val)}>
+            <Select value={timeRange} onValueChange={(val) => setTimeRange(val as '7d' | '30d' | '90d' | '1y')}>
               <SelectTrigger className="w-40 bg-secondary/50"><Calendar className="h-4 w-4 mr-2" /><SelectValue /></SelectTrigger>
               <SelectContent className="glass-card"><SelectItem value="7d">Last 7 days</SelectItem><SelectItem value="30d">Last 30 days</SelectItem><SelectItem value="90d">Last 90 days</SelectItem><SelectItem value="1y">Last year</SelectItem></SelectContent>
             </Select>

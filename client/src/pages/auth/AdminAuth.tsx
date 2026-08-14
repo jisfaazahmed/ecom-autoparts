@@ -130,11 +130,11 @@ const AdminAuth: React.FC = () => {
         });
         return;
       }
-    } catch (profileError: any) {
+    } catch (profileError) {
       setLoading(false);
       toast({
         title: 'Profile Error',
-        description: profileError.message || 'Failed to fetch user profile.',
+        description: profileError instanceof Error ? profileError.message : 'Failed to fetch user profile.',
         variant: 'destructive',
       });
       return;

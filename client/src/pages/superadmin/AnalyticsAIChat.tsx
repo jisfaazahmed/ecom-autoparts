@@ -5,7 +5,9 @@ import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 
 interface AnalyticsAIChatProps {
-  analyticsData: any;
+  // Opaque payload: forwarded straight to api.askAnalyticsAI, never read field
+  // by field here, so it is typed from the endpoint that produces it.
+  analyticsData: Awaited<ReturnType<typeof api.getSuperAdminAnalytics>> | null;
   dateRange: string;
 }
 
@@ -54,9 +56,9 @@ const AnalyticsAIChat: React.FC<AnalyticsAIChatProps> = ({ analyticsData, dateRa
         content: response.answer
       };
       setMessages(prev => [...prev, assistantMessage]);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Failed to get answer from AI:', err);
-      const userFriendlyErrorMessage = err.message || 'AI assistant is temporarily unavailable.';
+      const userFriendlyErrorMessage = err instanceof Error ? err.message : 'AI assistant is temporarily unavailable.';
       
       const systemErrorMessage: Message = {
         role: 'assistant',
