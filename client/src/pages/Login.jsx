@@ -41,17 +41,18 @@ const Login = () => {
       });
 
       // 1. Save Token & User
-      localStorage.setItem('token', res.data.token);
+      localStorage.setItem('token', res.data.accessToken || res.data.token);
       const userData = res.data.user || res.data;
       localStorage.setItem('user', JSON.stringify(userData));
 
       // 2. SMART REDIRECT (The Fix)
-      if (userData.role === 'SUPER_ADMIN') {
-        navigate('/dashboard'); // Only Super Admin goes here
-      } else if (userData.role === 'ADMIN') {
-        navigate('/myshop');    // Vendors go to their Shop Panel
+      const role = (userData.role || '').toUpperCase();
+      if (role === 'SUPERADMIN' || role === 'SUPER_ADMIN') {
+        navigate('/superadmin'); // Only Super Admin goes here
+      } else if (role === 'ADMIN') {
+        navigate('/admin');      // Vendors go to their Shop Panel
       } else {
-        navigate('/home');      // Customers go to the Storefront
+        navigate('/');           // Customers go to the Storefront
       }
 
     } catch (err) {
