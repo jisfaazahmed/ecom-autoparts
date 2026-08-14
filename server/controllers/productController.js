@@ -125,7 +125,9 @@ const buildSearchQuery = (searchTerm) => {
       query: {
         $or: [
           { name: { $regex: safe, $options: 'i' } },
+          { description: { $regex: safe, $options: 'i' } },
           { sku: { $regex: safe, $options: 'i' } },
+          { partNumber: { $regex: safe, $options: 'i' } },
         ],
       },
       sort: null,
@@ -191,53 +193,11 @@ const resolveCompatibleVehicleIds = async (compatibleVariants) => {
   if (normalizedIds.length === 0) return [];
 
   const directVehicles = await Vehicle.find({ _id: { $in: normalizedIds } }).select('_id');
-  const directVehicleIdSet = new Set(directVehicles.map((v) => String(v._id)));
-  const unresolvedVariantIds = normalizedIds.filter((id) => !directVehicleIdSet.has(id));
-
-  if (unresolvedVariantIds.length === 0) {
-    return [...directVehicleIdSet];
-  }
-
-  const variants = await VehicleVariant.find({ _id: { $in: unresolvedVariantIds } })
-    .populate({
-      path: 'model',
-      select: 'name brand',
-      populate: { path: 'brand', select: 'name' },
-    });
-
-  if (variants.length !== unresolvedVariantIds.length) {
+  if (directVehicles.length !== normalizedIds.length) {
     throw new Error('INVALID_COMPATIBLE_VARIANTS');
   }
 
-  const mappedVehicleIds = new Set([...directVehicleIdSet]);
-  const currentYear = new Date().getFullYear();
-
-  for (const variant of variants) {
-    const modelDoc = variant.model;
-    const brandDoc = modelDoc?.brand;
-    const makeName = brandDoc?.name;
-    const modelName = modelDoc?.name;
-
-    if (!makeName || !modelName) {
-      throw new Error('INVALID_COMPATIBLE_VARIANTS');
-    }
-
-    const yearEnd = variant.yearEnd || currentYear;
-    const matchedVehicles = await Vehicle.find({
-      make: makeName,
-      model: modelName,
-      submodel: variant.name,
-      year: { $gte: variant.yearStart, $lte: yearEnd },
-    }).select('_id');
-
-    if (!matchedVehicles.length) {
-      throw new Error('INVALID_COMPATIBLE_VARIANTS');
-    }
-
-    matchedVehicles.forEach((vehicle) => mappedVehicleIds.add(String(vehicle._id)));
-  }
-
-  return [...mappedVehicleIds];
+  return directVehicles.map((vehicle) => String(vehicle._id));
 };
 
 async function resolveCompatibleVehicleModelIds(modelIds) {
@@ -380,6 +340,7 @@ exports.createProduct = async (req, res) => {
       productDiscountPercent: toPercent(productDiscountPercent),
       image: imageUrl,
       category: categoryId || null,
+      compatibleVehicles: vehicleIds,
       compatibleVehicleModels: vehicleModelIds,
       description,
       createdBy: ownerId,
@@ -660,15 +621,9 @@ exports.getProducts = async (req, res) => {
       query.isActive = isActive === 'true';
     }
 
-    if (search) {
-      const searchClause = {
-        $or: [
-          { name: { $regex: search, $options: 'i' } },
-          { description: { $regex: search, $options: 'i' } },
-          { sku: { $regex: search, $options: 'i' } },
-          { partNumber: { $regex: search, $options: 'i' } },
-        ],
-      };
+    const searchQuery = buildSearchQuery(search);
+    if (searchQuery) {
+      const searchClause = searchQuery.query;
       if (query.$or) {
         query.$and = [{ $or: query.$or }, searchClause];
         delete query.$or;
@@ -686,6 +641,8 @@ exports.getProducts = async (req, res) => {
     let sort = {};
     if (sortBy) {
       sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    } else if (searchQuery?.sort) {
+      sort = searchQuery.sort;
     } else {
       sort.createdAt = -1;
     }
@@ -750,14 +707,9 @@ exports.getSuperAdminProducts = async (req, res) => {
       query.createdBy = sellerFilter;
     }
 
-    if (search) {
-      const searchClause = {
-        $or: [
-          { name: { $regex: search, $options: 'i' } },
-          { sku: { $regex: search, $options: 'i' } },
-          { partNumber: { $regex: search, $options: 'i' } },
-        ],
-      };
+    const searchQuery = buildSearchQuery(search);
+    if (searchQuery) {
+      const searchClause = searchQuery.query;
       if (query.$or) {
         query.$and = [{ $or: query.$or }, searchClause];
         delete query.$or;
@@ -766,7 +718,7 @@ exports.getSuperAdminProducts = async (req, res) => {
       }
     }
 
-    const products = await applyProductPopulates(Product.find(query));
+    const products = await applyProductPopulates(Product.find(query).sort(searchQuery?.sort || { createdAt: -1 }));
     res.json(products.map(mapProduct));
   } catch (err) {
     console.error(err);

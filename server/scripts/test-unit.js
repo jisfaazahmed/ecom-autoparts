@@ -10,6 +10,12 @@ console.log('='.repeat(70));
 console.log('NOTIFICATION & INVENTORY RESERVATION SYSTEM - UNIT TESTS');
 console.log('='.repeat(70));
 
+// Mock test data
+// const mockUserId = { toString: () => 'user123' };
+// const mockProductId = { toString: () => 'product123' };
+// const mockOrderId = { toString: () => 'order123' };
+// const mockRefundId = { toString: () => 'refund123' };
+
 let testResults = {
   passed: 0,
   failed: 0,

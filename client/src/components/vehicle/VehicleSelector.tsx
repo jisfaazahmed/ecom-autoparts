@@ -135,7 +135,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
 
     // Ensure at most one dash is present
     const dashCount = (raw.match(/-/g) || []).length;
-    if (dashCount > 1) return 'Only one \"-\" is allowed';
+      if (dashCount > 1) return 'Only one "-" is allowed';
 
     // Remove spaces and dash for core format validation
     const cleaned = raw.replace(/[\s-]/g, '');

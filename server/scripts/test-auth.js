@@ -61,7 +61,7 @@ function resetMocks() {
 
   // Mock crypto – deterministic OTP "123456"
   crypto.randomInt = () => 123456;
-  crypto.createHash = (algo) => ({
+  crypto.createHash = () => ({
     update(data) {
       this._data = data;
       return this;
