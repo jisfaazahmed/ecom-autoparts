@@ -8,5 +8,12 @@
     "ecmaVersion": 2022,
     "sourceType": "script"
   },
-  "rules": {}
+  "rules": {
+    "no-unused-vars": ["error", {
+      "argsIgnorePattern": "^_",
+      "varsIgnorePattern": "^_",
+      "destructuredArrayIgnorePattern": "^_",
+      "caughtErrorsIgnorePattern": "^_"
+    }]
+  }
 }

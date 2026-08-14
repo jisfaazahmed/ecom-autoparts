@@ -94,32 +94,47 @@ const AdminAuth: React.FC = () => {
     
     if (error) {
       setLoading(false);
+      toast({
+        title: 'Login Failed',
+        description: error.message || 'Invalid credentials or account issue.',
+        variant: 'destructive',
+      });
       return;
     }
     
     // Check role after sign in and route to the correct console.
-    const currentUser = await api.getCurrentUser();
-    const userRoles = currentUser?.userRoles?.map(r => r.role) || [];
-    const normalizedRoles = userRoles.map((value) => String(value || '').toLowerCase());
-    
-    if (normalizedRoles.includes('superadmin')) {
-      navigate('/superadmin');
-      setLoading(false);
-      return;
-    }
+    try {
+      const currentUser = await api.getCurrentUser();
+      const userRoles = currentUser?.userRoles?.map(r => r.role) || [];
+      const normalizedRoles = userRoles.map((value) => String(value || '').toLowerCase());
+      
+      if (normalizedRoles.includes('superadmin')) {
+        navigate('/superadmin');
+        setLoading(false);
+        return;
+      }
 
-    if (normalizedRoles.includes('admin')) {
-      navigate('/admin');
-      setLoading(false);
-      return;
-    }
+      if (normalizedRoles.includes('admin')) {
+        navigate('/admin');
+        setLoading(false);
+        return;
+      }
 
-    if (!normalizedRoles.includes('admin') && !normalizedRoles.includes('superadmin')) {
-      await signOut();
+      if (!normalizedRoles.includes('admin') && !normalizedRoles.includes('superadmin')) {
+        await signOut();
+        setLoading(false);
+        toast({
+          title: 'Access Denied',
+          description: 'This portal is for administrators only.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    } catch (profileError) {
       setLoading(false);
       toast({
-        title: 'Access Denied',
-        description: 'This portal is for administrators only.',
+        title: 'Profile Error',
+        description: profileError instanceof Error ? profileError.message : 'Failed to fetch user profile.',
         variant: 'destructive',
       });
       return;
