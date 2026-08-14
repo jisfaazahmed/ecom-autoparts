@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, dev]
+  push:
+    branches: [main, dev]
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Matches node:22-alpine in the production Dockerfiles, so CI and the shipped
+  # image resolve dependencies against the same runtime.
+  NODE_VERSION: '22'
+
+jobs:
+  client:
+    name: Client (lint, typecheck, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install
+        working-directory: client
+        run: npm ci
+
+      - name: Lint
+        working-directory: client
+        run: npm run lint
+
+      # Non-blocking on purpose: the codebase currently has ~36 pre-existing
+      # type errors. This step reports them so the number can be driven down,
+      # without wedging every PR in the meantime. Remove continue-on-error to
+      # make it a hard gate once it reaches zero.
+      - name: Typecheck (report only)
+        working-directory: client
+        continue-on-error: true
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: client
+        run: npm run build
+
+  server:
+    name: Server (lint, tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install
+        working-directory: server
+        run: npm ci
+
+      - name: Lint
+        working-directory: server
+        run: npm run lint
+
+      # scripts/test-unit.js needs no MongoDB, but config/stripe.js throws at
+      # require-time without a key, so a dummy value is required to load the
+      # modules under test at all.
+      - name: Unit tests
+        working-directory: server
+        env:
+          STRIPE_SECRET_KEY: sk_test_dummy_value_for_ci
+          JWT_SECRET: dummy_jwt_secret_for_ci
+          NODE_ENV: test
+        run: npm run qa:regression
+
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Build only - proves the production Dockerfiles still work before a
+      # merge to main tries to publish and deploy them.
+      - name: Build server image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./server
+          file: ./server/Dockerfile.prod
+          push: false
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+
+      - name: Build client image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./client
+          file: ./client/Dockerfile.prod
+          push: false
+          build-args: |
+            VITE_API_URL=http://localhost:5000/api
+          cache-from: type=gha,scope=client
+          cache-to: type=gha,mode=max,scope=client

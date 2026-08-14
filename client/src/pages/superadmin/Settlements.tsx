@@ -72,7 +72,7 @@ const Settlements: React.FC = () => {
       ]);
       if (settlementsRes.status === 'fulfilled') {
         const data = settlementsRes.value;
-        setSettlements(Array.isArray(data) ? data : (data as any).settlements || []);
+        setSettlements(Array.isArray(data) ? data : (data as { settlements?: Settlement[] }).settlements || []);
       }
       if (summaryRes.status === 'fulfilled') {
         setSummary(summaryRes.value);

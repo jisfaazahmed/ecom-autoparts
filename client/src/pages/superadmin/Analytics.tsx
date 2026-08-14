@@ -150,7 +150,7 @@ const SuperAdminAnalytics: React.FC = () => {
         ['Active Vendors', totalVendors.toLocaleString()]
       ];
 
-      // @ts-ignore
+      // @ts-expect-error jspdf-autotable augments the jsPDF prototype at runtime but ships no module augmentation for its types
       doc.autoTable({
         startY: 47,
         head: summaryHeaders,
@@ -161,7 +161,7 @@ const SuperAdminAnalytics: React.FC = () => {
       });
 
       // Section 2: Top Performing Vendors Table
-      // @ts-ignore
+      // @ts-expect-error jspdf-autotable augments the jsPDF prototype at runtime but ships no module augmentation for its types
       const finalY1 = doc.lastAutoTable.finalY;
       
       doc.setFont('helvetica', 'bold');
@@ -177,7 +177,7 @@ const SuperAdminAnalytics: React.FC = () => {
         formatLKR(vendor.sales)
       ]);
 
-      // @ts-ignore
+      // @ts-expect-error jspdf-autotable augments the jsPDF prototype at runtime but ships no module augmentation for its types
       doc.autoTable({
         startY: finalY1 + 20,
         head: vendorHeaders,
@@ -188,7 +188,7 @@ const SuperAdminAnalytics: React.FC = () => {
       });
 
       // Section 3: Top Product Categories
-      // @ts-ignore
+      // @ts-expect-error jspdf-autotable augments the jsPDF prototype at runtime but ships no module augmentation for its types
       const finalY2 = doc.lastAutoTable.finalY;
       
       doc.setFont('helvetica', 'bold');
@@ -201,7 +201,7 @@ const SuperAdminAnalytics: React.FC = () => {
         formatLKR(cat.value)
       ]);
 
-      // @ts-ignore
+      // @ts-expect-error jspdf-autotable augments the jsPDF prototype at runtime but ships no module augmentation for its types
       doc.autoTable({
         startY: finalY2 + 20,
         head: categoryHeaders,
@@ -213,9 +213,9 @@ const SuperAdminAnalytics: React.FC = () => {
 
       doc.save(`platform-analytics-${timeRange}-${new Date().toISOString().slice(0, 10)}.pdf`);
       toast({ title: 'Success', description: 'PDF report downloaded successfully' });
-    } catch (err: any) {
+    } catch (err) {
       console.error('PDF export failed:', err);
-      toast({ title: 'Export Error', description: err.message || 'Failed to export PDF', variant: 'destructive' });
+      toast({ title: 'Export Error', description: err instanceof Error ? err.message : 'Failed to export PDF', variant: 'destructive' });
     }
   };
 
