@@ -1,10 +1,16 @@
 const Payment = require('../models/payment.model');
 const Order = require('../models/order.model');
 const OrderItem = require('../models/orderItem.model');
+const User = require('../models/user');
+const WalletTransaction = require('../models/walletTransaction.model');
 const stripe = require('../config/stripe');
 const OrderTimeline = require('../models/timeline.model');
+const invoiceService = require('./invoice.service');
 
 class PaymentService {
+    // COD orders above this value are held until a human verifies the buyer by phone.
+    static COD_VERIFICATION_THRESHOLD = 10000;
+    static MAX_COD_VERIFICATION_ATTEMPTS = 3;
 
     async syncOrderAfterPayment(orderId, { paymentStatus = 'completed', transactionId = null } = {}) {
         const order = await Order.findById(orderId);
@@ -54,25 +60,35 @@ class PaymentService {
         if (!order) {
             throw new Error("order not found");
         }
-        if (order.user.toString() != userId.toString()) {
-            throw new Error("unautharized");
+        if (!order.user || !userId || order.user.toString() !== userId.toString()) {
+            throw new Error('Unauthorized access to order');
         }
 
         const { paymentMethod, ...methodDetails } = paymentData;
 
-        const payment = new Payment({
+        const existing = await Payment.findOne({ order: orderId });
+        if (existing && existing.status === 'completed') {
+            throw new Error('Order is already paid');
+        }
+
+        const payment = existing || new Payment({
             order: orderId,
             user: userId,
             paymentMethod,
             gateway: paymentMethod === 'card' ? 'stripe' : paymentMethod,
             amount: order.totalAmount,
             totalAmount: order.totalAmount,
-            currency: 'LKR',
-            status: 'pending',
-            metadata: {
-                ipAddress: paymentData.ipAddress,
-                userAgent: paymentData.userAgent
-            }
+            currency: order.currency || 'LKR',
+            status: 'pending'
+        });
+
+        payment.paymentMethod = paymentMethod;
+        payment.amount = order.totalAmount;
+        payment.totalAmount = order.totalAmount;
+        payment.timeline.push({
+            event: 'payment_initiated',
+            timestamp: new Date(),
+            description: `Payment initiated via ${paymentMethod}`
         });
 
         switch (paymentMethod) {
@@ -93,13 +109,13 @@ class PaymentService {
         // Update order payment info
         order.paymentId = payment._id;
         order.paymentStatus = payment.status;
-        order.transactionId = payment.provider?.transactionId || payment.transactionId || null;
+        order.transactionId = payment.transactionId || null;
         await order.save();
 
         //Timeline
         await OrderTimeline.create({
             order: orderId,
-            event: 'payment_initiated',
+            event: 'payment_pending',
             title: 'Payment Initiated',
             description: `Payment of LKR ${payment.amount} initiated via ${paymentMethod}`,
             actor: userId,
@@ -132,18 +148,15 @@ class PaymentService {
 
         const paymentIntent = await stripe.paymentIntents.create(stripePayload);
 
-        payment.provider = {
-            name: 'stripe',
-            paymentIntentId: paymentIntent.id,
-            transactionId: paymentIntent.id
-        };
         payment.gateway = 'stripe';
+        payment.transactionId = paymentIntent.id;
+        payment.gatewayTransactionId = paymentIntent.id;
 
         payment.status = 'processing';
-        payment.statusHistory.push({
-            status: 'processing',
+        payment.timeline.push({
+            event: 'payment_processing',
             timestamp: new Date(),
-            note: 'Stripe payment intent created'
+            description: 'Stripe payment intent created'
         });
 
         return {
@@ -153,93 +166,165 @@ class PaymentService {
     }
 
     //confirm card payment
-    async confirmCardPayment(PaymentIntentId, paymentId) {
+    async confirmCardPayment(paymentIntentId, paymentId) {
         const payment = await Payment.findById(paymentId);
 
         if (!payment) {
             throw new Error('Payment not found');
         }
 
-        const paymentIntent = await stripe.paymentIntents.retrieve(PaymentIntentId);
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
         if (paymentIntent.status === 'succeeded') {
             payment.status = 'completed';
             payment.gateway = 'stripe';
-            payment.provider.chargeId = paymentIntent.charges.data[0]?.id;
-            payment.provider.receiptUrl = paymentIntent.charges.data[0]?.receipt_url;
+            payment.transactionId = paymentIntent.id;
+            payment.gatewayTransactionId = paymentIntent.id;
 
-            payment.statusHistory.push({
-                status: 'completed',
+            payment.timeline.push({
+                event: 'payment_completed',
                 timestamp: new Date(),
-                note: 'Payment successful'
+                description: 'Payment successful'
             });
 
-            const order = await Order.findById(payment.order);
-            order.paymentStatus = 'completed';
-            await order.save();
+            await payment.save();
+
+            await this.syncOrderAfterPayment(payment.order, {
+                paymentStatus: 'completed',
+                transactionId: paymentIntent.id
+            });
 
             await OrderTimeline.create({
                 order: payment.order,
                 event: 'payment_completed',
                 title: 'Payment Completed',
-                description: `Payment of LKR ${payment.amount} completed successfully`,
+                description: `Payment of ${payment.currency} ${payment.amount} completed successfully`,
                 actorType: 'system',
             });
 
             await this.generateReceipt(payment._id);
+            return Payment.findById(payment._id);
         }
-        else if (paymentIntent.status === 'payment_failed') {
+
+        if (paymentIntent.status === 'requires_payment_method' || paymentIntent.status === 'canceled') {
             payment.status = 'failed';
             payment.gatewayResponse = {
                 errorCode: paymentIntent.last_payment_error?.code,
                 errorMessage: paymentIntent.last_payment_error?.message
             };
+            payment.timeline.push({
+                event: 'payment_failed',
+                timestamp: new Date(),
+                description: paymentIntent.last_payment_error?.message || 'Payment failed'
+            });
+
+            const order = await Order.findById(payment.order);
+            if (order) {
+                order.paymentStatus = 'failed';
+                await order.save();
+            }
         }
 
         await payment.save();
         return payment;
     }
 
+    // Creates the COD payment record at order placement so that the
+    // verify-cod / confirm-cod flows have a document to act on.
+    async createCODPayment(order, userId = null) {
+        const existing = await Payment.findOne({ order: order._id });
+        if (existing) {
+            return existing;
+        }
+
+        const payment = new Payment({
+            order: order._id,
+            user: userId || order.user || null,
+            paymentMethod: 'cod',
+            gateway: 'cod',
+            amount: order.totalAmount,
+            totalAmount: order.totalAmount,
+            currency: order.currency || 'LKR',
+            status: 'pending'
+        });
+
+        await this.processCODPayment(payment, order);
+        await payment.save();
+
+        order.paymentId = payment._id;
+        order.paymentStatus = 'pending';
+        await order.save();
+
+        await OrderTimeline.create({
+            order: order._id,
+            event: 'payment_pending',
+            title: 'Payment Pending',
+            description: `Cash on Delivery payment of ${payment.currency} ${payment.amount} is pending collection`,
+            actor: userId || null,
+            actorType: userId ? 'customer' : 'guest'
+        });
+
+        return payment;
+    }
+
     //process COD payment
     async processCODPayment(payment, order) {
         payment.status = 'pending';
-        payment.cod = {
-            verified: false,
-            verificationAttempts: []
-        };
+        payment.gateway = 'cod';
+        payment.codDetails = payment.codDetails || {};
+        payment.codDetails.collectionStatus = 'pending';
+        payment.codDetails.verificationAttempts = payment.codDetails.verificationAttempts || [];
 
-        if (payment.amount > 10000) {
-            await this.initiateCODVerification(payment._id, order);
-        }
-        else {
-            payment.cod.verified = true;
+        // High-value COD orders are held until a human verifies the buyer by phone.
+        if (payment.amount > PaymentService.COD_VERIFICATION_THRESHOLD) {
+            payment.codDetails.verificationStatus = 'pending';
+            this.appendCODVerificationAttempt(payment, order);
+        } else {
+            payment.codDetails.verificationStatus = 'not_required';
             payment.status = 'processing';
 
-            const orderDoc = await Order.findById(order._id);
-            orderDoc.paymentStatus = 'pending';
-            orderDoc.codVerified = true;
-            await orderDoc.save();
+            // Caller persists the order; mutate in place to avoid a stale second write.
+            if (order) {
+                order.codVerified = true;
+            }
         }
 
-        payment.statusHistory.push({
-            status: payment.status,
+        payment.timeline.push({
+            event: payment.status === 'processing' ? 'payment_processing' : 'payment_initiated',
             timestamp: new Date(),
-            note: 'COD payment initiated'
+            description: 'COD payment initiated'
         });
     }
 
-    //COD verification
-    async initiateCODVerification(paymentId, order) {
-        const payment = await Payment.findById(paymentId).populate('user');
-
-        payment.cod.verificationAttempts.push({
+    //COD verification - records a pending attempt on the in-memory document
+    appendCODVerificationAttempt(payment, order) {
+        payment.codDetails.verificationAttempts.push({
             attemptedAt: new Date(),
-            contactNumber: order.shippingAddress.phone,
+            method: 'sms',
+            contactNumber: order?.shippingAddress?.phone,
             status: 'pending',
             notes: 'Verification SMS sent'
         });
 
+        return payment;
+    }
+
+    async initiateCODVerification(paymentId) {
+        const payment = await Payment.findById(paymentId);
+
+        if (!payment) {
+            throw new Error('Payment not found');
+        }
+
+        const order = await Order.findById(payment.order);
+
+        payment.codDetails = payment.codDetails || {};
+        payment.codDetails.verificationStatus = 'pending';
+        payment.codDetails.verificationAttempts = payment.codDetails.verificationAttempts || [];
+        this.appendCODVerificationAttempt(payment, order);
+
         await payment.save();
+        return payment;
     }
 
     // Verify COD
@@ -250,19 +335,41 @@ class PaymentService {
             throw new Error('Payment not found');
         }
 
-        const lastAttempt = payment.cod.verificationAttempts[payment.cod.verificationAttempts.length - 1];
-        lastAttempt.attemptedBy = verifiedBy;
-        lastAttempt.status = status;
-        lastAttempt.notes = notes;
+        if (payment.paymentMethod !== 'cod') {
+            throw new Error('Payment is not a Cash on Delivery payment');
+        }
+
+        payment.codDetails = payment.codDetails || {};
+        payment.codDetails.verificationAttempts = payment.codDetails.verificationAttempts || [];
+
+        const attempts = payment.codDetails.verificationAttempts;
+        const lastAttempt = attempts[attempts.length - 1];
+
+        // The courier/admin may verify without a pre-recorded attempt (e.g. inbound call).
+        if (lastAttempt && lastAttempt.status === 'pending') {
+            lastAttempt.attemptedBy = verifiedBy;
+            lastAttempt.status = status;
+            lastAttempt.notes = notes;
+        } else {
+            attempts.push({
+                attemptedAt: new Date(),
+                attemptedBy: verifiedBy,
+                method: 'call',
+                status,
+                notes
+            });
+        }
 
         if (status === 'success') {
-            payment.cod.verified = true;
+            payment.codDetails.verificationStatus = 'verified';
             payment.status = 'processing';
 
             const order = await Order.findById(payment.order);
-            order.codVerified = true;
-            order.overallStatus = 'confirmed';
-            await order.save();
+            if (order) {
+                order.codVerified = true;
+                order.overallStatus = 'confirmed';
+                await order.save();
+            }
 
             await OrderTimeline.create({
                 order: payment.order,
@@ -273,16 +380,27 @@ class PaymentService {
                 actorType: 'admin'
             });
 
-        } else if (payment.cod.verificationAttempts.length >= 3) {
+        } else if (attempts.length >= PaymentService.MAX_COD_VERIFICATION_ATTEMPTS) {
+            payment.codDetails.verificationStatus = 'failed';
             payment.status = 'failed';
+            payment.timeline.push({
+                event: 'payment_failed',
+                timestamp: new Date(),
+                description: 'COD verification failed after multiple attempts'
+            });
 
             const order = await Order.findById(payment.order);
-            order.overallStatus = 'cancelled';
-            order.cancellationRequest = {
-                reason: 'COD verification failed after multiple attempts',
-                status: 'approved'
-            };
-            await order.save();
+            if (order) {
+                order.overallStatus = 'cancelled';
+                order.paymentStatus = 'failed';
+                order.cancellationRequest = {
+                    requestedBy: verifiedBy,
+                    requestedAt: new Date(),
+                    reason: 'COD verification failed after multiple attempts',
+                    status: 'approved'
+                };
+                await order.save();
+            }
         }
 
         await payment.save();
@@ -297,32 +415,42 @@ class PaymentService {
             throw new Error('Invalid payment');
         }
 
-        payment.cod.collectedAmount = collectionData.amount;
-        payment.cod.collectedBy = collectionData.collectedBy;
-        payment.cod.collectedAt = new Date();
-        payment.cod.changeAmount = collectionData.changeAmount || 0;
-        payment.cod.collectionProof = collectionData.proofImage;
+        if (payment.status === 'completed') {
+            return payment;
+        }
+
+        payment.codDetails = payment.codDetails || {};
+        payment.codDetails.collectedAmount = collectionData.amount;
+        payment.codDetails.collectedBy = collectionData.collectedBy;
+        payment.codDetails.collectedDate = new Date();
+        payment.codDetails.changeAmount = collectionData.changeAmount || 0;
+        payment.codDetails.collectionStatus = 'collected';
+        payment.codDetails.collectionProof = {
+            image: collectionData.proofImage || null,
+            signature: collectionData.signature || null,
+            notes: collectionData.notes || null
+        };
 
         payment.status = 'completed';
-        payment.statusHistory.push({
-            status: 'completed',
+        payment.transactionId = payment.transactionId || `COD-${Date.now()}`;
+        payment.timeline.push({
+            event: 'payment_completed',
             timestamp: new Date(),
-            note: `COD amount collected by ${collectionData.collectedBy}`
-        });
-
-        await this.syncOrderAfterPayment(payment.order, {
-            paymentStatus: 'completed',
-            transactionId: `COD-${Date.now()}`,
-            itemStatus: 'pending'
+            description: `COD amount collected by ${collectionData.collectedBy}`
         });
 
         await payment.save();
+
+        await this.syncOrderAfterPayment(payment.order, {
+            paymentStatus: 'completed',
+            transactionId: payment.transactionId
+        });
 
         await OrderTimeline.create({
             order: payment.order,
             event: 'payment_completed',
             title: 'Payment Collected',
-            description: `COD payment of LKR ${collectionData.amount} collected`,
+            description: `COD payment of ${payment.currency} ${collectionData.amount} collected`,
             actorType: 'courier',
             metadata: { collectedBy: collectionData.collectedBy }
         });
@@ -333,7 +461,7 @@ class PaymentService {
     //process refund
     async processStripeRefund(payment, amount) {
         try {
-            const paymentIntentId = payment.provider?.paymentIntentId || payment.gatewayTransactionId || payment.transactionId;
+            const paymentIntentId = payment.gatewayTransactionId || payment.transactionId;
             if (!paymentIntentId) {
                 throw new Error('Stripe payment intent not found for refund');
             }
@@ -355,15 +483,8 @@ class PaymentService {
                 refundMethod: 'original_method',
                 notes: 'Stripe refund completed'
             });
-            payment.status = 'refunded';
 
-            const order = await Order.findById(payment.order);
-            if (order) {
-                order.paymentStatus = 'refunded';
-                order.overallStatus = 'refunded';
-                await order.save();
-            }
-
+            await this.applyRefundStatus(payment, amount);
             await payment.save();
             return refund;
 
@@ -380,6 +501,12 @@ class PaymentService {
                 errorCode: error.code,
                 errorMessage: error.message
             };
+            payment.timeline.push({
+                event: 'refund_failed',
+                timestamp: new Date(),
+                description: error.message
+            });
+            await payment.save();
             throw error;
         }
     }
@@ -391,11 +518,43 @@ class PaymentService {
             throw new Error('Payment not found');
         }
 
-        const amount = refundData.amount || payment.amount;
+        if (payment.status !== 'completed') {
+            throw new Error(`Only completed payments can be refunded. Current status: ${payment.status}`);
+        }
 
-        if ((payment.paymentMethod || '').toLowerCase() === 'card' && (payment.provider?.paymentIntentId || payment.gatewayTransactionId || payment.transactionId)) {
+        const alreadyRefunded = (payment.refunds || [])
+            .filter((refund) => ['completed', 'pending', 'processing'].includes(refund.status))
+            .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
+        const refundable = Number(payment.amount || 0) - alreadyRefunded;
+        const amount = Number(refundData.amount || refundable);
+
+        if (!Number.isFinite(amount) || amount <= 0) {
+            throw new Error('Refund amount must be a positive number');
+        }
+
+        if (amount > refundable) {
+            throw new Error(`Refund amount exceeds the refundable balance of ${refundable}`);
+        }
+
+        const method = String(payment.paymentMethod || '').toLowerCase();
+        const requestedMethod = String(refundData.refundMethod || '').toLowerCase();
+
+        payment.timeline.push({
+            event: 'refund_initiated',
+            timestamp: new Date(),
+            description: `Refund of ${payment.currency} ${amount} initiated`
+        });
+
+        // An explicit wallet/store-credit request wins over the original method,
+        // so a card order can be refunded as store credit when the customer asks.
+        if (['wallet', 'store_credit'].includes(requestedMethod) && payment.user) {
+            await this.processWalletRefund(payment, amount, refundData);
+        } else if (method === 'card' && (payment.gatewayTransactionId || payment.transactionId)) {
             await this.processStripeRefund(payment, amount);
+        } else if (method === 'wallet') {
+            await this.processWalletRefund(payment, amount, refundData);
         } else {
+            // COD has no gateway to reverse - finance settles this offline.
             payment.refunds = payment.refunds || [];
             payment.refunds.push({
                 refundId: `MANUAL-${Date.now()}`,
@@ -407,27 +566,105 @@ class PaymentService {
                 refundMethod: refundData.refundMethod || 'manual',
                 notes: 'COD/manual refund requires offline processing'
             });
-            payment.status = 'refunded';
-            const order = await Order.findById(payment.order);
-            if (order) {
-                order.paymentStatus = 'refunded';
-                order.overallStatus = 'refunded';
-                await order.save();
-            }
+
+            await this.applyRefundStatus(payment, amount);
         }
 
         await payment.save();
         return payment;
     }
 
+    // Wallet refunds credit the customer balance immediately.
+    async processWalletRefund(payment, amount, refundData = {}) {
+        const user = await User.findById(payment.user);
+
+        if (!user) {
+            throw new Error('User not found for wallet refund');
+        }
+
+        const credited = await User.findByIdAndUpdate(
+            payment.user,
+            { $inc: { 'wallet.balance': amount } },
+            { new: true }
+        ).select('wallet');
+
+        const refundId = `WALLET-REFUND-${payment._id}-${Date.now()}`;
+
+        await WalletTransaction.create({
+            user: payment.user,
+            type: 'credit',
+            amount,
+            balanceAfter: Number(credited?.wallet?.balance || 0),
+            currency: payment.currency || 'LKR',
+            source: 'refund',
+            reference: refundId,
+            order: payment.order,
+            payment: payment._id,
+            description: `Refund for payment ${payment.paymentNumber}`,
+        });
+
+        payment.refunds = payment.refunds || [];
+        payment.refunds.push({
+            refundId,
+            amount,
+            reason: refundData.reason,
+            status: 'completed',
+            initiatedBy: refundData.initiatedBy,
+            initiatedAt: new Date(),
+            processedAt: new Date(),
+            actualCompletionDate: new Date(),
+            refundMethod: 'wallet',
+            notes: 'Refunded to wallet balance'
+        });
+
+        await this.applyRefundStatus(payment, amount);
+        return payment;
+    }
+
+    // Mark the payment/order as fully or partially refunded based on the running total.
+    async applyRefundStatus(payment, amount) {
+        const refundedTotal = (payment.refunds || [])
+            .filter((refund) => ['completed', 'pending', 'processing'].includes(refund.status))
+            .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
+        const isFullRefund = refundedTotal >= Number(payment.amount || 0);
+
+        payment.status = isFullRefund ? 'refunded' : 'completed';
+        payment.timeline.push({
+            event: 'refund_completed',
+            timestamp: new Date(),
+            description: `Refund of ${payment.currency} ${amount} recorded`
+        });
+
+        const order = await Order.findById(payment.order);
+        if (order) {
+            order.paymentStatus = isFullRefund ? 'refunded' : 'partially_refunded';
+            if (isFullRefund) {
+                order.overallStatus = 'refunded';
+            }
+            await order.save();
+        }
+
+        return payment;
+    }
+
     // Generate Receipt
     async generateReceipt(paymentId) {
-        const payment = await Payment.findById(paymentId)
-            .populate('order')
-            .populate('user', 'name email');
+        const payment = await Payment.findById(paymentId).populate('order');
+
+        if (!payment) {
+            throw new Error('Payment not found');
+        }
+
+        const orderId = payment.order?._id || payment.order;
+
+        try {
+            await invoiceService.generateInvoicePdf(orderId);
+        } catch (error) {
+            console.error(`Receipt generation failed for payment ${payment.paymentNumber}:`, error.message);
+        }
 
         payment.receipt = {
-            url: ``,
+            url: `/api/orders/${orderId}/invoice`,
             generatedAt: new Date()
         };
 
@@ -444,9 +681,15 @@ class PaymentService {
             throw new Error('Payment not found');
         }
 
-        const user = await Order.findById(userId);
-        if (payment.user._id.toString() !== userId.toString() && user.role !== 'admin') {
-            throw new Error('Unauthorized access');
+        const isOwner = payment.user?._id?.toString() === userId?.toString();
+
+        if (!isOwner) {
+            const requester = await User.findById(userId).select('role');
+            const role = String(requester?.role || '').replace(/_/g, '').toUpperCase();
+
+            if (!['ADMIN', 'SUPERADMIN'].includes(role)) {
+                throw new Error('Unauthorized access');
+            }
         }
 
         return payment;

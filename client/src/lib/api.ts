@@ -370,6 +370,90 @@ export interface ShippingCalculationResponse {
   };
 }
 
+export type ShipmentStatus =
+  | 'label_created'
+  | 'pickup_scheduled'
+  | 'picked_up'
+  | 'in_transit'
+  | 'out_for_delivery'
+  | 'delivered'
+  | 'delivery_attempted'
+  | 'failed'
+  | 'returned_to_sender'
+  | 'cancelled'
+  | 'on_hold'
+  | 'lost'
+  | 'damaged';
+
+export interface ApiShipmentTrackingEvent {
+  status: string;
+  timestamp: string;
+  description?: string;
+  location?: { city?: string; district?: string };
+}
+
+/** Payload of the public tracking endpoint - contains no PII by design. */
+export interface ApiShipmentTracking {
+  trackingNumber: string;
+  status: ShipmentStatus;
+  estimatedDelivery?: string;
+  deliveredAt?: string | null;
+  courier?: string | null;
+  currentLocation?: { city?: string; district?: string; lastUpdated?: string } | null;
+  destination?: { city?: string; district?: string };
+  attemptCount: number;
+  trackingEvents: ApiShipmentTrackingEvent[];
+}
+
+export interface ApiShipment {
+  _id: string;
+  order?: string | { _id?: string; orderNumber?: string; totalAmount?: number };
+  orderItem?: string;
+  vendor?: string | { _id?: string; name?: string; storeName?: string };
+  customer?: string | { _id?: string; name?: string; phone?: string };
+  trackingNumber: string;
+  status: ShipmentStatus;
+  shipmentType?: string;
+  courierPartner?: { name?: string; trackingUrl?: string; contactNumber?: string };
+  shippingAddress?: {
+    fullName?: string;
+    phone?: string;
+    addressLine1?: string;
+    addressLine2?: string;
+    city?: string;
+    district?: string;
+    postalCode?: string;
+  };
+  estimatedDeliveryDate?: string;
+  actualDeliveryDate?: string;
+  currentLocation?: { city?: string; district?: string; facility?: string; lastUpdated?: string };
+  trackingEvents?: ApiShipmentTrackingEvent[];
+  deliveryAttempts?: Array<{
+    attemptNumber?: number;
+    attemptDate?: string;
+    status?: string;
+    reason?: string;
+    notes?: string;
+  }>;
+  rating?: {
+    deliverySpeed?: number;
+    courierBehavior?: number;
+    packaging?: number;
+    overall?: number;
+    feedback?: string;
+    ratedAt?: string;
+  };
+  issues?: Array<{
+    type?: string;
+    severity?: string;
+    description?: string;
+    reportedAt?: string;
+    resolvedAt?: string;
+  }>;
+  shippingCost?: { totalCharge?: number };
+  createdAt?: string;
+}
+
 export interface ApiRefund {
   _id?: string;
   id?: string;
@@ -1220,6 +1304,124 @@ class ApiClient {
     });
   }
 
+  /** Public tracking. Deliberately returns no recipient identity or address. */
+  async trackShipment(trackingNumber: string): Promise<ApiShipmentTracking> {
+    return this.request<ApiShipmentTracking>(`/shipping/track/${encodeURIComponent(trackingNumber)}`);
+  }
+
+  async getVendorShipments(params?: { status?: string; page?: number; limit?: number }): Promise<{
+    shipments: ApiShipment[];
+    pagination: { page: number; limit: number; total: number; pages: number };
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== '') searchParams.set(key, String(value));
+      });
+    }
+
+    const response = await this.request<any>(`/shipping/vendor/shipments?${searchParams.toString()}`);
+    return response.data || response;
+  }
+
+  async getCustomerShipments(params?: { page?: number; limit?: number }): Promise<{
+    shipments: ApiShipment[];
+    pagination: { page: number; limit: number; total: number; pages: number };
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) searchParams.set(key, String(value));
+      });
+    }
+
+    const response = await this.request<any>(`/shipping/my-shipments?${searchParams.toString()}`);
+    return response.data || response;
+  }
+
+  async getShipmentDetails(shippingId: string): Promise<ApiShipment> {
+    const response = await this.request<any>(`/shipping/${shippingId}`);
+    return response.data || response;
+  }
+
+  async createShipment(orderId: string): Promise<ApiShipment> {
+    const response = await this.request<any>(`/shipping/create/${orderId}`, { method: 'POST' });
+    return response.data || response;
+  }
+
+  async scheduleShipmentPickup(
+    shippingId: string,
+    data: { pickupDate: string; pickupAddress: Record<string, unknown> }
+  ): Promise<ApiShipment> {
+    return this.request<ApiShipment>(`/shipping/${shippingId}/schedule-pickup`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateShipmentStatus(
+    shippingId: string,
+    data: { status: string; note?: string; location?: { city?: string; district?: string; facility?: string } }
+  ): Promise<ApiShipment> {
+    return this.request<ApiShipment>(`/shipping/${shippingId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async recordDeliveryAttempt(
+    shippingId: string,
+    data: { status: string; reason?: string; notes?: string; nextAttemptDate?: string; customerContact?: string }
+  ): Promise<ApiShipment> {
+    return this.request<ApiShipment>(`/shipping/${shippingId}/delivery-attempt`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async confirmShipmentDelivery(
+    shippingId: string,
+    data: {
+      recipientName: string;
+      recipientRelation?: string;
+      recipientNIC?: string;
+      notes?: string;
+      deliveryAgent?: { name?: string; phone?: string; vehicleNumber?: string };
+    }
+  ): Promise<ApiShipment> {
+    return this.request<ApiShipment>(`/shipping/${shippingId}/confirm-delivery`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async generateShippingLabel(shippingId: string): Promise<{ filePath?: string; fileName?: string }> {
+    const response = await this.request<any>(`/shipping/${shippingId}/generate-label`, { method: 'POST' });
+    return response.data || response;
+  }
+
+  async submitShipmentRating(
+    shippingId: string,
+    data: { deliverySpeed: number; courierBehavior: number; packaging: number; feedback?: string }
+  ): Promise<ApiShipment> {
+    const response = await this.request<any>(`/shipping/${shippingId}/rate`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return response.data || response;
+  }
+
+  async reportShipmentIssue(
+    shippingId: string,
+    data: { type: string; severity: string; description: string; photos?: string[] }
+  ): Promise<ApiShipment> {
+    const response = await this.request<any>(`/shipping/${shippingId}/issue`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return response.data || response;
+  }
+
   // ============ CART ============
 
   async getCart(): Promise<{ success: boolean; cart: ApiCart }> {
@@ -1821,6 +2023,58 @@ class ApiClient {
       body: JSON.stringify(data),
     });
 
+    return response.data || response;
+  }
+
+  async createWalletTopupIntent(data: { amount: number }): Promise<{
+    paymentIntentId: string;
+    clientSecret: string;
+    amount: number;
+    currency: string;
+  }> {
+    const response = await this.request<any>('/payments/wallet/topup/intent', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    return response.data || response;
+  }
+
+  async confirmWalletTopup(data: { paymentIntentId: string }): Promise<{
+    amount: number;
+    balance: number;
+    alreadyCredited?: boolean;
+  }> {
+    const response = await this.request<any>('/payments/wallet/topup/confirm', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+
+    return response.data || response;
+  }
+
+  async getWalletTransactions(params?: { page?: number; limit?: number }): Promise<{
+    transactions: Array<{
+      _id: string;
+      type: 'credit' | 'debit';
+      amount: number;
+      balanceAfter: number | null;
+      source: string;
+      description?: string;
+      createdAt: string;
+    }>;
+    pagination: { page: number; limit: number; total: number; pages: number };
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined) {
+          searchParams.set(key, String(value));
+        }
+      });
+    }
+
+    const response = await this.request<any>(`/payments/wallet/transactions?${searchParams.toString()}`);
     return response.data || response;
   }
 

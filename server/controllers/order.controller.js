@@ -377,6 +377,36 @@ module.exports.adminUpdateOrderStatus = async (req, res) => {
     }
 }
 
+// Set/replace the tracking number on an order without changing its status.
+module.exports.updateOrderTracking = async (req, res) => {
+    try {
+        if (!assertValidOrderId(res, req.params.id)) return;
+
+        const trackingNumber = String(req.body?.trackingNumber || '').trim();
+
+        if (!trackingNumber || trackingNumber.length > 64) {
+            return res.status(400).json({
+                success: false,
+                message: 'trackingNumber is required and must be up to 64 characters'
+            });
+        }
+
+        const updated = await orderService.updateOrderTracking(
+            req.params.id,
+            trackingNumber,
+            req.user?._id || req.user?.id
+        );
+
+        res.status(200).json({
+            success: true,
+            message: 'Tracking number updated',
+            data: updated
+        });
+    } catch (error) {
+        res.status(400).json({ success: false, message: error.message });
+    }
+};
+
 // Cancel order
 module.exports.cancelOrder = async (req, res) => {
     try {
@@ -584,8 +614,25 @@ module.exports.trackOrder = async (req, res) => {
             .sort({ createdAt: -1 })
             .select('event title description createdAt');
 
-        const orderPayload = trackedOrder.toObject();
-        orderPayload.trackingNumber = orderPayload.trackingNumber || shipment.trackingNumber;
+        // This endpoint is public - a tracking number alone must not expose the
+        // recipient's name, phone, or street address.
+        const orderPayload = {
+            _id: trackedOrder._id,
+            orderNumber: trackedOrder.orderNumber,
+            overallStatus: trackedOrder.overallStatus,
+            estimatedDeliveryDate: trackedOrder.estimatedDeliveryDate,
+            trackingNumber: shipment.trackingNumber,
+            destination: {
+                city: trackedOrder.shippingAddress?.city,
+                district: trackedOrder.shippingAddress?.district,
+            },
+            items: (trackedOrder.items || []).map((item) => ({
+                _id: item._id,
+                status: item.status,
+                quantity: item.quantity,
+                product: item.product,
+            })),
+        };
 
         res.status(200).json({ order: orderPayload, timeline });
     } catch (error) {

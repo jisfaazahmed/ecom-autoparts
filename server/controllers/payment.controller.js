@@ -4,8 +4,13 @@ const paymentService = require('../services/payment.service');
 const stripe = require('../config/stripe');
 const OrderTimeline = require('../models/timeline.model');
 const User = require('../models/user');
+const WalletTransaction = require('../models/walletTransaction.model');
 const invoiceService = require('../services/invoice.service');
 const emailService = require('../services/email.service');
+
+// Wallet top-up bounds (LKR)
+const WALLET_TOPUP_MIN = 100;
+const WALLET_TOPUP_MAX = 500000;
 
 function getRequestUserId(req) {
   return req?.user?._id || req?.user?.id || null;
@@ -33,7 +38,7 @@ async function getOrCreatePaymentForOrder(order, userId, paymentMethod = 'card')
       order: order._id,
       user: userId,
       paymentMethod,
-      gateway: paymentMethod === 'card' ? 'stripe' : 'wallet',
+      gateway: paymentMethod === 'card' ? 'stripe' : paymentMethod,
       amount: order.totalAmount,
       totalAmount: order.totalAmount,
       currency: order.currency || 'LKR',
@@ -152,6 +157,49 @@ async function finalizeSuccessfulCardPayment({ order, paymentIntentId, sessionId
 function withReceiptEmail(payload, email) {
   const sanitizedEmail = String(email || '').trim();
   return sanitizedEmail ? { ...payload, receipt_email: sanitizedEmail } : payload;
+}
+
+// Credits a succeeded wallet top-up intent exactly once.
+// The unique (reference, type) index on WalletTransaction is the idempotency guard,
+// so the client confirm call and the Stripe webhook can both run safely.
+async function creditWalletFromIntent(paymentIntent) {
+  const userId = paymentIntent.metadata?.userId;
+  const amount = Number(paymentIntent.amount_received || paymentIntent.amount || 0) / 100;
+
+  if (!userId) {
+    throw new Error('Wallet top-up intent is missing userId metadata');
+  }
+
+  try {
+    await WalletTransaction.create({
+      user: userId,
+      type: 'credit',
+      amount,
+      currency: 'LKR',
+      source: 'topup',
+      reference: paymentIntent.id,
+      description: 'Wallet top-up via card',
+    });
+  } catch (error) {
+    if (error?.code === 11000) {
+      const current = await User.findById(userId).select('wallet');
+      return { credited: false, amount, balance: Number(current?.wallet?.balance || 0) };
+    }
+    throw error;
+  }
+
+  const updated = await User.findByIdAndUpdate(
+    userId,
+    { $inc: { 'wallet.balance': amount } },
+    { new: true }
+  ).select('wallet');
+
+  await WalletTransaction.updateOne(
+    { reference: paymentIntent.id, type: 'credit' },
+    { $set: { balanceAfter: Number(updated?.wallet?.balance || 0) } }
+  );
+
+  return { credited: true, amount, balance: Number(updated?.wallet?.balance || 0) };
 }
 
 function getIdempotencyKey(req) {
@@ -395,9 +443,8 @@ exports.confirmPaymentIntent = async (req, res) => {
       };
     }
 
-    payment.provider = payment.provider || {};
-    payment.provider.paymentIntentId = paymentIntentId;
-    payment.provider.transactionId = paymentIntentId;
+    payment.transactionId = paymentIntentId;
+    payment.gatewayTransactionId = paymentIntentId;
 
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
@@ -544,6 +591,22 @@ exports.handleStripeWebhook = async (req, res) => {
                 await handlePaymentIntentFailed(event.data.object);
                 break;
 
+            case 'payment_intent.canceled':
+                await handlePaymentIntentCanceled(event.data.object);
+                break;
+
+            case 'charge.refunded':
+                await handleChargeRefunded(event.data.object);
+                break;
+
+            case 'charge.dispute.created':
+                await handleDisputeCreated(event.data.object);
+                break;
+
+            case 'charge.dispute.closed':
+                await handleDisputeClosed(event.data.object);
+                break;
+
             default:
                 console.log(`Unhandled event type ${event.type}`);
         }
@@ -583,6 +646,12 @@ async function handleCheckoutSessionCompleted(session) {
 
 // Helper function to handle successful payment intent
 async function handlePaymentIntentSucceeded(paymentIntent) {
+  // Wallet top-ups have no order attached; credit the balance and stop here.
+  if (paymentIntent.metadata?.purpose === 'wallet_topup') {
+    await creditWalletFromIntent(paymentIntent);
+    return;
+  }
+
   const paymentIntentId = paymentIntent.id;
   const payment = await Payment.findOne({
     $or: [
@@ -637,12 +706,19 @@ async function handlePaymentIntentSucceeded(paymentIntent) {
 
 // Helper function to handle failed payment
 async function handlePaymentIntentFailed(paymentIntent) {
-    const payment = await Payment.findOne({ 
-        'provider.paymentIntentId': paymentIntent.id 
+    const payment = await Payment.findOne({
+        $or: [
+            { transactionId: paymentIntent.id },
+            { gatewayTransactionId: paymentIntent.id },
+        ],
     });
 
     if (payment) {
         payment.status = 'failed';
+        payment.gatewayResponse = {
+            errorCode: paymentIntent.last_payment_error?.code,
+            errorMessage: paymentIntent.last_payment_error?.message,
+        };
         payment.timeline.push({
             event: 'payment_failed',
             timestamp: new Date(),
@@ -868,30 +944,81 @@ exports.payWithWallet = async (req, res) => {
       }
     }
 
-    user.wallet.balance = Number(user.wallet.balance || 0) - Number(order.totalAmount || 0);
-    user.wallet.otp = { code: null, expiresAt: null, attempts: 0, lastSentAt: null };
-    await user.save();
+    const amount = Number(order.totalAmount || 0);
 
-    const payment = await getOrCreatePaymentForOrder(order, userId, 'wallet');
-    payment.status = 'completed';
-    payment.paymentMethod = 'wallet';
-    payment.gateway = 'wallet';
-    payment.transactionId = `WALLET-${Date.now()}`;
-    payment.gatewayTransactionId = payment.transactionId;
-    payment.timeline.push({
-      event: 'payment_completed',
-      timestamp: new Date(),
-      description: 'Wallet payment completed',
-    });
-    await payment.save();
+    // Conditional atomic debit: the balance check and the deduction happen in one
+    // operation, so concurrent orders cannot overdraw the wallet.
+    const debited = await User.findOneAndUpdate(
+      { _id: userId, 'wallet.balance': { $gte: amount } },
+      {
+        $inc: { 'wallet.balance': -amount },
+        $set: { 'wallet.otp': { code: null, expiresAt: null, attempts: 0, lastSentAt: null } },
+      },
+      { new: true }
+    ).select('wallet');
 
-    await paymentService.syncOrderAfterPayment(order._id, {
-      paymentStatus: 'completed',
-      transactionId: payment.transactionId,
-    });
+    if (!debited) {
+      return res.status(400).json({
+        success: false,
+        message: 'Insufficient wallet balance',
+        data: {
+          balance: Number(user.wallet.balance || 0),
+          required: amount,
+        },
+      });
+    }
 
-    order.paymentId = payment._id;
-    await order.save();
+    let payment;
+
+    try {
+      await WalletTransaction.create({
+        user: userId,
+        type: 'debit',
+        amount,
+        balanceAfter: Number(debited.wallet?.balance || 0),
+        currency: order.currency || 'LKR',
+        source: 'order_payment',
+        reference: `ORDER-${order._id}`,
+        order: order._id,
+        description: `Payment for order ${order.orderNumber}`,
+      });
+
+      payment = await getOrCreatePaymentForOrder(order, userId, 'wallet');
+      payment.status = 'completed';
+      payment.paymentMethod = 'wallet';
+      payment.gateway = 'wallet';
+      payment.transactionId = `WALLET-${Date.now()}`;
+      payment.gatewayTransactionId = payment.transactionId;
+      payment.timeline.push({
+        event: 'payment_completed',
+        timestamp: new Date(),
+        description: 'Wallet payment completed',
+      });
+      await payment.save();
+
+      await paymentService.syncOrderAfterPayment(order._id, {
+        paymentStatus: 'completed',
+        transactionId: payment.transactionId,
+      });
+
+      order.paymentId = payment._id;
+      await order.save();
+    } catch (error) {
+      // Never keep the customer's money if the order could not be finalized.
+      await User.updateOne({ _id: userId }, { $inc: { 'wallet.balance': amount } });
+      await WalletTransaction.create({
+        user: userId,
+        type: 'credit',
+        amount,
+        currency: order.currency || 'LKR',
+        source: 'reversal',
+        reference: `REVERSAL-${order._id}-${Date.now()}`,
+        order: order._id,
+        description: `Reversal: wallet payment for order ${order.orderNumber} failed`,
+      }).catch(() => {});
+
+      throw error;
+    }
 
     return res.json({
       success: true,
@@ -899,11 +1026,125 @@ exports.payWithWallet = async (req, res) => {
         orderId: order._id,
         paymentId: payment._id,
         paymentStatus: 'completed',
-        balance: Number(user.wallet.balance || 0),
+        balance: Number(debited.wallet?.balance || 0),
       },
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message || 'Wallet payment failed' });
+  }
+};
+
+// Create a Stripe PaymentIntent that funds the customer wallet.
+exports.createWalletTopupIntent = async (req, res) => {
+  try {
+    const userId = getRequestUserId(req);
+    const amount = Number(req.body?.amount);
+
+    if (!Number.isFinite(amount) || amount < WALLET_TOPUP_MIN || amount > WALLET_TOPUP_MAX) {
+      return res.status(400).json({
+        success: false,
+        message: `Top-up amount must be between ${WALLET_TOPUP_MIN} and ${WALLET_TOPUP_MAX}`,
+      });
+    }
+
+    const user = await User.findById(userId).select('email wallet');
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create(withReceiptEmail({
+      amount: Math.round(amount * 100),
+      currency: 'lkr',
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        userId: String(userId),
+        purpose: 'wallet_topup',
+      },
+      description: 'Wallet top-up',
+    }, user.email));
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        paymentIntentId: paymentIntent.id,
+        clientSecret: paymentIntent.client_secret,
+        amount,
+        currency: 'LKR',
+      },
+    });
+  } catch (error) {
+    console.error('Wallet top-up intent error:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to start wallet top-up' });
+  }
+};
+
+// Credit the wallet once the top-up PaymentIntent has succeeded.
+exports.confirmWalletTopup = async (req, res) => {
+  try {
+    const userId = getRequestUserId(req);
+    const { paymentIntentId } = req.body;
+
+    if (!paymentIntentId) {
+      return res.status(400).json({ success: false, message: 'paymentIntentId is required' });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (paymentIntent.metadata?.purpose !== 'wallet_topup') {
+      return res.status(400).json({ success: false, message: 'Payment intent is not a wallet top-up' });
+    }
+
+    if (String(paymentIntent.metadata?.userId || '') !== String(userId)) {
+      return res.status(403).json({ success: false, message: 'Payment intent does not belong to this user' });
+    }
+
+    if (paymentIntent.status !== 'succeeded') {
+      return res.status(400).json({
+        success: false,
+        message: `Top-up is not completed. Current status: ${paymentIntent.status}`,
+      });
+    }
+
+    const result = await creditWalletFromIntent(paymentIntent);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        amount: result.amount,
+        balance: result.balance,
+        alreadyCredited: !result.credited,
+      },
+    });
+  } catch (error) {
+    console.error('Wallet top-up confirm error:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to confirm wallet top-up' });
+  }
+};
+
+// Wallet ledger for the signed-in customer.
+exports.getWalletTransactions = async (req, res) => {
+  try {
+    const userId = getRequestUserId(req);
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+
+    const [transactions, total] = await Promise.all([
+      WalletTransaction.find({ user: userId })
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      WalletTransaction.countDocuments({ user: userId }),
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        transactions,
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -985,10 +1226,145 @@ exports.getUserPayments = async (req, res) => {
   }
 };
 
+// Finds the Payment for a Stripe object by intent id, falling back to order metadata.
+async function findPaymentByIntent(paymentIntentId, orderId = null) {
+  if (paymentIntentId) {
+    const payment = await Payment.findOne({
+      $or: [
+        { transactionId: paymentIntentId },
+        { gatewayTransactionId: paymentIntentId },
+      ],
+    });
+
+    if (payment) return payment;
+  }
+
+  return orderId ? Payment.findOne({ order: orderId }) : null;
+}
+
+async function handlePaymentIntentCanceled(paymentIntent) {
+  const payment = await findPaymentByIntent(paymentIntent.id, paymentIntent?.metadata?.orderId);
+
+  if (!payment || payment.status === 'completed') {
+    return;
+  }
+
+  payment.status = 'cancelled';
+  payment.timeline.push({
+    event: 'payment_cancelled',
+    timestamp: new Date(),
+    description: paymentIntent.cancellation_reason || 'Payment intent canceled',
+  });
+  await payment.save();
+
+  const order = await Order.findById(payment.order);
+  if (order) {
+    order.paymentStatus = 'failed';
+    await order.save();
+  }
+}
+
+// Refunds issued directly from the Stripe dashboard never pass through our API,
+// so mirror them onto the payment record here.
+async function handleChargeRefunded(charge) {
+  const payment = await findPaymentByIntent(charge.payment_intent);
+
+  if (!payment) {
+    return;
+  }
+
+  const refundedTotal = Number(charge.amount_refunded || 0) / 100;
+  const known = (payment.refunds || [])
+    .filter((refund) => refund.status === 'completed')
+    .reduce((sum, refund) => sum + Number(refund.amount || 0), 0);
+  const delta = refundedTotal - known;
+
+  if (delta <= 0) {
+    return;
+  }
+
+  payment.refunds = payment.refunds || [];
+  payment.refunds.push({
+    refundId: `STRIPE-${charge.id}`,
+    amount: delta,
+    reason: 'requested_by_customer',
+    status: 'completed',
+    processedAt: new Date(),
+    gatewayRefundId: charge.id,
+    refundMethod: 'original_method',
+    notes: 'Refund recorded from Stripe webhook',
+  });
+
+  await paymentService.applyRefundStatus(payment, delta);
+  await payment.save();
+}
+
+async function handleDisputeCreated(dispute) {
+  const payment = await findPaymentByIntent(dispute.payment_intent);
+
+  if (!payment) {
+    console.error(`Dispute ${dispute.id} could not be matched to a payment`);
+    return;
+  }
+
+  payment.timeline.push({
+    event: 'chargeback_initiated',
+    timestamp: new Date(),
+    description: `Chargeback opened (${dispute.reason || 'unspecified'}) for ${dispute.currency?.toUpperCase()} ${Number(dispute.amount || 0) / 100}`,
+  });
+  payment.gatewayResponse = {
+    errorCode: dispute.reason,
+    errorMessage: `Dispute ${dispute.id} status: ${dispute.status}`,
+  };
+  await payment.save();
+
+  await OrderTimeline.create({
+    order: payment.order,
+    event: 'payment_failed',
+    title: 'Chargeback Opened',
+    description: `A chargeback was opened for this order (${dispute.reason || 'unspecified'})`,
+    actorType: 'system',
+    metadata: { disputeId: dispute.id, status: dispute.status },
+  });
+}
+
+async function handleDisputeClosed(dispute) {
+  const payment = await findPaymentByIntent(dispute.payment_intent);
+
+  if (!payment) {
+    return;
+  }
+
+  const lost = dispute.status === 'lost';
+
+  payment.timeline.push({
+    event: 'chargeback_resolved',
+    timestamp: new Date(),
+    description: `Chargeback ${dispute.status}`,
+  });
+
+  if (lost) {
+    payment.status = 'refunded';
+
+    const order = await Order.findById(payment.order);
+    if (order) {
+      order.paymentStatus = 'refunded';
+      order.overallStatus = 'refunded';
+      await order.save();
+    }
+  }
+
+  await payment.save();
+}
+
 exports.__testHooks = {
   handleCheckoutSessionCompleted,
   handlePaymentIntentSucceeded,
   handlePaymentIntentFailed,
+  handlePaymentIntentCanceled,
+  handleChargeRefunded,
+  handleDisputeCreated,
+  handleDisputeClosed,
   finalizeSuccessfulCardPayment,
 };
 

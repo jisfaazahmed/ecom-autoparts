@@ -4,11 +4,16 @@ const SubOrder = require('../models/subOrder.model');
 const Product = require('../models/product');
 const VendorProduct = require('../models/vendorProduct');
 const Coupon = require('../models/coupon.model');
+const Payment = require('../models/payment.model');
 const User = require('../models/user');
 const OrderTimeLine = require('../models/timeline.model');
 const NotificationService = require('./notification.service');
 const InventoryReservationService = require('./inventoryReservation.service');
 const shippingService = require('./shipping.service');
+
+// Loaded lazily: payment.service pulls in the Stripe client, which fails fast when
+// STRIPE_SECRET_KEY is unset. Order placement must not depend on that at import time.
+const getPaymentService = () => require('./payment.service');
 
 class OrderService {
 
@@ -560,6 +565,16 @@ class OrderService {
                 metadata: { totalAmount, itemCount: orderItemDocs.length }
             }]);
 
+            // COD has no gateway step, so the payment record is created up front.
+            // Card/wallet records are created by the payment controller during checkout.
+            if (paymentMethod === 'cod') {
+                try {
+                    await getPaymentService().createCODPayment(order, userId);
+                } catch (error) {
+                    console.error(`COD payment record creation failed for order ${order.orderNumber}:`, error.message);
+                }
+            }
+
             // Send notification
             await this.sendOrderNotification(order, 'order_placed');
 
@@ -754,6 +769,22 @@ class OrderService {
             actorType: 'vendor'
         });
 
+        // A vendor marking an item ready to ship is what creates the shipment (and
+        // therefore the tracking number). Failures here must not block the status update.
+        if (['ready_to_ship', 'shipped'].includes(normalizedStatus)) {
+            try {
+                const shipment = await shippingService.ensureShipmentForVendor(orderId, item.vendor);
+
+                if (shipment?.trackingNumber && !order.trackingNumber) {
+                    order.trackingNumber = shipment.trackingNumber;
+                    item.trackingNumber = shipment.trackingNumber;
+                    await item.save();
+                }
+            } catch (error) {
+                console.error(`Shipment creation failed for order ${orderId}:`, error.message);
+            }
+        }
+
         const itemVendorId = String(item.vendor || '');
         order.subOrders = (order.subOrders || []).map(subOrder => {
             const sub = subOrder.toObject ? subOrder.toObject() : subOrder;
@@ -892,53 +923,75 @@ class OrderService {
         return order;
     }
 
-    //COD verification
-    async initiateCODVerification(orderId) {
-        const order = await Order.findById(orderId).populate('user');
+    // Sets the tracking number on the order and mirrors it onto items and sub-orders
+    // so vendor/customer views stay consistent.
+    async updateOrderTracking(orderId, trackingNumber, userId) {
+        const order = await Order.findById(orderId);
 
-        order.initiateCODVerification.push({
-            attemptedAt: new Date(),
-            status: 'pending'
+        if (!order) {
+            throw new Error('Order not found');
+        }
+
+        order.trackingNumber = trackingNumber;
+        await order.save();
+
+        await OrderItem.updateMany(
+            { _id: { $in: order.items } },
+            { $set: { trackingNumber } }
+        );
+
+        await SubOrder.updateMany(
+            { order: order._id },
+            { $set: { trackingNumber } }
+        );
+
+        await OrderTimeLine.create({
+            order: order._id,
+            event: 'in_transit',
+            title: 'Tracking Number Updated',
+            description: `Tracking number set to ${trackingNumber}`,
+            actor: userId || null,
+            actorType: 'admin',
+            metadata: { trackingNumber }
         });
 
-        await order.save();
         return order;
+    }
+
+    // COD verification state lives on the Payment document; these order-level
+    // helpers resolve the order's payment and delegate to the payment service.
+    async resolveCODPayment(orderId) {
+        const order = await Order.findById(orderId);
+
+        if (!order) {
+            throw new Error('Order not found');
+        }
+
+        if (order.paymentMethod !== 'cod') {
+            throw new Error('Order is not a Cash on Delivery order');
+        }
+
+        let payment = await Payment.findOne({ order: order._id });
+
+        // Older COD orders were created before payment records existed.
+        if (!payment) {
+            payment = await getPaymentService().createCODPayment(order, order.user);
+        }
+
+        return { order, payment };
+    }
+
+    async initiateCODVerification(orderId) {
+        const { payment } = await this.resolveCODPayment(orderId);
+        await getPaymentService().initiateCODVerification(payment._id);
+        return Order.findById(orderId);
     }
 
     //attempts
     async verifyCOD(orderId, verifiedBy, status, notes) {
-        const order = await Order.findById(orderId);
-
-        const lastAttempt = order.codVerificationAttempts[order.codVerificationAttempts.length - 1];
-        lastAttempt.verifiedBy = verifiedBy;
-        lastAttempt.status = status;
-        lastAttempt.notes = notes;
-
-        if (status === 'success') {
-            order.codeVerified = true;
-            order.overallStatus = 'confirmed';
-
-            await OrderTimeLine.create({
-                order: orderId,
-                event: 'cod_verified',
-                title: 'COD Verified',
-                description: 'Cash on Delivery order has been verified',
-                actor: verifiedBy,
-                actorType: 'admin'
-            });
-        }
-        else if (order.codVerificationAttempts.length >= 3) {
-            order.overallStatus = 'cancelled';
-            order.cancellationRequest = {
-                requestedBy: verifiedBy,
-                requestedAt: new Date(),
-                reason: 'COD verification failed after multiple attempts',
-                status: 'approved'
-            };
-        }
-
-        await order.save();
-        return order;
+        const { payment } = await this.resolveCODPayment(orderId);
+        await getPaymentService().verifyCOD(payment._id, verifiedBy, status, notes);
+        return Order.findById(orderId);
     }
 
     // Cancelling
@@ -1005,9 +1058,16 @@ class OrderService {
                 );
             }
 
+            const cancellationEvents = {
+                customer: 'cancelled_by_customer',
+                vendor: 'cancelled_by_vendor',
+                admin: 'cancelled_by_system',
+                system: 'cancelled_by_system',
+            };
+
             await OrderTimeLine.create([{
                 order: orderId,
-                event: cancelledBy === 'customer' ? 'cancelled_by_customer' : 'cancelled_by_vendor',
+                event: cancellationEvents[cancelledBy] || 'cancelled_by_system',
                 title: 'Order Cancelled',
                 description: reason,
                 actor: userId,

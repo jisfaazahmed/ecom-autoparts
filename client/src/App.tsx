@@ -16,6 +16,7 @@ import PaymentSuccess from "./pages/PaymentSuccess";
 import PaymentDownload from "./pages/PaymentDownload";
 import PaymentCancel from "./pages/PaymentCancel";
 import Orders from "./pages/Orders";
+import Shipments from "./pages/Shipments";
 import ReturnsRefunds from "./pages/ReturnsRefunds";
 import MyVehicle from "./pages/MyVehicle";
 import Profile from "./pages/Profile";
@@ -27,6 +28,7 @@ import ResetPassword from "./pages/auth/ResetPassword";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminProducts from "./pages/admin/Products";
 import AdminOrders from "./pages/admin/Orders";
+import AdminShipments from "./pages/admin/Shipments";
 import AdminRefunds from "./pages/admin/Refunds";
 import AdminSettings from "./pages/admin/Settings";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
@@ -76,6 +78,11 @@ const App = () => (
             <Route path="/orders" element={
               <ProtectedRoute>
                 <Orders />
+              </ProtectedRoute>
+            } />
+            <Route path="/shipments" element={
+              <ProtectedRoute>
+                <Shipments />
               </ProtectedRoute>
             } />
             <Route path="/returns" element={
@@ -129,6 +136,11 @@ const App = () => (
             <Route path="/admin/orders" element={
               <ProtectedRoute requiredRole="admin" requireApprovedShop>
                 <AdminOrders />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/shipments" element={
+              <ProtectedRoute requiredRole="admin" requireApprovedShop>
+                <AdminShipments />
               </ProtectedRoute>
             } />
             <Route path="/admin/refunds" element={

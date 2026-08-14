@@ -10,10 +10,26 @@ const shippingSchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         required: true
     },
+    // Ownership: both are queried by the vendor/customer shipment lists.
+    vendor: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    customer: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        default: null
+    },
     trackingNumber: {
         type: String,
         unique: true,
         required: true
+    },
+    courierPartner: {
+        name: String,
+        trackingUrl: String,
+        contactNumber: String,
     },
 
     package: {
@@ -102,7 +118,60 @@ const shippingSchema = new mongoose.Schema({
         attemptedBy: String,
         contactNumber: String,
         notes: String,
+        photo: String,
     }],
+
+    // Set once the shipment reaches a terminal delivery/pickup milestone.
+    estimatedDeliveryDate: Date,
+    actualDeliveryDate: Date,
+    actualPickupDate: Date,
+
+    currentLocation: {
+        city: String,
+        district: String,
+        facility: String,
+        lastUpdated: Date,
+    },
+
+    statusHistory: [{
+        status: String,
+        timestamp: {
+            type: Date,
+            default: Date.now
+        },
+        note: String,
+        updatedBy: String,
+    }],
+
+    deliveryAgent: {
+        name: String,
+        phone: String,
+        vehicleNumber: String,
+    },
+
+    proofOfDelivery: {
+        signature: String,
+        photo: String,
+        recipientName: String,
+        recipientNIC: String,
+        recipientRelation: String,
+        deliveryNotes: String,
+        timestamp: Date,
+        location: {
+            city: String,
+            district: String,
+            facility: String,
+        },
+    },
+
+    rating: {
+        deliverySpeed: Number,
+        courierBehavior: Number,
+        packaging: Number,
+        overall: Number,
+        feedback: String,
+        ratedAt: Date,
+    },
 
     pickupAddress: {
         warehouseName: String,
@@ -242,7 +311,7 @@ const shippingSchema = new mongoose.Schema({
         },
         resolvedAt: Date,
         resolution: String,
-        images: [String]
+        photos: [String]
     }],
 
     //Lables
@@ -261,7 +330,7 @@ const shippingSchema = new mongoose.Schema({
 // Generate unique tracking number
 shippingSchema.pre('save', async function (next) {
     if (this.isNew && !this.trackingNumber) {
-        const couriar = this.courierPartner.name.substring(0, 3).toUpperCase();
+        const couriar = String(this.courierPartner?.name || 'SHP').substring(0, 3).toUpperCase();
         const date = new Date();
         const year = date.getFullYear().toString().slice(-2);
         const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -281,6 +350,8 @@ shippingSchema.pre('save', async function (next) {
 
 shippingSchema.index({ order: 1 });
 shippingSchema.index({ status: 1 });
+shippingSchema.index({ vendor: 1, createdAt: -1 });
+shippingSchema.index({ customer: 1, createdAt: -1 });
 shippingSchema.index({ 'courierPartner.name': 1 });
 shippingSchema.index({ createdAt: -1 });
 shippingSchema.index({ 'delivery.estimatedDate': 1 });

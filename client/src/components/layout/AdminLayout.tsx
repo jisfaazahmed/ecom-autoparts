@@ -18,6 +18,7 @@ import {
   Menu,
   CreditCard,
   Users,
+  Truck,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
@@ -38,6 +39,7 @@ const adminLinks = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/products', label: 'Products', icon: Package },
   { href: '/admin/orders', label: 'Orders', icon: ShoppingBag },
+  { href: '/admin/shipments', label: 'Shipments', icon: Truck },
   { href: '/admin/refunds', label: 'Refunds', icon: CheckCircle },
   { href: '/admin/customers', label: 'Customers', icon: Users },
   { href: '/admin/settings', label: 'Settings', icon: Settings },

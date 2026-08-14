@@ -279,7 +279,8 @@ class ShippingService {
             order: orderId,
             orderItem: selectedOrderItem._id,
             vendor: vendorId,
-            customer: order.user._id,
+            // Guest checkouts have no user account.
+            customer: order.user?._id || order.user || null,
             shipmentType: order.shippingMethod,
             courierPartner: {
                 name: courierName,
@@ -299,11 +300,11 @@ class ShippingService {
             package: {
                 weight: totalWeight,
                 packageType: packageType === 'small_box' ? 'box' : 'parcel',
-                packageValue: vendorItems.reduce((sum, item) => sum + item.finalPrice, 0),
+                packageValue: vendorItems.reduce((sum, item) => sum + Number(item.finalPrice || 0), 0),
             },
             shippingCost: {
-                baseCharge: order.shippingCharges,
-                totalCharge: order.shippingCharges,
+                baseCharge: Number(order.shippingCharges || 0),
+                totalCharge: Number(order.shippingCharges || 0),
                 paidBy: 'sender'
             },
             trackingNumber,
@@ -382,6 +383,46 @@ class ShippingService {
         deliveryDate.setDate(deliveryDate.getDate() + maxDays);
 
         return deliveryDate;
+    }
+
+    // Idempotent wrapper around createShipping: one shipment per (order, vendor).
+    // Called when a vendor moves an item to ready_to_ship.
+    async ensureShipmentForVendor(orderId, vendorId) {
+        if (!vendorId) {
+            return null;
+        }
+
+        const existing = await Shipping.findOne({ order: orderId, vendor: vendorId });
+        if (existing) {
+            return existing;
+        }
+
+        return this.createShipping(orderId, vendorId);
+    }
+
+    // Loads a shipment and asserts the actor may act on it.
+    // roles: 'vendor' (owns the shipment), 'customer' (recipient), 'admin' (platform staff).
+    async authorizeShipment(shippingId, actor = {}, allowed = ['admin']) {
+        const shipping = await Shipping.findById(shippingId);
+
+        if (!shipping) {
+            throw new Error('Shipping not found');
+        }
+
+        const actorId = String(actor.userId || '');
+        const role = String(actor.role || '').replace(/_/g, '').toUpperCase();
+
+        const isAdmin = ['ADMIN', 'SUPERADMIN'].includes(role) && allowed.includes('admin');
+        const isVendor = allowed.includes('vendor') && actorId && String(shipping.vendor || '') === actorId;
+        const isCustomer = allowed.includes('customer') && actorId && String(shipping.customer || '') === actorId;
+
+        if (!isAdmin && !isVendor && !isCustomer) {
+            const error = new Error('You are not allowed to act on this shipment');
+            error.statusCode = 403;
+            throw error;
+        }
+
+        return shipping;
     }
 
     async schedulePickup(shippingId, pickupData) {
@@ -548,18 +589,19 @@ class ShippingService {
             status: attemptData.status,
             reason: attemptData.reason,
             nextAttemptDate: attemptData.nextAttemptDate,
-            deliveryAgentNotes: attemptData.notes,
-            customerContact: attemptData.customerContact,
+            notes: attemptData.notes,
+            contactNumber: attemptData.customerContact,
             photo: attemptData.photo
         });
 
+        // normalizeShippingStatus maps the legacy aliases onto the schema enum.
         if (attemptData.status === 'delivered') {
             shipping.status = 'delivered';
             shipping.actualDeliveryDate = new Date();
         } else if (attemptNumber >= 3 && attemptData.status === 'failed') {
-            shipping.status = 'returned_to_vendor';
+            shipping.status = this.normalizeShippingStatus('returned_to_vendor');
         } else {
-            shipping.status = 'failed_delivery';
+            shipping.status = this.normalizeShippingStatus('failed_delivery');
         }
 
         await shipping.save();
@@ -585,19 +627,16 @@ class ShippingService {
             location: deliveryData.location
         };
 
-        shipping.deliveryAgent = deliveryData.deliveryAgent;
+        shipping.deliveryAgent = deliveryData.deliveryAgent || {};
         shipping.status = 'delivered';
         shipping.actualDeliveryDate = new Date();
 
+        shipping.statusHistory = shipping.statusHistory || [];
         shipping.statusHistory.push({
             status: 'delivered',
             timestamp: new Date(),
             note: `Delivered to ${deliveryData.recipientName}`,
-            updatedBy: deliveryData.deliveryAgent.name,
-            location: {
-                city: shipping.deliveryAddress.city,
-                coordinates: deliveryData.location
-            }
+            updatedBy: deliveryData.deliveryAgent?.name || 'courier'
         });
 
         await shipping.save();
@@ -628,6 +667,9 @@ class ShippingService {
         return shipping;
     }
 
+    // Public tracking: anyone holding a tracking number can call this, so the payload
+    // must never include recipient identity, contact details, or delivery proof.
+    // Use getShippingDetails (authenticated + ownership-checked) for the full record.
     async trackShipment(trackingNumber) {
 
         const shipping = await Shipping.findOne({ trackingNumber })
@@ -641,12 +683,29 @@ class ShippingService {
             trackingNumber: shipping.trackingNumber,
             status: shipping.status,
             estimatedDelivery: shipping.estimatedDeliveryDate,
-            currentLocation: shipping.currentLocation,
-            statusHistory: shipping.statusHistory,
-            deliveryAddress: shipping.deliveryAddress,
-            deliveryAgent: shipping.deliveryAgent,
-            deliveryAttempts: shipping.deliveryAttempts,
-            proofOfDelivery: shipping.proofOfDelivery
+            deliveredAt: shipping.actualDeliveryDate || null,
+            courier: shipping.courierPartner?.name || null,
+            // City/district only - never the street address.
+            currentLocation: shipping.currentLocation
+                ? {
+                    city: shipping.currentLocation.city,
+                    district: shipping.currentLocation.district,
+                    lastUpdated: shipping.currentLocation.lastUpdated,
+                }
+                : null,
+            destination: {
+                city: shipping.shippingAddress?.city,
+                district: shipping.shippingAddress?.district,
+            },
+            attemptCount: (shipping.deliveryAttempts || []).length,
+            trackingEvents: (shipping.trackingEvents || []).map((event) => ({
+                status: event.status,
+                timestamp: event.timestamp,
+                description: event.description,
+                location: event.location
+                    ? { city: event.location.city, district: event.location.district }
+                    : undefined,
+            })),
         };
     }
 

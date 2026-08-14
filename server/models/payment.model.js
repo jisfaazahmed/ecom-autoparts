@@ -6,9 +6,10 @@ const paymentSchema = new mongoose.Schema({
         ref: 'Order'
     },
     user: {
+        // Optional: guest COD checkout creates a payment without an account.
         type: mongoose.Schema.Types.ObjectId,
         ref: 'User',
-        required: true
+        default: null
     },
     paymentNumber: {
         type: String,
@@ -54,6 +55,11 @@ const paymentSchema = new mongoose.Schema({
     transactionId: String,
     gatewayTransactionId: String,
     gatewayOrderId: String,
+    // Raw gateway error/response payload for the last failed interaction
+    gatewayResponse: {
+        errorCode: String,
+        errorMessage: String,
+    },
     gateway: {
         type: String,
         required: false,
@@ -82,9 +88,11 @@ const paymentSchema = new mongoose.Schema({
                 type: String,
                 enum: ['call', 'sms']
             },
+            // Number the verification was sent to / placed against
+            contactNumber: String,
             status: {
                 type: String,
-                enum: ['success', 'no_answer', 'wrong_number', 'customer_refused', 'number_busy']
+                enum: ['pending', 'success', 'failed', 'no_answer', 'wrong_number', 'customer_refused', 'number_busy']
             },
             notes: String
         }],
@@ -97,8 +105,13 @@ const paymentSchema = new mongoose.Schema({
         // Delivery agent name
         collectedBy: String,
         collectedDate: Date,
+        changeAmount: {
+            type: Number,
+            default: 0
+        },
         collectionProof: {
             signature: String,
+            image: String,
             notes: String
         }
     },
@@ -150,6 +163,17 @@ const paymentSchema = new mongoose.Schema({
         actualCompletionDate: Date,
         notes: String
     }],
+
+    receipt: {
+        url: {
+            type: String,
+            default: null
+        },
+        generatedAt: {
+            type: Date,
+            default: null
+        }
+    },
 
     retryAttempts: [{
     attemptedAt: Date,

@@ -114,7 +114,7 @@ const orderSchema = new mongoose.Schema({
     //Pyment
     paymentMethod: {
         type: String,
-        enum: ['cod', 'card', 'wallet', 'bank_transfer', 'installment'],
+        enum: ['cod', 'card', 'wallet'],
         required: true
     },
     paymentStatus: {
@@ -136,6 +136,16 @@ const orderSchema = new mongoose.Schema({
     currency: {
         type: String,
         default: 'LKR'
+    },
+    // COD only: set once the buyer has been verified (or verification was not required)
+    codVerified: {
+        type: Boolean,
+        default: false
+    },
+    // Order-level tracking number, mirrored onto items/sub-orders when set.
+    trackingNumber: {
+        type: String,
+        default: null
     },
 
     //Invoice

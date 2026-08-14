@@ -523,7 +523,9 @@ class RefundService {
         await refund.save();
 
         try {
-            switch (refund.refundMethod.type) {
+            const method = String(refund.refundMethod?.type || 'original_payment').toLowerCase();
+
+            switch (method) {
                 case 'original_payment':
                     await this.processOriginalPaymentRefund(refund);
                     break;
@@ -531,6 +533,15 @@ class RefundService {
                 case 'bank_transfer':
                     await this.processBankTransferRefund(refund);
                     break;
+
+                case 'wallet':
+                case 'store_credit':
+                    // paymentService.processRefund dispatches to the wallet credit path.
+                    await this.processOriginalPaymentRefund(refund);
+                    break;
+
+                default:
+                    throw new Error(`Unsupported refund method: ${method}`);
             }
 
         } catch (error) {
@@ -566,12 +577,25 @@ class RefundService {
             throw new Error('Original payment not found');
         }
 
-        await paymentService.processRefund(payment._id, {
-            amount: refund.refundAmount.totalRefund,
-            reason: refund.returnReason.category,
-            refundMethod: 'original_method',
-            initiatedBy: refund.vendor
-        });
+        // Uncollected COD: no money ever changed hands, so there is nothing to
+        // return. Record the outcome instead of attempting a gateway refund.
+        if (payment.status !== 'completed') {
+            refund.statusHistory.push({
+                status: 'refund_completed',
+                timestamp: new Date(),
+                note: `No payment was collected (payment status: ${payment.status}); nothing to refund`,
+                userType: 'system'
+            });
+        } else {
+            await paymentService.processRefund(payment._id, {
+                amount: refund.refundAmount.totalRefund,
+                reason: refund.returnReason.category,
+                refundMethod: String(refund.refundMethod?.type || '').toLowerCase() === 'wallet'
+                    ? 'wallet'
+                    : 'original_method',
+                initiatedBy: refund.vendor
+            });
+        }
 
         refund.refundProcessing.status = 'completed';
         refund.refundProcessing.processedAt = new Date();

@@ -15,7 +15,7 @@ import Navbar from '@/components/layout/Navbar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { api, ApiOrder } from '@/lib/api';
+import { api, ApiShipmentTracking } from '@/lib/api';
 
 interface TrackingTimelineItem {
   event: string;
@@ -24,8 +24,23 @@ interface TrackingTimelineItem {
   createdAt: string;
 }
 
+/**
+ * The public tracking payload is deliberately PII-free: city/district only, no
+ * recipient name, phone, street address, or proof-of-delivery. Signed-in users
+ * get the full record via /shipments.
+ */
+interface TrackedOrder {
+  _id?: string;
+  orderNumber?: string;
+  overallStatus?: string;
+  estimatedDeliveryDate?: string;
+  trackingNumber?: string;
+  destination?: { city?: string; district?: string };
+  items?: Array<{ _id?: string; status?: string; quantity?: number }>;
+}
+
 interface TrackingResponse {
-  order: ApiOrder;
+  order: TrackedOrder;
   timeline: TrackingTimelineItem[];
 }
 
@@ -43,21 +58,8 @@ const statusStyles: Record<string, { icon: React.ReactNode; label: string }> = {
   refunded: { icon: <AlertCircle className="h-4 w-4" />, label: 'Refunded' },
 };
 
-const formatAddress = (shippingAddress: unknown) => {
-  if (typeof shippingAddress === 'string') return shippingAddress;
-  if (!shippingAddress || typeof shippingAddress !== 'object') return '';
-
-  const address = shippingAddress as Record<string, unknown>;
-  return [
-    address.addressLine1,
-    address.addressLine2,
-    address.city,
-    address.postalCode,
-    address.country,
-  ]
-    .filter(Boolean)
-    .join(', ');
-};
+const formatDestination = (destination?: { city?: string; district?: string }) =>
+  [destination?.city, destination?.district].filter(Boolean).join(', ');
 
 const formatDateTime = (value?: string) => {
   if (!value) return 'N/A';
@@ -80,10 +82,11 @@ const TrackOrder: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<TrackingResponse | null>(null);
+  const [shipment, setShipment] = useState<ApiShipmentTracking | null>(null);
   const [initialized, setInitialized] = useState(false);
 
   const status = useMemo(() => {
-    const rawStatus = result?.order?.overallStatus || result?.order?.status || 'pending';
+    const rawStatus = result?.order?.overallStatus || 'pending';
     return statusStyles[rawStatus] || statusStyles.pending;
   }, [result]);
 
@@ -112,11 +115,23 @@ const TrackOrder: React.FC = () => {
     setError(null);
 
     try {
-      const data = await api.trackOrder(trimmed);
-      setResult(data);
+      // Order lookup is the source of truth; the shipment leg adds courier scans
+      // and is best-effort so tracking still works before a shipment exists.
+      const [orderResult, shipmentResult] = await Promise.allSettled([
+        api.trackOrder(trimmed),
+        api.trackShipment(trimmed),
+      ]);
+
+      if (orderResult.status === 'rejected' && shipmentResult.status === 'rejected') {
+        throw new Error('not found');
+      }
+
+      setResult(orderResult.status === 'fulfilled' ? orderResult.value : null);
+      setShipment(shipmentResult.status === 'fulfilled' ? shipmentResult.value : null);
       setSearchParams({ tracking: trimmed });
     } catch (err) {
       setResult(null);
+      setShipment(null);
       setError('No order found for this tracking number.');
     } finally {
       setLoading(false);
@@ -182,14 +197,14 @@ const TrackOrder: React.FC = () => {
             </div>
           )}
 
-          {result && !loading && (
+          {(result || shipment) && !loading && (
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
               <Card className="glass-card mt-6">
                 <CardHeader className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                   <div>
                     <p className="text-sm text-muted-foreground">Order</p>
                     <h2 className="text-xl font-semibold">
-                      #{result.order.orderNumber || result.order.id || result.order._id}
+                      #{result?.order.orderNumber || trackingNumber}
                     </h2>
                   </div>
                   <div className="flex items-center gap-2 text-primary">
@@ -201,55 +216,112 @@ const TrackOrder: React.FC = () => {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <p className="text-sm text-muted-foreground">Tracking Number</p>
-                      <p className="font-medium">{result.order.trackingNumber || trackingNumber}</p>
-                    </div>
-                    <div className="space-y-2">
-                      <p className="text-sm text-muted-foreground">Estimated Delivery</p>
                       <p className="font-medium">
-                        {formatDateTime(result.order.estimatedDeliveryDate)}
+                        {shipment?.trackingNumber || result?.order.trackingNumber || trackingNumber}
                       </p>
                     </div>
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">
+                        {shipment?.deliveredAt ? 'Delivered' : 'Estimated Delivery'}
+                      </p>
+                      <p className="font-medium">
+                        {formatDateTime(
+                          shipment?.deliveredAt
+                            || shipment?.estimatedDelivery
+                            || result?.order.estimatedDeliveryDate
+                        )}
+                      </p>
+                    </div>
+                    {shipment?.courier && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">Courier</p>
+                        <p className="font-medium capitalize">{shipment.courier}</p>
+                      </div>
+                    )}
+                    {shipment?.currentLocation?.city && (
+                      <div className="space-y-2">
+                        <p className="text-sm text-muted-foreground">Last Seen</p>
+                        <p className="font-medium">
+                          {formatDestination(shipment.currentLocation)}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex items-start gap-2">
                     <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Shipping Address</p>
+                      <p className="text-sm text-muted-foreground">Delivering To</p>
                       <p className="font-medium">
-                        {formatAddress(result.order.shippingAddress) || 'Address not available'}
+                        {formatDestination(shipment?.destination || result?.order.destination)
+                          || 'Destination not available'}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Sign in to view the full delivery address.
                       </p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              <Card className="glass-card mt-6">
-                <CardHeader>
-                  <CardTitle className="text-lg">Tracking Timeline</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {result.timeline.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No tracking updates yet.</p>
-                  ) : (
+              {shipment && shipment.trackingEvents.length > 0 && (
+                <Card className="glass-card mt-6">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Courier Scans</CardTitle>
+                  </CardHeader>
+                  <CardContent>
                     <div className="space-y-4">
-                      {result.timeline.map((event, index) => (
-                        <div key={`${event.event}-${index}`} className="flex gap-3">
+                      {shipment.trackingEvents.map((event, index) => (
+                        <div key={`scan-${index}`} className="flex gap-3">
                           <div className="h-2.5 w-2.5 rounded-full bg-primary mt-2" />
                           <div>
-                            <p className="font-medium">{event.title}</p>
-                            <p className="text-xs text-muted-foreground">{formatDateTime(event.createdAt)}</p>
+                            <p className="font-medium capitalize">
+                              {String(event.status || '').replace(/_/g, ' ')}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatDateTime(event.timestamp)}
+                              {event.location?.city ? ` · ${formatDestination(event.location)}` : ''}
+                            </p>
                             {event.description && (
-                              <p className="text-sm text-muted-foreground mt-1">
-                                {event.description}
-                              </p>
+                              <p className="text-sm text-muted-foreground mt-1">{event.description}</p>
                             )}
                           </div>
                         </div>
                       ))}
                     </div>
-                  )}
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              )}
+
+              {result && (
+                <Card className="glass-card mt-6">
+                  <CardHeader>
+                    <CardTitle className="text-lg">Order Timeline</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {result.timeline.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No tracking updates yet.</p>
+                    ) : (
+                      <div className="space-y-4">
+                        {result.timeline.map((event, index) => (
+                          <div key={`${event.event}-${index}`} className="flex gap-3">
+                            <div className="h-2.5 w-2.5 rounded-full bg-primary mt-2" />
+                            <div>
+                              <p className="font-medium">{event.title}</p>
+                              <p className="text-xs text-muted-foreground">{formatDateTime(event.createdAt)}</p>
+                              {event.description && (
+                                <p className="text-sm text-muted-foreground mt-1">
+                                  {event.description}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
             </motion.div>
           )}
         </div>

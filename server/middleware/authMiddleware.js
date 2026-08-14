@@ -71,6 +71,25 @@ exports.attachUserIfPresent = async (req, _res, next) => {
   next();
 };
 
+const normalizeRole = (role) => String(role || '').replace(/_/g, '').toUpperCase();
+
+// Generic role guard. Use after verifyToken, e.g. requireRoles('ADMIN', 'SUPER_ADMIN').
+exports.requireRoles = (...allowedRoles) => {
+  const allowed = allowedRoles.map(normalizeRole);
+
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Not authenticated' });
+    }
+
+    if (!allowed.includes(normalizeRole(req.user.role))) {
+      return res.status(403).json({ success: false, message: 'Access denied. Insufficient permissions.' });
+    }
+
+    return next();
+  };
+};
+
 // 2. Verify Super Admin (Is user the Boss?)
 exports.isSuperAdmin = async (req, res, next) => {
   try {

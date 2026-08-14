@@ -267,6 +267,109 @@ function InlineCardForm({
   );
 }
 
+function WalletTopUp({
+  billing,
+  onCredited,
+}: {
+  billing: { name: string; email: string; phone: string };
+  onCredited: (balance: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [confirmCard, setConfirmCard] = useState<ConfirmInlineCardFn | null>(null);
+
+  const handleReady = useCallback((fn: ConfirmInlineCardFn | null) => {
+    setConfirmCard(() => fn);
+  }, []);
+
+  const handleTopUp = async () => {
+    const value = Number(amount);
+
+    if (!Number.isFinite(value) || value <= 0) {
+      toast.error('Enter a valid top-up amount');
+      return;
+    }
+
+    if (!confirmCard) {
+      toast.error('Card form is not ready. Please wait and try again.');
+      return;
+    }
+
+    setBusy(true);
+
+    try {
+      const intent = await api.createWalletTopupIntent({ amount: value });
+      const paymentIntentId = await confirmCard(intent.clientSecret, billing);
+      const result = await api.confirmWalletTopup({ paymentIntentId });
+
+      onCredited(Number(result.balance || 0));
+      setAmount('');
+      setOpen(false);
+      toast.success(`Wallet topped up with ${formatLKR(result.amount)}`);
+    } catch (error) {
+      console.error('Wallet top-up error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to top up wallet');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!stripePromise) {
+    return (
+      <Alert>
+        <AlertCircle className="h-4 w-4" />
+        <AlertDescription>
+          Set <strong>VITE_STRIPE_PUBLISHABLE_KEY</strong> to enable wallet top-ups.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (!open) {
+    return (
+      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+        Top up wallet
+      </Button>
+    );
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border border-border/70 bg-background/70 p-4">
+      <div className="space-y-2">
+        <Label htmlFor="topup-amount">Top-up amount (LKR)</Label>
+        <Input
+          id="topup-amount"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ''))}
+          placeholder="e.g. 5000"
+          inputMode="decimal"
+        />
+      </div>
+
+      <Elements stripe={stripePromise}>
+        <InlineCardForm onReady={handleReady} disabled={busy} />
+      </Elements>
+
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" onClick={() => setOpen(false)} disabled={busy}>
+          Cancel
+        </Button>
+        <Button size="sm" className="flex-1" onClick={handleTopUp} disabled={busy}>
+          {busy ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Processing...
+            </>
+          ) : (
+            'Add funds'
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function Checkout() {
   const navigate = useNavigate();
   const { cart, clearCart, getCartTotal } = useStore();
@@ -1219,6 +1322,18 @@ export default function Checkout() {
                         <p className="text-xs text-muted-foreground">
                           For higher-value payments, OTP confirmation is required.
                         </p>
+                        {walletBalance < finalTotal && (
+                          <Alert>
+                            <AlertCircle className="h-4 w-4" />
+                            <AlertDescription>
+                              Your balance is short by {formatLKR(finalTotal - walletBalance)}. Top up to pay with wallet.
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                        <WalletTopUp
+                          billing={{ name: form.fullName, email: form.email, phone: form.phone }}
+                          onCredited={setWalletBalance}
+                        />
                         {walletPendingOrderId && (
                           <>
                             <Label htmlFor="wallet-otp">Enter Wallet OTP</Label>
@@ -1333,6 +1448,20 @@ export default function Checkout() {
                     {paymentMethod === 'wallet' && (
                       <div className="rounded-xl border border-emerald-300/40 bg-emerald-50/40 p-5 space-y-3">
                         <p className="text-sm font-medium">Wallet balance: {formatLKR(walletBalance)}</p>
+                        {walletBalance < finalTotal && !walletPendingOrderId && (
+                          <>
+                            <Alert>
+                              <AlertCircle className="h-4 w-4" />
+                              <AlertDescription>
+                                Your balance is short by {formatLKR(finalTotal - walletBalance)}. Top up to pay with wallet.
+                              </AlertDescription>
+                            </Alert>
+                            <WalletTopUp
+                              billing={{ name: form.fullName, email: form.email, phone: form.phone }}
+                              onCredited={setWalletBalance}
+                            />
+                          </>
+                        )}
                         {walletPendingOrderId && (
                           <>
                             <Label htmlFor="wallet-otp-review">Wallet OTP</Label>

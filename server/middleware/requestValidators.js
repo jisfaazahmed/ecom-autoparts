@@ -331,6 +331,28 @@ function validateWalletPay(req, res, next) {
   return next();
 }
 
+function validateWalletTopupIntent(req, res, next) {
+  const amount = Number(req.body?.amount);
+
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return fail(res, 'amount must be a positive number');
+  }
+
+  req.body.amount = amount;
+  return next();
+}
+
+function validateWalletTopupConfirm(req, res, next) {
+  const paymentIntentId = asTrimmed(req.body?.paymentIntentId);
+
+  if (!paymentIntentId || paymentIntentId.length < 6 || paymentIntentId.length > 128) {
+    return fail(res, 'Invalid paymentIntentId');
+  }
+
+  req.body.paymentIntentId = paymentIntentId;
+  return next();
+}
+
 function validateProcessRefund(req, res, next) {
   if (!isObjectId(req.params?.paymentId)) {
     return fail(res, 'Invalid paymentId');
@@ -453,25 +475,36 @@ function validateDeliveryAttempt(req, res, next) {
   return next();
 }
 
+// Delivery ratings are three sub-scores; the service averages them into `overall`.
+// A single `rating` value is still accepted and applied to all three.
 function validateSubmitRating(req, res, next) {
   if (!isObjectId(req.params?.shippingId)) {
     return fail(res, 'Invalid shippingId');
   }
 
-  const rating = Number(req.body?.rating);
-  if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
-    return fail(res, 'rating must be an integer between 1 and 5');
-  }
+  const scoreFields = ['deliverySpeed', 'courierBehavior', 'packaging'];
+  const fallback = Number(req.body?.rating);
+  const hasFallback = Number.isInteger(fallback) && fallback >= 1 && fallback <= 5;
 
-  if (req.body?.comment !== undefined) {
-    const comment = asTrimmed(req.body.comment);
-    if (comment.length > 500) {
-      return fail(res, 'comment must be up to 500 characters');
+  for (const field of scoreFields) {
+    const raw = req.body?.[field] === undefined && hasFallback ? fallback : Number(req.body?.[field]);
+
+    if (!Number.isInteger(raw) || raw < 1 || raw > 5) {
+      return fail(res, `${field} must be an integer between 1 and 5`);
     }
-    req.body.comment = comment;
+
+    req.body[field] = raw;
   }
 
-  req.body.rating = rating;
+  const feedback = req.body?.feedback ?? req.body?.comment;
+  if (feedback !== undefined) {
+    const trimmed = asTrimmed(feedback);
+    if (trimmed.length > 500) {
+      return fail(res, 'feedback must be up to 500 characters');
+    }
+    req.body.feedback = trimmed;
+  }
+
   return next();
 }
 
@@ -548,6 +581,8 @@ module.exports = {
   validateVerifyCOD,
   validateConfirmCODCollection,
   validateWalletPay,
+  validateWalletTopupIntent,
+  validateWalletTopupConfirm,
   validateProcessRefund,
   validateShippingCalculate,
   validateShippingStatusUpdate,

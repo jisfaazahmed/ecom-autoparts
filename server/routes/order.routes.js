@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const orderController = require('../controllers/order.controller');
-const { verifyToken, attachUserIfPresent } = require('../middleware/authMiddleware');
+const { verifyToken, attachUserIfPresent, requireRoles } = require('../middleware/authMiddleware');
 
 //customer (guest checkout allowed)
 router.post('/', attachUserIfPresent, orderController.createOrder);
@@ -29,12 +29,13 @@ router.get('/:id/invoice', verifyToken, orderController.getInvoice);
 //customer order details
 router.get('/:id', verifyToken, orderController.getOrderById);
 router.post('/:id/cancel', verifyToken, orderController.cancelOrder)
-router.put('/:id/status', verifyToken, orderController.adminUpdateOrderStatus);
+router.put('/:id/status', verifyToken, requireRoles('ADMIN', 'SUPER_ADMIN'), orderController.adminUpdateOrderStatus);
+router.patch('/:id/tracking', verifyToken, requireRoles('ADMIN', 'SUPER_ADMIN'), orderController.updateOrderTracking);
 
 //Payment status update (Admin/System)
 router.patch('/:id/payment-status', verifyToken, orderController.updatePaymentStatus);
 
-//Admin 
-router.post('/:id/verify-cod', verifyToken, orderController.verifyCOD);
+//Admin
+router.post('/:id/verify-cod', verifyToken, requireRoles('ADMIN', 'SUPER_ADMIN'), orderController.verifyCOD);
 
 module.exports = router;
