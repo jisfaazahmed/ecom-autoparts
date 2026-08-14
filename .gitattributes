@@ -1,0 +1,13 @@
+# These files are consumed by Linux tooling and must keep LF endings.
+#
+# The repo is developed on Windows, where git's autocrlf can otherwise commit
+# CRLF. That breaks things in hard-to-diagnose ways: a bash heredoc terminator
+# becomes "EOF\r" and never matches "EOF", so a GitHub Actions script silently
+# runs to end-of-file instead of stopping where it should.
+
+*.sh          text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+*.conf        text eol=lf
+Dockerfile    text eol=lf
+Dockerfile.*  text eol=lf

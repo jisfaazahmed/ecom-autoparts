@@ -1,4 +1,4 @@
-const User = require('../models/user.model');
+const User = require('../models/user');
 
 // 1. Get all pending users
 exports.getPendingUsers = async (req, res) => {
@@ -14,19 +14,23 @@ exports.getPendingUsers = async (req, res) => {
 exports.updateUserStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status } = req.body; // Expecting 'APPROVED' or 'REJECTED'
+    const { status } = req.body;
 
-    if (!['APPROVED', 'REJECTED'].includes(status)) {
+    // Normalize to current user model statuses
+    const normalized = String(status || '').toUpperCase();
+    const mapped = normalized === 'APPROVED' ? 'ACTIVE' : normalized === 'REJECTED' ? 'REJECTED' : normalized;
+
+    if (!['ACTIVE', 'REJECTED', 'SUSPENDED', 'PENDING'].includes(mapped)) {
       return res.status(400).json({ message: "Invalid status" });
     }
 
-    const updatedUser = await User.findByIdAndUpdate(id, { status }, { new: true });
+    const updatedUser = await User.findByIdAndUpdate(id, { status: mapped }, { new: true });
     
     if (!updatedUser) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    res.json({ message: `User ${status.toLowerCase()} successfully`, user: updatedUser });
+    res.json({ message: `User ${mapped.toLowerCase()} successfully`, user: updatedUser });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -35,7 +39,7 @@ exports.updateUserStatus = async (req, res) => {
 // 3. Get all Approved Shops
 exports.getAllShops = async (req, res) => {
   try {
-    const shops = await User.find({ role: 'ADMIN', status: 'APPROVED' }).select('-password');
+    const shops = await User.find({ role: 'ADMIN', status: 'ACTIVE' }).select('-password');
     res.json(shops);
   } catch (error) {
     res.status(500).json({ error: error.message });

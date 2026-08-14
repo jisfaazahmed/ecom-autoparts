@@ -1,43 +1,63 @@
-version: '3.8'
-
 services:
+  mongo:
+    image: mongo:7.0
+    container_name: mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=root
+      - MONGO_INITDB_ROOT_PASSWORD=password
+      - MONGO_INITDB_DATABASE=ecom-autoparts
+    # healthcheck temporarily disabled for local dev to avoid startup hangs
+    # healthcheck:
+    #  test: ["CMD-SHELL", "mongosh --quiet --username $$MONGO_INITDB_ROOT_USERNAME --password $$MONGO_INITDB_ROOT_PASSWORD --authenticationDatabase admin --eval \"db.adminCommand('ping').ok\" | grep 1"]
+    #  interval: 10s
+    #  timeout: 5s
+    #  retries: 5
+    #  start_period: 30s
+
   server:
     build: ./server
-    command: npm run dev
+    command: npm start
+    restart: unless-stopped
     ports:
-    - "5000:5000"
+      - "5000:5000"
     environment:
-    - PORT=5000
-    - NODE_ENV=development
-    - MONGO_IP=mongo
-    - MONGO_PORT=27017
-    - MONGO_USER=root
-    - MONGO_PASSWORD=password
-    - MONGO_DB=ecom-autoparts
+      - PORT=5000
+      - NODE_ENV=development
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - MONGO_IP=mongo
+      - MONGO_PORT=27017
+      - MONGO_USER=root
+      - MONGO_PASSWORD=password
+      - MONGO_DB=ecom-autoparts
+      - CLIENT_URL=${CLIENT_URL}
     volumes:
-    - ./server:/app
-    - /app/node_modules
+      - ./server:/app
+      - /app/node_modules
+    depends_on:
+      mongo:
+        condition: service_started
 
   client:
     build: ./client
     ports:
-    - "3000:3000"
+      - "3000:3000"
     environment:
-    - VITE_API_URL=http://server:5000
+      - NODE_OPTIONS=--max-old-space-size=2048
+      - CHOKIDAR_USEPOLLING=true
+      - VITE_USE_POLLING=true
+      - VITE_API_URL=http://127.0.0.1:5000/api
+      - VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
+    command: sh -c "npm run dev -- --host 0.0.0.0 --strictPort"
     volumes:
-    - ./client:/app
-    - /app/node_modules
+      - ./client:/app
+      - /app/node_modules
     depends_on:
-    - server
+      - server
 
-  mongo:
-    image: mongo:4.4
-    container_name: mongo
-    ports:
-    - "27017:27017"
-    volumes:
-    - ./data:/data/db
-    environment:
-    - MONGO_INITDB_ROOT_USERNAME=root
-    - MONGO_INITDB_ROOT_PASSWORD=password
-    - MONGO_INITDB_DATABASE=ecom-autoparts
+volumes:
+  mongodb_data:
