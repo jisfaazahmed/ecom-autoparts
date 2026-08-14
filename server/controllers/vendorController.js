@@ -1,7 +1,6 @@
 const User = require('../models/user');
 const SettlementService = require('../services/settlement.service');
 const VendorAnalyticsService = require('../services/vendorAnalytics.service');
-const Settlement = require('../models/settlement.model');
 const NotificationService = require('../services/notification.service');
 
 

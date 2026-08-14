@@ -19,17 +19,34 @@ interface CartItem {
     category?: string;
     shopName?: string;
     stock?: number;
-    compatibleVehicles?: any[];
+    compatibleVehicles?: Array<Record<string, unknown>> | string[];
     rating?: number;
     reviewCount?: number;
   };
   quantity: number;
 }
 
+export interface CompareItem {
+  id: string;
+  name: string;
+  price: number;
+  image: string;
+  category?: string;
+  brand?: string;
+  stock?: number | string;
+  rating?: number | string;
+  reviewCount?: number;
+  sku?: string;
+  shopName?: string;
+  shopId?: string;
+}
+
 interface StoreState {
   cart: CartItem[];
   userVehicle: Vehicle | null;
   vehicleRefreshKey: number;
+  wishlistIds: string[];
+  compareItems: CompareItem[];
   addToCart: (item: CartItem) => Promise<void>;
   removeFromCart: (id: string) => Promise<void>;
   updateQuantity: (id: string, quantity: number) => Promise<void>;
@@ -41,6 +58,11 @@ interface StoreState {
   setUserVehicle: (vehicle: Vehicle | null) => void;
   triggerVehicleRefresh: () => void;
   syncCartFromApi: () => Promise<void>;
+  setWishlistIds: (ids: string[]) => void;
+  toggleWishlistId: (id: string) => void;
+  addToCompare: (item: CompareItem) => void;
+  removeFromCompare: (id: string) => void;
+  clearCompare: () => void;
 }
 
 /**
@@ -91,6 +113,8 @@ export const useStore = create<StoreState>()(
       cart: [],
       userVehicle: null,
       vehicleRefreshKey: 0,
+      wishlistIds: [],
+      compareItems: [],
 
       addToCart: async (item) => {
         // Optimistic update
@@ -216,10 +240,32 @@ export const useStore = create<StoreState>()(
           // If fetch fails (e.g. not authenticated), keep local cart
         }
       },
+
+      setWishlistIds: (ids) => set({ wishlistIds: ids }),
+      toggleWishlistId: (id) =>
+        set((state) => ({
+          wishlistIds: state.wishlistIds.includes(id)
+            ? state.wishlistIds.filter((w) => w !== id)
+            : [...state.wishlistIds, id],
+        })),
+      addToCompare: (item) =>
+        set((state) => {
+          if (state.compareItems.length >= 4) return state;
+          if (state.compareItems.some((c) => c.id === item.id)) return state;
+          return { compareItems: [...state.compareItems, item] };
+        }),
+      removeFromCompare: (id) =>
+        set((state) => ({ compareItems: state.compareItems.filter((c) => c.id !== id) })),
+      clearCompare: () => set({ compareItems: [] }),
     }),
     {
       name: 'cart-storage',
-      partialize: (state) => ({ cart: state.cart, userVehicle: state.userVehicle }),
+      partialize: (state) => ({
+        cart: state.cart,
+        userVehicle: state.userVehicle,
+        wishlistIds: state.wishlistIds,
+        compareItems: state.compareItems,
+      }),
     }
   )
 );

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
-  Search, ShoppingCart, User, Menu, Car, LogOut, Store, Shield, UserCircle, FileText 
+  Search, ShoppingCart, User, Menu, Car, LogOut, Store, Shield, UserCircle, FileText, Heart, GitCompare, Tag, Copy, Check
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Button } from '@/components/ui/button';
@@ -19,14 +19,34 @@ import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import NotificationBell from '@/components/notifications/NotificationBell';
+import { api, ApiCoupon } from '@/lib/api';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 const Navbar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { cart, getCartCount, userVehicle } = useStore();
+  const { cart, userVehicle, compareItems, wishlistIds } = useStore();
   const { user, profile, role, signOut, loading } = useAuth();
-  const cartCount = getCartCount();
+  const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
   const [searchQuery, setSearchQuery] = useState('');
+  const [couponPopupOpen, setCouponPopupOpen] = useState(false);
+  const [couponPopupLoading, setCouponPopupLoading] = useState(false);
+  const [popupCoupons, setPopupCoupons] = useState<ApiCoupon[]>([]);
+  const [copiedCouponCode, setCopiedCouponCode] = useState<string | null>(null);
+
+  const suppressCouponPopup = useMemo(() => {
+    const path = location.pathname;
+    if (path.startsWith('/admin') || path.startsWith('/superadmin')) return true;
+    if (role === 'admin' || role === 'superadmin') return true;
+    return false;
+  }, [location.pathname, role]);
 
   const navLinks = [
     { href: '/shop', label: 'Shop' },
@@ -71,6 +91,92 @@ const Navbar: React.FC = () => {
     const queryString = nextParams.toString();
     navigate(`/shop${queryString ? `?${queryString}` : ''}`);
   };
+
+  const formatCouponDiscount = (coupon: ApiCoupon) => {
+    if (coupon.discountType === 'percentage') {
+      return `${coupon.discountValue}% OFF`;
+    }
+    return `${coupon.discountValue} LKR OFF`;
+  };
+
+  const handleCouponPopupDismiss = () => {
+    setCouponPopupOpen(false);
+    try {
+      sessionStorage.setItem('coupon-popup-opened-this-session', '1');
+    } catch {
+      // Ignore sessionStorage failures.
+    }
+
+    if (!popupCoupons.length) return;
+
+    try {
+      const signature = popupCoupons.map((coupon) => coupon.code).join('|');
+      localStorage.setItem('coupon-popup-seen-signature', signature);
+    } catch {
+      // Ignore localStorage failures in private mode / restricted contexts.
+    }
+  };
+
+  const handleCopyCoupon = async (code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCouponCode(code);
+      window.setTimeout(() => setCopiedCouponCode(null), 1500);
+    } catch {
+      // Clipboard can fail on some browser contexts.
+    }
+  };
+
+  useEffect(() => {
+    if (suppressCouponPopup) return;
+    if (location.pathname !== '/') return;
+
+    let cancelled = false;
+
+    const loadCoupons = async () => {
+      try {
+        const openedThisSession = sessionStorage.getItem('coupon-popup-opened-this-session');
+        if (openedThisSession === '1') return;
+      } catch {
+        // Ignore sessionStorage failures.
+      }
+
+      setCouponPopupLoading(true);
+      try {
+        const coupons = await api.getPublicActiveCoupons(3);
+        if (cancelled || !coupons.length) return;
+
+        const signature = coupons.map((coupon) => coupon.code).join('|');
+        let shouldShow = true;
+
+        try {
+          const seenSignature = localStorage.getItem('coupon-popup-seen-signature');
+          if (seenSignature && seenSignature === signature) {
+            shouldShow = false;
+          }
+        } catch {
+          // Ignore parse/localStorage errors.
+        }
+
+        if (!shouldShow) return;
+
+        setPopupCoupons(coupons);
+        setCouponPopupOpen(true);
+      } catch {
+        // Non-blocking UX enhancement; ignore failures.
+      } finally {
+        if (!cancelled) {
+          setCouponPopupLoading(false);
+        }
+      }
+    };
+
+    void loadCoupons();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [location.pathname, suppressCouponPopup]);
 
   return (
     <motion.header
@@ -162,7 +268,33 @@ const Navbar: React.FC = () => {
 
           {/* Notifications */}
           {user && <NotificationBell />}
-          
+
+          {/* Wishlist */}
+          {user && (
+            <Link to="/wishlist">
+              <Button variant="ghost" size="icon" className="relative">
+                <Heart className={`h-5 w-5 ${wishlistIds.length > 0 ? 'fill-red-500 text-red-500' : ''}`} />
+                {wishlistIds.length > 0 && (
+                  <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-bold">
+                    {wishlistIds.length > 9 ? '9+' : wishlistIds.length}
+                  </span>
+                )}
+              </Button>
+            </Link>
+          )}
+
+          {/* Compare */}
+          {compareItems.length > 0 && (
+            <Link to="/compare">
+              <Button variant="ghost" size="icon" className="relative">
+                <GitCompare className="h-5 w-5 text-primary" />
+                <span className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center font-bold">
+                  {compareItems.length}
+                </span>
+              </Button>
+            </Link>
+          )}
+
           {/* Cart */}
           <Link to="/cart">
             <Button variant="ghost" size="icon" className="relative">
@@ -211,6 +343,9 @@ const Navbar: React.FC = () => {
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link to="/orders">My Orders</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/wishlist">My Wishlist</Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link to="/returns">Returns & Refunds</Link>
@@ -298,6 +433,12 @@ const Navbar: React.FC = () => {
                     <Link to="/orders" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
                       My Orders
                     </Link>
+                    <Link to="/wishlist" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
+                      My Wishlist {wishlistIds.length > 0 && `(${wishlistIds.length})`}
+                    </Link>
+                    <Link to="/compare" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
+                      Compare {compareItems.length > 0 && `(${compareItems.length})`}
+                    </Link>
                     <Link to="/returns" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
                       Returns & Refunds
                     </Link>
@@ -339,6 +480,65 @@ const Navbar: React.FC = () => {
           </Sheet>
         </div>
       </div>
+
+      <Dialog
+        open={couponPopupOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setCouponPopupOpen(true);
+            return;
+          }
+          handleCouponPopupDismiss();
+        }}
+      >
+        <DialogContent className="sm:max-w-md glass-card border-border/60">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tag className="h-5 w-5 text-primary" />
+              New Coupon Offers
+            </DialogTitle>
+            <DialogDescription>
+              Admin added new active coupons. Copy a code now and apply it at checkout.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {couponPopupLoading ? (
+              <p className="text-sm text-muted-foreground">Loading coupons...</p>
+            ) : (
+              popupCoupons.map((coupon) => (
+                <div key={coupon.id} className="rounded-lg border border-border/60 bg-secondary/30 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <p className="font-mono font-semibold text-primary">{coupon.code}</p>
+                      <p className="text-xs text-muted-foreground">{coupon.description || 'Limited-time coupon'}</p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => handleCopyCoupon(coupon.code)}>
+                      {copiedCouponCode === coupon.code ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      {copiedCouponCode === coupon.code ? 'Copied' : 'Copy'}
+                    </Button>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between text-xs">
+                    <span className="font-medium text-green-600">{formatCouponDiscount(coupon)}</span>
+                    {(coupon.minimumOrderAmount || 0) > 0 && (
+                      <span className="text-muted-foreground">Min {coupon.minimumOrderAmount} LKR</span>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <DialogFooter className="sm:justify-between">
+            <Button variant="ghost" onClick={handleCouponPopupDismiss}>
+              Dismiss
+            </Button>
+            <Button asChild onClick={handleCouponPopupDismiss}>
+              <Link to="/deals">View Deals</Link>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.header>
   );
 };

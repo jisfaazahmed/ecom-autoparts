@@ -94,6 +94,11 @@ const Shop: React.FC = () => {
   const [showCompatibleOnly, setShowCompatibleOnly] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
+  // Auto-enable vehicle filter when user has a saved vehicle
+  useEffect(() => {
+    if (userVehicle) setShowCompatibleOnly(true);
+  }, [userVehicle]);
+
   useEffect(() => {
     const fetchCategories = async () => {
       try {

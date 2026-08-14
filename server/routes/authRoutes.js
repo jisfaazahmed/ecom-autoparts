@@ -2,6 +2,16 @@ const express = require('express');
 const router = express.Router();
 const authController = require('../controllers/authController');
 const { verifyToken } = require('../middleware/authMiddleware');
+const {
+	validateAuthRegister,
+	validateAuthLogin,
+	validateForgotPassword,
+	validateResetPassword,
+	validateChangePassword,
+	validateUpdateProfile,
+	validateRegisterVerify,
+	validateRegisterResend,
+} = require('../middleware/requestValidators');
 
 /**
  * @swagger
@@ -45,7 +55,7 @@ const { verifyToken } = require('../middleware/authMiddleware');
  * 400:
  * description: Validation error
  */
-router.post('/register/start', authController.registerStart);
+router.post('/register/start', validateAuthRegister, authController.registerStart);
 
 /**
  * @swagger
@@ -75,7 +85,7 @@ router.post('/register/start', authController.registerStart);
  * 429:
  * description: Too many attempts
  */
-router.post('/register/verify', authController.registerVerify);
+router.post('/register/verify', validateRegisterVerify, authController.registerVerify);
 
 /**
  * @swagger
@@ -100,10 +110,10 @@ router.post('/register/verify', authController.registerVerify);
  * 429:
  * description: Too many requests
  */
-router.post('/register/resend', authController.registerResend);
+router.post('/register/resend', validateRegisterResend, authController.registerResend);
 
 // Legacy endpoints kept for compatibility (now instruct clients to use /register/start)
-router.post('/register', authController.register);
+router.post('/register', validateAuthRegister, authController.register);
 //router.post('/register/seller', authController.registerSeller);
 
 /**
@@ -132,13 +142,11 @@ router.post('/register', authController.register);
  * 403:
  * description: Account pending or rejected
  */
-router.post('/login', authController.login);
+router.post('/login', validateAuthLogin, authController.login);
 
 router.get('/me', verifyToken, authController.getMe);
-router.put('/profile', verifyToken, authController.updateProfile);
-router.post('/change-password', verifyToken, authController.changePassword);
-router.post('/forgot-password', authController.forgotPassword);
-router.post('/reset-password', authController.resetPassword);
+router.put('/profile', verifyToken, validateUpdateProfile, authController.updateProfile);
+router.post('/change-password', verifyToken, validateChangePassword, authController.changePassword);
 
 // ========== PASSWORD RESET ENDPOINTS ==========
 /**
@@ -162,7 +170,7 @@ router.post('/reset-password', authController.resetPassword);
  * 200:
  * description: Password reset link sent to email
  */
-router.post('/forgot-password', authController.forgotPassword);
+router.post('/forgot-password', validateForgotPassword, authController.forgotPassword);
 
 /**
  * @swagger
@@ -192,7 +200,7 @@ router.post('/forgot-password', authController.forgotPassword);
  * 200:
  * description: Password reset successfully
  */
-router.post('/reset-password', authController.resetPassword);
+router.post('/reset-password', validateResetPassword, authController.resetPassword);
 
 /**
  * @swagger
@@ -223,6 +231,6 @@ router.post('/reset-password', authController.resetPassword);
  * 200:
  * description: Password changed successfully
  */
-router.post('/change-password', verifyToken, authController.changePassword);
+router.post('/change-password', verifyToken, validateChangePassword, authController.changePassword);
 
 module.exports = router;

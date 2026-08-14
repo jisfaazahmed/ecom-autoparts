@@ -105,26 +105,51 @@ const AdminProducts: React.FC = () => {
       toast({ title: 'Error', description: 'Please fill in required fields', variant: 'destructive' });
       return;
     }
+
+    const price = Number(formData.price);
+    const stock = Number(formData.stock || '0');
+    const discount = Number(formData.product_discount_percent || '0');
+
+    if (!Number.isFinite(price) || price <= 0) {
+      toast({ title: 'Error', description: 'Price must be a valid number greater than 0', variant: 'destructive' });
+      return;
+    }
+
+    if (!Number.isFinite(stock) || stock < 0 || !Number.isInteger(stock)) {
+      toast({ title: 'Error', description: 'Stock must be a whole number 0 or greater', variant: 'destructive' });
+      return;
+    }
+
+    if (!Number.isFinite(discount) || discount < 0 || discount > 90) {
+      toast({ title: 'Error', description: 'Product discount must be between 0 and 90', variant: 'destructive' });
+      return;
+    }
+
+    if (formData.sku && formData.sku.trim().length > 64) {
+      toast({ title: 'Error', description: 'SKU cannot exceed 64 characters', variant: 'destructive' });
+      return;
+    }
+
     setSaving(true);
 
     const productData = {
       name: formData.name,
       description: formData.description || null,
-      price: parseFloat(formData.price),
-      stock: parseInt(formData.stock) || 0,
+      price,
+      stock,
       sku: formData.sku || null,
       categoryId: formData.category_id || null,
       compatibleModels: formData.compatible_models.length > 0 ? formData.compatible_models : undefined,
       imageUrl: formData.image_url || null,
-      productDiscountPercent: Math.max(0, Math.min(90, Number(formData.product_discount_percent || 0))),
+      productDiscountPercent: Math.max(0, Math.min(90, discount)),
     };
 
     try {
       if (editingProduct) {
-        await api.updateProduct(editingProduct.id, productData as any);
+        await api.updateProduct(editingProduct.id, productData as unknown as Parameters<typeof api.updateProduct>[1]);
         toast({ title: 'Success', description: 'Product updated successfully' });
       } else {
-        await api.createProduct({ ...productData, shopId: shop.id, isActive: true } as any);
+        await api.createProduct({ ...productData, shopId: shop.id, isActive: true } as unknown as Parameters<typeof api.createProduct>[0]);
         toast({ title: 'Success', description: 'Product added successfully' });
       }
       setProductDialogOpen(false);

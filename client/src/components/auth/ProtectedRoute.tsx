@@ -11,6 +11,8 @@ interface ProtectedRouteProps {
   requireApprovedShop?: boolean;
 }
 
+type AuthRole = NonNullable<ProtectedRouteProps['requiredRole']>;
+
 const ProtectedRoute = ({ 
   children, 
   allowedRoles,
@@ -66,7 +68,7 @@ const ProtectedRoute = ({
     }
   }
 
-  if (allowedRoles && role && !allowedRoles.includes(role as any)) {
+  if (allowedRoles && role && !allowedRoles.includes(role as AuthRole)) {
     return <Navigate to="/" replace />;
   }
 

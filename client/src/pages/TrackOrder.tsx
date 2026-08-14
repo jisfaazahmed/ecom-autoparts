@@ -101,6 +101,13 @@ const TrackOrder: React.FC = () => {
       return;
     }
 
+    const trackingRegex = /^[A-Za-z0-9-]{4,64}$/;
+    if (!trackingRegex.test(trimmed)) {
+      setError('Tracking number format is invalid. Use letters, numbers, or hyphens only.');
+      setResult(null);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -116,9 +123,11 @@ const TrackOrder: React.FC = () => {
     }
   };
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    void handleLookup(trackingNumber);
+    const formData = new FormData(event.currentTarget);
+    const submittedTracking = String(formData.get('trackingNumber') ?? trackingNumber);
+    void handleLookup(submittedTracking);
   };
 
   return (
@@ -147,6 +156,7 @@ const TrackOrder: React.FC = () => {
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
+                    name="trackingNumber"
                     value={trackingNumber}
                     onChange={(event) => setTrackingNumber(event.target.value)}
                     placeholder="Enter tracking number"

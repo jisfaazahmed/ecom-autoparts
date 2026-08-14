@@ -15,11 +15,8 @@ const {
   MONGO_PORT,
 } = require('../config/config');
 
-const Notification = require('../models/notification.model');
-const InventoryReservation = require('../models/inventoryReservation.model');
 const NotificationService = require('../services/notification.service');
 const InventoryReservationService = require('../services/inventoryReservation.service');
-const Order = require('../models/order.model');
 const Product = require('../models/product');
 const User = require('../models/user');
 

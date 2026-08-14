@@ -1,5 +1,3 @@
-const ApiResponse = require('../utils/response');
-
 /**
  * Global Error Handler Middleware
  */
@@ -22,7 +20,11 @@ const errorHandler = (err, req, res) => {
     console.error('Stack trace:', err.stack);
   }
 
-  return ApiResponse.error(res, message, statusCode, errors);
+  return res.status(statusCode).json({
+    success: false,
+    message,
+    errors,
+  });
 };
 
 module.exports = errorHandler;

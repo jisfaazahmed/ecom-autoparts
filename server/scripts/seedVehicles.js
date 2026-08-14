@@ -1,6 +1,6 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
-const config = require('./config/config');
+const config = require('../config/config');
 
 // Import models
 const VehicleBrand = require('./models/vehicleBrand.model');

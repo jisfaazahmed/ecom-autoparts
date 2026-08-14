@@ -12,9 +12,9 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const config = require('./config/config');
+const config = require('../config/config');
 
-const User = require('./models/user');
+const User = require('../models/user');
 
 const email = process.env.SUPER_ADMIN_EMAIL;
 const password = process.env.SUPER_ADMIN_PASSWORD;

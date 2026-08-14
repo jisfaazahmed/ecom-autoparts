@@ -207,6 +207,23 @@ const orderSchema = new mongoose.Schema({
         rejectionReason: String
     },
 
+    idempotency: {
+        orderPlacement: {
+            key: {
+                type: String,
+                default: null
+            },
+            scope: {
+                type: String,
+                default: null
+            },
+            createdAt: {
+                type: Date,
+                default: null
+            }
+        }
+    },
+
     
 }, { timestamps: true });
 
@@ -243,5 +260,15 @@ orderSchema.index({ 'items.vendor': 1, createdAt: -1 });
 orderSchema.index({ overallStatus: 1 });
 orderSchema.index({ paymentStatus: 1 });
 orderSchema.index({ createdAt: -1 });
+orderSchema.index(
+    { 'idempotency.orderPlacement.key': 1, 'idempotency.orderPlacement.scope': 1 },
+    {
+        unique: true,
+        partialFilterExpression: {
+            'idempotency.orderPlacement.key': { $type: 'string' },
+            'idempotency.orderPlacement.scope': { $type: 'string' }
+        }
+    }
+);
 
 module.exports = mongoose.model('Order', orderSchema);

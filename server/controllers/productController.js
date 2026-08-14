@@ -112,6 +112,33 @@ const getRequester = (req) => ({
   id: req?.user?.id || req?.user?._id || req?.user?.userId || null,
 });
 
+const normalizeSearchTerm = (value) => String(value || '').trim();
+
+const buildSearchQuery = (searchTerm) => {
+  const normalized = normalizeSearchTerm(searchTerm);
+  if (!normalized) return null;
+
+  // For short terms, use regex so partial prefixes still work.
+  if (normalized.length < 3) {
+    const safe = escapeRegex(normalized);
+    return {
+      query: {
+        $or: [
+          { name: { $regex: safe, $options: 'i' } },
+          { sku: { $regex: safe, $options: 'i' } },
+        ],
+      },
+      sort: null,
+    };
+  }
+
+  // Prefer text index for broader, faster matching.
+  return {
+    query: { $text: { $search: normalized } },
+    sort: { score: { $meta: 'textScore' }, createdAt: -1 },
+  };
+};
+
 const mapReview = (reviewDoc) => {
   const review = reviewDoc.toJSON ? reviewDoc.toJSON() : reviewDoc.toObject();
   const populatedUser = review.user && typeof review.user === 'object' ? review.user : null;
@@ -471,6 +498,8 @@ exports.updateProduct = async (req, res) => {
   }
 };
 
+
+// 1.06 DELETE PRODUCT (Admin or Super Admin)
 exports.deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
@@ -489,11 +518,10 @@ exports.deleteProduct = async (req, res) => {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    const ownerId = String(product.createdBy || '');
-    const isOwner = ownerId && ownerId === String(requester.id);
+    const isAdmin = requester.role === 'admin';
     const isSuperAdmin = requester.role === 'superadmin';
-    if (!isOwner && !isSuperAdmin) {
-      return res.status(403).json({ message: 'Not authorized to delete this product' });
+    if (!isAdmin && !isSuperAdmin) {
+      return res.status(403).json({ message: 'Only admin or superadmin can delete products' });
     }
 
     await Promise.all([

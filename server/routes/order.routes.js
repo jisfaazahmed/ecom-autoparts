@@ -14,6 +14,7 @@ router.post('/recover-guest', verifyToken, orderController.recoverGuestOrders);
 router.get('/vendor/orders', verifyToken, orderController.getVendorOrders);
 router.get('/seller/orders', verifyToken, orderController.getVendorOrders);
 router.get('/seller/sub-orders', verifyToken, orderController.getMySubOrders);
+router.get('/seller/customers', verifyToken, orderController.getSellerCustomers);
 router.patch('/:id/item-status', verifyToken, orderController.updateOrderStatus);
 
 //track

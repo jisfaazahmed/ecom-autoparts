@@ -117,7 +117,7 @@ const Index: React.FC = () => {
               <span className="text-glow text-primary">RIDE</span>
             </h1>
 
-            <p className="text-lg text-muted-foreground mb-8 max-w-lg">
+            <p className="text-lg text-foreground mb-8 max-w-lg bg-background/60 backdrop-blur-md px-4 py-3 rounded-lg border border-border/60 shadow-md">
               Discover thousands of performance parts from verified sellers. 
               Smart compatibility filtering ensures every part fits your vehicle perfectly.
             </p>

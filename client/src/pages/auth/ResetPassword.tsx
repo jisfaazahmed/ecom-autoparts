@@ -35,16 +35,24 @@ const ResetPassword = () => {
     e.preventDefault();
     setError("");
 
-    const validation = resetRequestSchema.safeParse({ email });
-    if (!validation.success) {
-      setError(validation.error.issues[0]?.message || "Please enter a valid email address");
+    const normalizedEmail = email.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!normalizedEmail) {
+      setError("Please enter your email address");
+
+      return;
+    }
+
+    if (!emailRegex.test(normalizedEmail)) {
+      setError("Please enter a valid email address");
       return;
     }
 
     setLoading(true);
 
     try {
-      const response = await api.forgotPassword(validation.data.email);
+      const response = await api.forgotPassword(normalizedEmail);
       setResetMessage(response.message);
       setResetRequested(true);
       toast.success(response.message);
@@ -59,12 +67,20 @@ const ResetPassword = () => {
     e.preventDefault();
     setError("");
 
-    if (password.length < 6) {
+    const normalizedPassword = password.trim();
+    const normalizedConfirmPassword = confirmPassword.trim();
+
+    if (!normalizedPassword || !normalizedConfirmPassword) {
+      setError("Please fill in both password fields");
+      return;
+    }
+
+    if (normalizedPassword.length < 6) {
       setError("Password must be at least 6 characters");
       return;
     }
 
-    if (password !== confirmPassword) {
+    if (normalizedPassword !== normalizedConfirmPassword) {
       setError("Passwords do not match");
       return;
     }
@@ -77,7 +93,7 @@ const ResetPassword = () => {
     setLoading(true);
 
     try {
-      await api.resetPassword(resetToken, password, confirmPassword);
+      await api.resetPassword(resetToken, normalizedPassword, normalizedConfirmPassword);
       toast.success("Password updated successfully!");
       navigate("/auth/customer");
     } catch (err: unknown) {

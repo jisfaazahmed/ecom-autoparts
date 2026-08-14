@@ -14,7 +14,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { useAuth } from '@/hooks/useAuth';
-import { api, ApiProduct, ApiOrder, ApiCategory, ApiVehicleVariant } from '@/lib/api';
+import { api, ApiProduct, ApiOrder, ApiCategory, ApiVehicleVariant, ApiRefund } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { formatLKR } from '@/lib/currency';
 
@@ -24,7 +24,7 @@ const AdminDashboard: React.FC = () => {
   
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [orders, setOrders] = useState<ApiOrder[]>([]);
-  const [refunds, setRefunds] = useState<any[]>([]);
+  const [refunds, setRefunds] = useState<ApiRefund[]>([]);
   const [categories, setCategories] = useState<ApiCategory[]>([]);
   const [variants, setVariants] = useState<ApiVehicleVariant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,13 +74,13 @@ const AdminDashboard: React.FC = () => {
         isActive: true,
         categoryId: newProduct.category_id || undefined,
         compatibleVariants: newProduct.compatible_variants.length > 0 ? newProduct.compatible_variants : undefined,
-      } as any);
+      } as unknown as Parameters<typeof api.createProduct>[0]);
       toast({ title: 'Success', description: 'Product added successfully' });
       setAddProductOpen(false);
       setNewProduct({ name: '', description: '', price: '', stock: '', sku: '', category_id: '', compatible_variants: [] });
       fetchData();
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to add product', variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to add product', variant: 'destructive' });
     }
     setSaving(false);
   };
@@ -94,8 +94,8 @@ const AdminDashboard: React.FC = () => {
       await api.updateOrderStatus(orderId, status);
       setOrders(orders.map(o => o.id === orderId ? { ...o, status } : o));
       toast({ title: 'Order Updated', description: `Order marked as ${status}` });
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message || 'Failed to update order', variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to update order', variant: 'destructive' });
     }
   };
 

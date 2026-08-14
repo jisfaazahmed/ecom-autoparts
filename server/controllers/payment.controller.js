@@ -154,6 +154,14 @@ function withReceiptEmail(payload, email) {
   return sanitizedEmail ? { ...payload, receipt_email: sanitizedEmail } : payload;
 }
 
+function getIdempotencyKey(req) {
+  const headerKey = String(req.get('Idempotency-Key') || req.get('idempotency-key') || '').trim();
+  const bodyKey = String(req.body?.idempotencyKey || '').trim();
+  const key = headerKey || bodyKey;
+  if (!key) return null;
+  return key.slice(0, 128);
+}
+
 // Create Stripe checkout session
 exports.createCheckoutSession = async (req, res) => {
     try {
@@ -304,6 +312,7 @@ exports.confirmPaymentIntent = async (req, res) => {
     const { orderId, paymentIntentId } = req.body;
     const userId = getRequestUserId(req);
     const userEmail = getRequestBillingEmail(req);
+    const idempotencyKey = getIdempotencyKey(req);
 
     if (!orderId || !paymentIntentId) {
       return res.status(400).json({
@@ -319,6 +328,73 @@ exports.confirmPaymentIntent = async (req, res) => {
     const { order } = orderResult;
 
     const payment = await getOrCreatePaymentForOrder(order, userId, 'card');
+
+    if (idempotencyKey && payment?.idempotency?.confirmPaymentIntent?.key === idempotencyKey) {
+      const previous = payment.idempotency.confirmPaymentIntent;
+
+      if (previous?.status === 'completed') {
+        return res.status(200).json({
+          success: true,
+          data: {
+            orderId: order._id,
+            paymentIntentId: previous.paymentIntentId || paymentIntentId,
+            paymentStatus: 'completed',
+          },
+        });
+      }
+
+      if (previous?.status === 'requires_action') {
+        return res.status(202).json({
+          success: false,
+          requiresAction: true,
+          message: 'Additional authentication required (3DS/OTP)',
+          data: {
+            orderId: order._id,
+            paymentIntentId: previous.paymentIntentId || paymentIntentId,
+            paymentStatus: 'requires_action',
+            retryCount: payment.retryAttempts?.length || 0,
+            nextAction: { type: 'use_stripe_sdk' },
+          },
+        });
+      }
+
+      if (previous?.status === 'failed') {
+        return res.status(400).json({
+          success: false,
+          message: 'Payment is not completed. Current status: failed',
+          data: {
+            orderId: order._id,
+            paymentIntentId: previous.paymentIntentId || paymentIntentId,
+            paymentStatus: 'failed',
+            retryCount: payment.retryAttempts?.length || 0,
+            retryEligible: (payment.retryAttempts?.length || 0) < 3,
+          },
+        });
+      }
+
+      if (previous?.status === 'processing') {
+        return res.status(202).json({
+          success: false,
+          message: 'Payment confirmation is already being processed',
+          data: {
+            orderId: order._id,
+            paymentIntentId: previous.paymentIntentId || paymentIntentId,
+            paymentStatus: 'processing',
+          },
+        });
+      }
+    }
+
+    if (idempotencyKey) {
+      payment.idempotency = payment.idempotency || {};
+      payment.idempotency.confirmPaymentIntent = {
+        key: idempotencyKey,
+        status: 'processing',
+        paymentIntentId,
+        updatedAt: new Date(),
+      };
+    }
+
     payment.provider = payment.provider || {};
     payment.provider.paymentIntentId = paymentIntentId;
     payment.provider.transactionId = paymentIntentId;
@@ -329,6 +405,16 @@ exports.confirmPaymentIntent = async (req, res) => {
       const retryCount = await appendRetryAttempt({ payment, paymentIntent });
 
       if (paymentIntent.status === 'requires_action') {
+        if (idempotencyKey) {
+          payment.idempotency.confirmPaymentIntent = {
+            key: idempotencyKey,
+            status: 'requires_action',
+            paymentIntentId: paymentIntent.id,
+            updatedAt: new Date(),
+          };
+          await payment.save();
+        }
+
         return res.status(202).json({
           success: false,
           requiresAction: true,
@@ -341,6 +427,16 @@ exports.confirmPaymentIntent = async (req, res) => {
             nextAction: paymentIntent.next_action || { type: 'use_stripe_sdk' },
           },
         });
+      }
+
+      if (idempotencyKey) {
+        payment.idempotency.confirmPaymentIntent = {
+          key: idempotencyKey,
+          status: 'failed',
+          paymentIntentId: paymentIntent.id,
+          updatedAt: new Date(),
+        };
+        await payment.save();
       }
 
       return res.status(400).json({
@@ -364,6 +460,16 @@ exports.confirmPaymentIntent = async (req, res) => {
       timestamp: new Date(),
       description: 'Payment completed successfully via payment intent confirmation',
     });
+
+    if (idempotencyKey) {
+      payment.idempotency.confirmPaymentIntent = {
+        key: idempotencyKey,
+        status: 'completed',
+        paymentIntentId: paymentIntent.id,
+        updatedAt: new Date(),
+      };
+    }
+
     await payment.save();
 
     await finalizeSuccessfulCardPayment({

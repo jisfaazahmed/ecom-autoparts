@@ -29,7 +29,7 @@ const productSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
-  
+
   // 5. Is it active? (Visibility controlled by creator)
   isActive: { type: Boolean, default: true },
 
@@ -49,5 +49,23 @@ const productSchema = new mongoose.Schema({
 
 // Index for fast searching by Category and vehicle model compatibility
 productSchema.index({ category: 1, compatibleVehicleModels: 1 });
+// Listing/search indexes
+productSchema.index({ status: 1, isActive: 1, category: 1, createdAt: -1 });
+productSchema.index({ status: 1, isActive: 1, createdBy: 1, createdAt: -1 });
+productSchema.index({ compatibleVehicles: 1, status: 1, isActive: 1 });
+productSchema.index({ featured: 1, status: 1, isActive: 1, updatedAt: -1, createdAt: -1 });
+
+// Text index for product search (name/sku/description)
+productSchema.index(
+  { name: 'text', sku: 'text', description: 'text' },
+  {
+    weights: {
+      name: 10,
+      sku: 8,
+      description: 3,
+    },
+    name: 'product_text_search_idx',
+  }
+);
 
 module.exports = mongoose.model('Product', productSchema);

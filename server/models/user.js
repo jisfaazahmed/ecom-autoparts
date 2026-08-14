@@ -88,8 +88,12 @@ const userSchema = new mongoose.Schema({
   businessRegistration: { type: String },
   shopDescription: { type: String },
   logoUrl: { type: String },
-  commissionRate: { type: Number, default: 10 },
   rejectionReason: { type: String },
+  avatarUrl: {
+    type: String,
+    default: null,
+  },
+
   commissionRate: {
     type: Number,
     default: 10,

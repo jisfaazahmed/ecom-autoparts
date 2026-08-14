@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Package, Search, MoreVertical, Eye, CheckCircle, XCircle, Loader2, Star, StarOff } from 'lucide-react';
+import { Package, Search, MoreVertical, Eye, CheckCircle, XCircle, Loader2, Star, StarOff, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { formatLKR } from '@/lib/currency';
 import { usePagination } from '@/hooks/usePagination';
@@ -21,6 +22,9 @@ const SuperAdminProducts: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'Pending' | 'Approved' | 'Rejected'>('all');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<ApiProduct | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -81,6 +85,27 @@ const SuperAdminProducts: React.FC = () => {
         variant: 'destructive',
       });
     }
+  };
+
+  const handleDeleteProduct = async () => {
+    const productId = productToDelete?.id || productToDelete?._id;
+    if (!productId) return;
+
+    setDeleting(true);
+    try {
+      await api.deleteProduct(productId);
+      setProducts((prev) => prev.filter((p) => (p.id || p._id) !== productId));
+      setDeleteDialogOpen(false);
+      setProductToDelete(null);
+      toast({ title: 'Deleted', description: 'Product deleted successfully.' });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to delete product',
+        variant: 'destructive',
+      });
+    }
+    setDeleting(false);
   };
 
   const filteredProducts = products.filter(product => {
@@ -192,6 +217,16 @@ const SuperAdminProducts: React.FC = () => {
                                 </>
                               )}
                             </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              className="cursor-pointer text-destructive focus:text-destructive"
+                              onClick={() => {
+                                setProductToDelete(product);
+                                setDeleteDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" /> Delete
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -208,6 +243,26 @@ const SuperAdminProducts: React.FC = () => {
           )}
         </div>
       </motion.div>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="glass-card">
+          <DialogHeader>
+            <DialogTitle>Delete Product</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{productToDelete?.name}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteProduct} disabled={deleting}>
+              {deleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 };

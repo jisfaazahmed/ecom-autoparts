@@ -2,8 +2,30 @@ const InventoryReservation = require('../models/inventoryReservation.model');
 const Product = require('../models/product');
 
 class InventoryReservationService {
-    // Reservation duration - 15 minutes
-    static RESERVATION_DURATION_MS = 15 * 60 * 1000;
+    // Reservation duration defaults to 15 minutes (configurable via env).
+    static RESERVATION_DURATION_MS = Math.max(
+        1,
+        Number(process.env.INVENTORY_RESERVATION_MINUTES || 15)
+    ) * 60 * 1000;
+
+    /**
+     * Mark expired reservations for a product as expired so stock views stay current.
+     */
+    static async sweepExpiredReservationsForProduct(productId) {
+        const now = new Date();
+        await InventoryReservation.updateMany(
+            {
+                product: productId,
+                status: 'reserved',
+                expiresAt: { $lte: now }
+            },
+            {
+                status: 'expired',
+                releasedAt: now,
+                releaseReason: 'expired'
+            }
+        );
+    }
 
     /**
      * Reserve stock for a product
@@ -52,6 +74,8 @@ class InventoryReservationService {
             if (!product) {
                 throw new Error('Product not found');
             }
+
+            await this.sweepExpiredReservationsForProduct(product._id);
 
             // Get all active (non-expired) reservations
             const reservedQuantity = await InventoryReservation.aggregate([
@@ -203,23 +227,33 @@ class InventoryReservationService {
             const now = new Date();
             const expiresAt = new Date(now.getTime() + this.RESERVATION_DURATION_MS);
 
-            const activeReservation = await InventoryReservation.findOne({
-                product: productId,
-                user: userId,
-                status: 'reserved',
-                expiresAt: { $gt: now }
-            }).sort({ createdAt: -1 });
-
-            if (!activeReservation) {
-                return this.reserveStock(productId, userId, requestedQuantity, sessionId);
-            }
-
-            activeReservation.quantity = requestedQuantity;
-            activeReservation.expiresAt = expiresAt;
-            if (sessionId) activeReservation.sessionId = sessionId;
-            if (cartId) activeReservation.cart = cartId;
-            await activeReservation.save();
-            return activeReservation;
+            // Keep one active reservation document per user-product pair.
+            return InventoryReservation.findOneAndUpdate(
+                {
+                    product: productId,
+                    user: userId,
+                    status: 'reserved',
+                    expiresAt: { $gt: now }
+                },
+                {
+                    $set: {
+                        quantity: requestedQuantity,
+                        expiresAt,
+                        ...(sessionId ? { sessionId } : {}),
+                        ...(cartId ? { cart: cartId } : {})
+                    },
+                    $setOnInsert: {
+                        product: productId,
+                        user: userId,
+                        status: 'reserved',
+                    }
+                },
+                {
+                    new: true,
+                    upsert: true,
+                    setDefaultsOnInsert: true,
+                }
+            );
         } catch (error) {
             console.error('Error upserting user reservation:', error);
             throw error;
@@ -483,6 +517,43 @@ class InventoryReservationService {
             return result;
         } catch (error) {
             console.error('Error deducting stock:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Atomically acquire stock for order placement to avoid oversell under races.
+     */
+    static async acquireStockForOrder(productId, quantity) {
+        try {
+            const requestedQuantity = Number(quantity || 0);
+            if (!Number.isFinite(requestedQuantity) || requestedQuantity < 1) {
+                throw new Error('Quantity must be at least 1');
+            }
+
+            const result = await Product.findOneAndUpdate(
+                {
+                    _id: productId,
+                    stock: { $gte: requestedQuantity }
+                },
+                {
+                    $inc: {
+                        stock: -requestedQuantity,
+                        soldCount: requestedQuantity,
+                    }
+                },
+                {
+                    new: true,
+                }
+            );
+
+            if (!result) {
+                throw new Error('stock not available');
+            }
+
+            return result;
+        } catch (error) {
+            console.error('Error acquiring stock for order:', error);
             throw error;
         }
     }

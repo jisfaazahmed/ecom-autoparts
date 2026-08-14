@@ -11,6 +11,7 @@ interface User {
   email: string;
   name: string;
   fullName?: string;
+  avatarUrl?: string;
   phone?: string;
   address?: string;
   city?: string;
@@ -126,12 +127,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<any | null>(null);
 
   const mapUser = (apiUser: any): User => ({
     id: apiUser?.id || apiUser?._id || apiUser?.userId || '',
     email: apiUser?.email || '',
     name: apiUser?.fullName || apiUser?.name || 'User',
     fullName: apiUser?.fullName || apiUser?.name,
+    avatarUrl: apiUser?.avatarUrl || apiUser?.avatar_url || null,
     phone: apiUser?.phone ?? apiUser?.profile?.phone,
     address: apiUser?.address ?? apiUser?.profile?.address,
     city: apiUser?.city ?? apiUser?.profile?.city,
@@ -217,6 +220,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           useStore.getState().setUserVehicle(null);
         }
+        const currentProfile = await api.getMyProfile().catch(() => null);
+        setProfile(currentProfile);
       } catch (e) {
         console.warn('Failed to hydrate user, clearing session');
         localStorage.removeItem('auth_token');
@@ -279,6 +284,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('user');
     api.logout();
     setUser(null);
+    setProfile(null);
 
     toast({
       title: 'Signed Out',
@@ -363,13 +369,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('user', JSON.stringify(mapped));
         setUser(mapped);
       }
+      const currentProfile = await api.getMyProfile().catch(() => null);
+      setProfile(currentProfile);
     } catch (error) {
       console.warn('Failed to refresh profile', error);
     }
   };
 
   const shop = useMemo(() => buildShopFromUser(user), [user]);
-  const profile = useMemo(() => buildProfileFromUser(user), [user]);
+  const fallbackProfile = useMemo(() => buildProfileFromUser(user), [user]);
 
   return (
     <AuthContext.Provider value={{ 
@@ -380,7 +388,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       role: user?.role || null,
       shop,
       loading,
-      profile,
+      profile: profile || fallbackProfile,
       signUp,
       signIn,
       signOut,

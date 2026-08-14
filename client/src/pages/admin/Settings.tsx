@@ -51,7 +51,7 @@ const AdminSettings: React.FC = () => {
         address: shop.address || '',
         business_registration: shop.business_registration || '',
         logo_url: shop.logo_url || '',
-        shop_wide_discount_percent: String((shop as any).shopWideDiscountPercent ?? 0),
+        shop_wide_discount_percent: String(shop.shopWideDiscountPercent ?? 0),
       });
       setLoading(false);
     }
@@ -65,6 +65,40 @@ const AdminSettings: React.FC = () => {
       return;
     }
 
+    if (formData.email.trim()) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formData.email.trim())) {
+        toast({ title: 'Error', description: 'Please enter a valid shop email', variant: 'destructive' });
+        return;
+      }
+    }
+
+    if (formData.phone.trim()) {
+      const phoneDigits = formData.phone.replace(/\D/g, '');
+      if (phoneDigits.length < 9 || phoneDigits.length > 15) {
+        toast({ title: 'Error', description: 'Please enter a valid phone number', variant: 'destructive' });
+        return;
+      }
+    }
+
+    if (formData.logo_url.trim()) {
+      try {
+        const parsed = new URL(formData.logo_url.trim());
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          throw new Error('invalid protocol');
+        }
+      } catch (_err) {
+        toast({ title: 'Error', description: 'Logo URL must be a valid http/https URL', variant: 'destructive' });
+        return;
+      }
+    }
+
+    const discount = Number(formData.shop_wide_discount_percent || '0');
+    if (!Number.isFinite(discount) || discount < 0 || discount > 90) {
+      toast({ title: 'Error', description: 'Shop-wide discount must be between 0 and 90', variant: 'destructive' });
+      return;
+    }
+
     setSaving(true);
     try {
       await api.updateMyShop({
@@ -75,7 +109,7 @@ const AdminSettings: React.FC = () => {
         address: formData.address || undefined,
         businessRegistration: formData.business_registration || undefined,
         logoUrl: formData.logo_url || undefined,
-        shopWideDiscountPercent: Math.max(0, Math.min(90, Number(formData.shop_wide_discount_percent || 0))),
+        shopWideDiscountPercent: Math.max(0, Math.min(90, discount)),
       });
       toast({ title: 'Saved', description: 'Shop settings updated successfully' });
     } catch (error) {

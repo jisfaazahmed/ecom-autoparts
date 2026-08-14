@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
-const User = require('./models/user');
+const User = require('../models/user');
 require('dotenv').config();
-const config = require('./config/config');
+const config = require('../config/config');
 
 async function listUsers() {
   const { MONGO_IP, MONGO_PORT, MONGO_USER, MONGO_PASSWORD, MONGO_DB } = config;

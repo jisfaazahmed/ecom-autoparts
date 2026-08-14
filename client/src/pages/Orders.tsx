@@ -107,6 +107,12 @@ const statusConfig: Record<string, { icon: React.ReactNode; color: string; label
 const getOrderStatus = (order: ApiOrder) =>
   order.overallStatus || order.status || 'pending';
 
+const shouldAutoRedirectToInvoice = (order: ApiOrder) => {
+  const paymentMethod = String(order.paymentMethod || '').toLowerCase();
+  const paymentStatus = String(order.paymentStatus || '').toLowerCase();
+  return (paymentMethod === 'cod' || paymentMethod === 'wallet') && paymentStatus === 'completed';
+};
+
 const Orders: React.FC = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -208,6 +214,12 @@ const Orders: React.FC = () => {
         setSelectedOrderTimeline([]);
       } else {
         const details = await api.getOrderWithTimeline(orderId);
+
+        if (shouldAutoRedirectToInvoice(details.order)) {
+          navigate(`/payment/download?order_id=${encodeURIComponent(orderId)}`);
+          return;
+        }
+
         setSelectedOrder(details.order);
         setSelectedOrderTimeline(details.timeline || []);
       }

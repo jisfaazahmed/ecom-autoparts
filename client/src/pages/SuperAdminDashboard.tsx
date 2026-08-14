@@ -74,7 +74,7 @@ const SuperAdminDashboard: React.FC = () => {
       }));
       setSalesData(salesSeries);
 
-      const categoryNameById = new Map((categories || []).map((cat: any) => [String(cat.id), String(cat.name)]));
+      const categoryNameById = new Map((categories || []).map((cat: { id: string; name: string }) => [String(cat.id), String(cat.name)]));
       const totalCategoryEarnings = (analyticsData.topCategories || []).reduce((sum, c) => sum + (c.earnings || 0), 0);
       
       const topCategories = (analyticsData.topCategories || []).map((c, index) => ({
@@ -84,8 +84,8 @@ const SuperAdminDashboard: React.FC = () => {
       })).filter(entry => entry.value > 0);
 
       setCategoryData(topCategories);
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to load dashboard data', variant: 'destructive' });
     }
     setLoading(false);
   };
@@ -95,8 +95,8 @@ const SuperAdminDashboard: React.FC = () => {
       await api.updateShopStatus(shopId, status);
       setShops(shops.map(s => s.id === shopId ? { ...s, status } : s));
       toast({ title: 'Shop Updated', description: `Shop has been ${status}` });
-    } catch (error: any) {
-      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } catch (error: unknown) {
+      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to update shop status', variant: 'destructive' });
     }
   };
 
