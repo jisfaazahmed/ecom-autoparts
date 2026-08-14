@@ -42,23 +42,26 @@ async function seed() {
     await mongoose.connect(uri);
     console.log('Connected to MongoDB');
 
-    const existing = await User.findOne({ email: superAdmin.email });
-    if (existing) {
-      console.log('Super Admin already exists:', existing.email);
-      process.exit(0);
-      return;
-    }
-
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(superAdmin.password, salt);
 
-    await User.create({
-      name: superAdmin.name,
-      email: superAdmin.email,
-      password: hashedPassword,
-      role: superAdmin.role,
-      status: superAdmin.status,
-    });
+    const existing = await User.findOne({ email: superAdmin.email });
+    if (existing) {
+      existing.role = superAdmin.role;
+      existing.status = 'ACTIVE';
+      existing.password = hashedPassword;
+      await existing.save();
+      console.log('Super Admin updated successfully to ACTIVE:', existing.email);
+    } else {
+      await User.create({
+        name: superAdmin.name,
+        email: superAdmin.email,
+        password: hashedPassword,
+        role: superAdmin.role,
+        status: superAdmin.status,
+      });
+      console.log('Super Admin created successfully.');
+    }
 
     console.log('Super Admin created successfully.');
     console.log('Email:', superAdmin.email);
