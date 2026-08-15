@@ -13,13 +13,6 @@ process.on('unhandledRejection', (reason) => {
   console.error('💥 unhandledRejection – server will stay alive:', reason);
 });
 
-const {
-  MONGO_DB,
-  MONGO_USER,
-  MONGO_PASSWORD,
-  MONGO_IP,
-  MONGO_PORT,
-} = require("./config/config");
 
 // === 1. Import the New Routes ===
 const authRoutes = require('./routes/authRoutes');
@@ -62,7 +55,7 @@ app.use('/labels', express.static(path.join(__dirname, 'uploads', 'labels')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 //MongoDB connection
-mongoose.connect(`mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_IP}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`).then(() => {
+mongoose.connect(process.env.MONGO_URI).then(() => {
   console.log('Connected to MongoDB');
   // Initialize background jobs after DB connection
   BackgroundJobs.initializeJobs();
