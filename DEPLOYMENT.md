@@ -21,9 +21,15 @@ consumed as Docker **build args** in `cd.yml`, not entries in the deploy `.env`.
 
 Two consequences:
 
-- `VITE_API_URL` must be the URL **a browser** can reach (e.g. `https://api.example.com/api`).
-  `http://localhost:5000/api` only works if the visitor is on the server itself.
-- Changing either value requires a rebuild, not just a restart. Re-run the CD workflow.
+- Any `VITE_*` value must make sense to **a browser**, not to the server container.
+- Changing one requires a rebuild, not just a restart. Re-run the CD workflow.
+
+`VITE_API_URL` is the reason to leave it unset: `client/src/lib/api.ts` falls back to
+the relative `/api`, and nginx proxies that to the server container. A relative path
+is correct on every host and domain, so moving the deployment never needs a rebuild.
+Set the secret only if you split the API onto its own hostname.
+
+`VITE_STRIPE_PUBLISHABLE_KEY` has no such escape — it must be set as a build arg.
 
 ## Required GitHub secrets
 
@@ -44,7 +50,7 @@ Set under **Settings → Secrets and variables → Actions**.
 
 | Secret | Required | Notes |
 |---|---|---|
-| `VITE_API_URL` | yes | Publicly reachable API base URL, including `/api` |
+| `VITE_API_URL` | no | Leave unset. `client/src/lib/api.ts` defaults to the relative `/api`, which nginx proxies to the server container. Only set this if the API lives on a different host than the client |
 | `VITE_STRIPE_PUBLISHABLE_KEY` | for checkout | Publishable (`pk_...`) key — safe to ship to the browser |
 
 ### Server runtime
@@ -63,8 +69,13 @@ Set under **Settings → Secrets and variables → Actions**.
 | `SERVER_PUBLIC_URL` | no | Used by the shipping service |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` | for email | OTP login and order emails silently stop working without these |
 | `ADMIN_EMAIL`, `SUPER_ADMIN_EMAIL` | no | Notification recipients |
+| `SUPER_ADMIN_PASSWORD` | for seeding | Only read by `npm run seed`, which creates the first super admin |
+| `GEMINI_API_KEY` | for AI analytics | Without it the SuperAdmin AI assistant returns 502 |
+| `GEMINI_MODEL` | no | Overrides the first entry in the model fallback chain |
 | `HTTP_PORT` | no | Host port for the web client, default `80` |
-| `API_PORT` | no | Host port for the API, default `5000` |
+
+There is no `API_PORT`. The server container is not published on the host — nginx
+in the client container proxies `/api` to it over the compose network.
 
 Anything marked required is enforced by `docker-compose.deploy.yml`, which fails
 immediately with a named error rather than starting a container that crash-loops.
@@ -90,8 +101,12 @@ the workflow copies `docker-compose.deploy.yml` and a generated `.env` to
    tagged with both the commit SHA and `latest`.
 2. `docker-compose.deploy.yml` and a generated `.env` are copied to the VPS.
 3. The VPS logs in to GHCR with the run-scoped `GITHUB_TOKEN`, pulls, and restarts.
-4. The workflow polls `/health` for up to 150s. If it never comes up, the step
-   fails and prints the last 100 lines of server logs.
+4. The workflow polls `/health` **inside** the server container for up to 150s, then
+   curls `/api/message` through nginx on the host to prove the proxy hop works. If
+   either fails the step fails and prints the last lines of the relevant logs.
+
+`/health` returns `503` while MongoDB is disconnected, so a server that boots without
+a working database fails the deploy instead of passing a check it cannot back up.
 
 Deploys are serialised by a concurrency group, so two merges cannot race.
 

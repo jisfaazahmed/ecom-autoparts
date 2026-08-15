@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // API Client for Express Backend
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// Relative by default: in production nginx proxies /api to the server container
+// (client/nginx.conf) and in development vite.config.ts proxies it to :5000, so the
+// same-origin path works in both. Because Vite inlines VITE_* at build time, a
+// relative default also means changing domain or host needs no rebuild.
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 // Types
 export interface ApiProfile {
