@@ -3,7 +3,7 @@ const router = express.Router();
 const vehicleController = require('../controllers/vehicleController');
 const vehicleMasterController = require('../controllers/vehicleMaster.controller');
 const userVehicleController = require('../controllers/userVehicle.controller');
-const vinController = require('../controllers/vin.controller');
+const regcheckController = require('../controllers/regcheck.controller');
 const { verifyToken, isSuperAdmin } = require('../middleware/authMiddleware');
 
 // Public Routes (For the Search Bar - legacy simple vehicle fitment)
@@ -12,8 +12,8 @@ router.get('/makes', vehicleController.getMakes);
 router.get('/models', vehicleController.getModels);
 router.get('/resolve', vehicleController.resolveVehicle);
 
-// ===== VIN Decode =====
-router.get('/decode-vin/:vin', vinController.decodeVin);
+// ===== Registration Number Lookup =====
+router.get('/lookup/:registrationNumber', regcheckController.lookupRegistration);
 
 // Private Route (Only You can add data)
 router.post('/', verifyToken, isSuperAdmin, vehicleController.addVehicle);
@@ -33,17 +33,10 @@ router.post('/models', verifyToken, isSuperAdmin, vehicleMasterController.create
 router.put('/models/:id', verifyToken, isSuperAdmin, vehicleMasterController.updateVehicleModel);
 router.delete('/models/:id', verifyToken, isSuperAdmin, vehicleMasterController.deleteVehicleModel);
 
-// Variants
-router.get('/variants/all', vehicleMasterController.getAllVehicleVariants);
-router.get('/variants/:modelId', vehicleMasterController.getVehicleVariantsByModel);
-router.post('/variants', verifyToken, isSuperAdmin, vehicleMasterController.createVehicleVariant);
-router.put('/variants/:id', verifyToken, isSuperAdmin, vehicleMasterController.updateVehicleVariant);
-router.delete('/variants/:id', verifyToken, isSuperAdmin, vehicleMasterController.deleteVehicleVariant);
-
 // ===== User vehicles (saved vehicles per user) =====
 router.get('/user', verifyToken, userVehicleController.getUserVehicles);
 router.post('/user', verifyToken, userVehicleController.addUserVehicle);
-router.post('/user/vin', verifyToken, vinController.addUserVehicleByVin);
+router.post('/user/reg', verifyToken, regcheckController.addUserVehicleByReg);
 router.put('/user/:vehicleId/active', verifyToken, userVehicleController.setActiveVehicle);
 router.delete('/user/:vehicleId', verifyToken, userVehicleController.deleteUserVehicle);
 

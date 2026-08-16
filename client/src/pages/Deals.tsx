@@ -17,19 +17,23 @@ const Deals: React.FC = () => {
   useEffect(() => {
     const fetchDeals = async () => {
       try {
-        const [response, activeCoupons] = await Promise.all([
-          api.getProducts({ isActive: true, limit: 1000 }),
-          api.getPublicActiveCoupons(6),
-        ]);
+        const response = await api.getProducts({ limit: 1000 });
         // Only discounted products should appear on the deals page.
         const dealProducts = (response.data || []).filter(
           (p) => (p.effectiveDiscountPercent || 0) > 0 && p.stock > 0
         );
         setProducts(dealProducts);
-        setCoupons(activeCoupons);
       } catch (error) {
         console.error('Failed to fetch deals:', error);
       }
+
+      try {
+        const activeCoupons = await api.getPublicActiveCoupons(6);
+        setCoupons(activeCoupons);
+      } catch (error) {
+        console.error('Failed to fetch coupons:', error);
+      }
+
       setLoading(false);
     };
     fetchDeals();

@@ -4,8 +4,21 @@ import { Sparkles, MessageSquare, Send, X, AlertCircle, RefreshCw } from 'lucide
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 
+interface AnalyticsData {
+  totalSales: number;
+  totalCommission: number;
+  totalOrders: number;
+  totalVendors: number;
+  aov: number;
+  totalRefunds: number;
+  topVendors: { shopName: string; name: string; sales: number; orders: number }[];
+  ordersByStatus: Record<string, number>;
+  salesByMonth: { month: string; sales: number; commission: number; orders: number }[];
+  topCategories: { categoryId: string; earnings: number }[];
+}
+
 interface AnalyticsAIChatProps {
-  analyticsData: any;
+  analyticsData: AnalyticsData | null;
   dateRange: string;
 }
 
@@ -54,9 +67,9 @@ const AnalyticsAIChat: React.FC<AnalyticsAIChatProps> = ({ analyticsData, dateRa
         content: response.answer
       };
       setMessages(prev => [...prev, assistantMessage]);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to get answer from AI:', err);
-      const userFriendlyErrorMessage = err.message || 'AI assistant is temporarily unavailable.';
+      const userFriendlyErrorMessage = err instanceof Error ? err.message : 'AI assistant is temporarily unavailable.';
       
       const systemErrorMessage: Message = {
         role: 'assistant',

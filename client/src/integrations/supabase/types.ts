@@ -450,7 +450,6 @@ export type Database = {
           id: string
           is_active: boolean | null
           model_id: string
-          nickname: string | null
           user_id: string
           variant_id: string | null
           vin: string | null
@@ -462,7 +461,6 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           model_id: string
-          nickname?: string | null
           user_id: string
           variant_id?: string | null
           vin?: string | null
@@ -474,7 +472,6 @@ export type Database = {
           id?: string
           is_active?: boolean | null
           model_id?: string
-          nickname?: string | null
           user_id?: string
           variant_id?: string | null
           vin?: string | null

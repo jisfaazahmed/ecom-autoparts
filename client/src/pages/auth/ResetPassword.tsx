@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,11 @@ import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { api } from "@/lib/api";
 import { Shield, Eye, EyeOff, Loader2, Mail } from "lucide-react";
 import { toast } from "sonner";
+import { z } from "zod";
+
+const resetRequestSchema = z.object({
+  email: z.string().trim().min(1, "Please enter your email address").email("Please enter a valid email address"),
+});
 
 const ResetPassword = () => {
   const navigate = useNavigate();
@@ -24,6 +29,7 @@ const ResetPassword = () => {
   // Request reset state
   const [email, setEmail] = useState("");
   const [resetRequested, setResetRequested] = useState(false);
+  const [resetMessage, setResetMessage] = useState("");
 
   const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +40,7 @@ const ResetPassword = () => {
 
     if (!normalizedEmail) {
       setError("Please enter your email address");
+
       return;
     }
 
@@ -45,10 +52,10 @@ const ResetPassword = () => {
     setLoading(true);
 
     try {
-      await api.forgotPassword(normalizedEmail);
-      setEmail(normalizedEmail);
+      const response = await api.forgotPassword(normalizedEmail);
+      setResetMessage(response.message);
       setResetRequested(true);
-      toast.success("Check your email for reset instructions!");
+      toast.success(response.message);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to send reset email");
     }
@@ -86,7 +93,7 @@ const ResetPassword = () => {
     setLoading(true);
 
     try {
-      await api.resetPassword(resetToken, normalizedPassword);
+      await api.resetPassword(resetToken, normalizedPassword, normalizedConfirmPassword);
       toast.success("Password updated successfully!");
       navigate("/auth/customer");
     } catch (err: unknown) {
@@ -208,7 +215,7 @@ const ResetPassword = () => {
             <div>
               <CardTitle className="text-2xl font-bold">Check Your Email</CardTitle>
               <CardDescription className="mt-2">
-                We've sent password reset instructions to <strong>{email}</strong>
+                {resetMessage || "If an account with this email exists, a password reset link will be sent."}
               </CardDescription>
             </div>
           </CardHeader>

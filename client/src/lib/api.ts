@@ -93,9 +93,29 @@ export interface ApiShop {
   updatedAt: string;
 }
 
-export interface ApiProduct {
+export interface ForgotPasswordResponse {
+  message: string;
+  resetToken?: string;
+  resetLink?: string;
+}
+
+export interface ApiCompatibleVehicle {
   id: string;
+  year: number;
+  make: string;
+  model: string;
+}
+
+export interface ApiCompatibleModel {
+  id: string;
+  name: string;
+  brandId?: string;
+  brandName?: string;
+}
+
+export interface ApiProduct {
   _id?: string;
+  id: string;
   name: string;
   description?: string;
   price: number;
@@ -109,7 +129,9 @@ export interface ApiProduct {
   categoryId?: string;
   shopId: string;
   isActive: boolean;
-  status: "Pending" | "Approved" | "Rejected";
+  compatibleVehicles?: ApiCompatibleVehicle[];
+  compatibleVehicleModels?: ApiCompatibleModel[];
+  status?: "Pending" | "Approved" | "Rejected";
   featured?: boolean;
   hasDiscount?: boolean;
   originalPrice?: number;
@@ -122,6 +144,8 @@ export interface ApiProduct {
   updatedAt: string;
   category?: ApiCategory;
   shop?: ApiShop;
+  rating?: number;
+  reviewCount?: number;
 }
 
 export interface ApiCategory {
@@ -226,6 +250,8 @@ export interface ApiVehicleModel {
   created_at?: string;
 }
 
+
+
 export interface ApiVehicleVariant {
   id: string;
   name: string;
@@ -248,16 +274,26 @@ export interface ApiUserVehicle {
   userId: string;
   brandId: string;
   modelId: string;
-  variantId?: string;
   year: number;
+  registrationNumber?: string;
   nickname?: string;
   vin?: string;
   isActive: boolean;
   brand?: ApiVehicleBrand;
   model?: ApiVehicleModel;
-  variant?: ApiVehicleVariant;
   createdAt?: string;
 }
+
+export interface ApiRegCheckVehicle {
+  registrationNumber: string;
+  brand: ApiVehicleBrand;
+  model: { id: string; name: string };
+  year: number | null;
+}
+
+export type ApiRegCheckResult =
+  | { found: true; vehicle: ApiRegCheckVehicle }
+  | { found: false; message: string };
 
 export interface ApiReview {
   id: string;
@@ -550,7 +586,7 @@ class ApiClient {
           return retryResponse.json();
         }
       }
-      
+
       // If no refresh token or refresh failed, clear tokens and redirect
       localStorage.removeItem('auth_token');
       localStorage.removeItem('accessToken');
@@ -606,6 +642,7 @@ class ApiClient {
   setTokens(accessToken: string, refreshToken: string) {
     this.accessToken = accessToken;
     this.refreshToken = refreshToken;
+    localStorage.setItem('auth_token', accessToken);
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
   }
@@ -724,7 +761,7 @@ class ApiClient {
   }
 
   async updateProfile(data: Partial<ApiUser>): Promise<ApiUser> {
-    return this.request<ApiUser>('/users/profile', {
+    return this.request<ApiUser>('/auth/profile', {
       method: 'PUT',
       body: JSON.stringify(data),
     });
@@ -737,17 +774,17 @@ class ApiClient {
     });
   }
 
-  async forgotPassword(email: string): Promise<void> {
-    await this.request('/auth/forgot-password', {
+  async forgotPassword(email: string): Promise<ForgotPasswordResponse> {
+    return this.request<ForgotPasswordResponse>('/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify({ email }),
     });
   }
 
-  async resetPassword(token: string, password: string): Promise<void> {
+  async resetPassword(token: string, password: string, passwordConfirm: string): Promise<void> {
     await this.request('/auth/reset-password', {
       method: 'POST',
-      body: JSON.stringify({ token, password }),
+      body: JSON.stringify({ token, password, passwordConfirm }),
     });
   }
 
@@ -755,6 +792,20 @@ class ApiClient {
     await this.request('/auth/update-password', {
       method: 'POST',
       body: JSON.stringify({ password }),
+    });
+  }
+
+  async verifyEmail(token: string): Promise<{ message: string; emailVerified: boolean }> {
+    return this.request('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  async resendVerificationEmail(email: string): Promise<{ message: string }> {
+    return this.request('/auth/resend-verification-email', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
     });
   }
 
@@ -797,6 +848,9 @@ class ApiClient {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
     isActive?: boolean;
+    make?: string;
+    model?: string;
+    vehicleId?: string;
   }): Promise<PaginatedResponse<ApiProduct>> {
     const searchParams = new URLSearchParams();
     if (params) {
@@ -809,7 +863,7 @@ class ApiClient {
       });
     }
     const response = await this.request<any>(`/products?${searchParams.toString()}`);
-    
+
     // Transform backend response to match PaginatedResponse
     // It might be a plain array or { products: [], pagination: {} }
     const data = Array.isArray(response) ? response : (response.products || response.data || []);
@@ -1254,7 +1308,7 @@ class ApiClient {
 
   async reorder(orderId: string): Promise<{ message: string }> {
     const order = await this.getOrder(orderId);
-    
+
     // Add all order items to cart
     for (const item of order.items || []) {
       await this.addToCart({
@@ -1262,7 +1316,7 @@ class ApiClient {
         quantity: item.quantity,
       });
     }
-    
+
     return { message: 'Items added to cart successfully' };
   }
 
@@ -1520,7 +1574,7 @@ class ApiClient {
       coupons: ApiCoupon[];
       pagination: { page: number; limit: number; total: number; totalPages: number };
     }>(`/coupons?${searchParams.toString()}`);
-    
+
     // Transform backend response to match PaginatedResponse
     return {
       data: response.coupons,
@@ -1584,13 +1638,7 @@ class ApiClient {
     return this.request<ApiVehicleModel[]>('/vehicles/models/all');
   }
 
-  async getVehicleVariants(modelId: string): Promise<ApiVehicleVariant[]> {
-    return this.request<ApiVehicleVariant[]>(`/vehicles/variants/${modelId}`);
-  }
 
-  async getAllVehicleVariants(): Promise<ApiVehicleVariant[]> {
-    return this.request<ApiVehicleVariant[]>('/vehicles/variants/all');
-  }
 
   async resolveVehicle(params: {
     year: number;
@@ -1642,6 +1690,26 @@ class ApiClient {
     await this.request(`/vehicles/models/${id}`, { method: 'DELETE' });
   }
 
+
+
+  // ============ REGISTRATION LOOKUP ============
+
+  async lookupRegistration(registrationNumber: string): Promise<ApiRegCheckResult> {
+    return this.request<ApiRegCheckResult>(`/vehicles/lookup/${encodeURIComponent(registrationNumber)}`);
+  }
+
+  async addUserVehicleByReg(data: {
+    registrationNumber: string;
+    brandId: string;
+    modelId: string;
+    year?: number;
+  }): Promise<ApiUserVehicle> {
+    return this.request<ApiUserVehicle>('/vehicles/user/reg', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   async createVehicleVariant(data: {
     name: string;
     modelId: string;
@@ -1675,8 +1743,8 @@ class ApiClient {
   async addUserVehicle(data: {
     brandId: string;
     modelId: string;
-    variantId?: string;
     year: number;
+    registrationNumber?: string;
     nickname?: string;
     vin?: string;
   }): Promise<ApiUserVehicle> {
@@ -1696,9 +1764,7 @@ class ApiClient {
     await this.request(`/vehicles/user/${vehicleId}`, { method: 'DELETE' });
   }
 
-  async deleteVehicleVariant(id: string): Promise<void> {
-    await this.request(`/vehicles/variants/${id}`, { method: 'DELETE' });
-  }
+
 
   // ============ REVIEWS ============
 

@@ -123,7 +123,7 @@ const EmailBuilder = {
     },
 
     buildOrderSummary(data) {
-        const rows = Object.entries(data).filter(([_, val]) => val).map(([key, val]) => `
+        const rows = Object.entries(data).filter((entry) => entry[1]).map(([key, val]) => `
             <tr>
                 <td width="40%" style="padding: 8px 0; color: ${theme.textLight}; font-size: 14px; font-weight: 500;">${key}</td>
                 <td width="60%" style="padding: 8px 0; color: ${theme.text}; font-size: 14px; font-weight: 600; text-align: right;">${val}</td>

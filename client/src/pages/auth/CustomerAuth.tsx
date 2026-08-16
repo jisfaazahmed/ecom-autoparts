@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Car, Mail, Lock, User, Phone, MapPin, Eye, EyeOff, Loader2 } from 'lucide-react';
@@ -12,23 +12,28 @@ import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
 
 const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+  email: z.string().trim().min(1, "Please enter your email address").email('Invalid email address'),
+  password: z.string().trim().min(8, 'Password must be at least 8 characters'),
 });
 
 const signupSchema = z.object({
-  fullName: z.string().min(2, 'Name must be at least 2 characters'),
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
-  phone: z.string().optional(),
-  address: z.string().optional(),
+  fullName: z.string().trim().min(2, 'Name must be at least 2 characters'),
+  email: z.string().trim().min(1, "Please enter your email address").email('Invalid email address'),
+  password: z
+  .string()
+  .trim()
+  .min(8, 'Password must be at least 8 characters')
+  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+  .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+  .regex(/[0-9]/, 'Password must contain at least one number')
+  .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character'),
 });
 
 const CustomerAuth: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { signIn, signUp, verifySignupOtp, resendSignupOtp, user } = useAuth();
-  
+
   const role = user?.role;
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
@@ -47,7 +52,7 @@ const CustomerAuth: React.FC = () => {
   });
 
   // Redirect if already logged in
-  React.useEffect(() => {
+  useEffect(() => {
     if (user && role) {
       const from = (location.state)?.from?.pathname || '/';
       if (role === 'superadmin') {
@@ -63,7 +68,7 @@ const CustomerAuth: React.FC = () => {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
-    
+
     try {
       loginSchema.parse(loginForm);
     } catch (err) {
@@ -79,28 +84,24 @@ const CustomerAuth: React.FC = () => {
 
     setLoading(true);
     const { error } = await signIn(loginForm.email, loginForm.password);
+    setLoading(false);
+
     if (error) {
-      console.error(error);
       toast({
-        title: "Login Failed",
-        description: error.message || "Invalid credentials",
-        variant: "destructive"
+        title: 'Login Failed',
+        description: error.message || 'Invalid email or password.',
+        variant: 'destructive',
       });
-      setLoading(false);
       return;
     }
 
-    // The useAuth hook will update the role, check it after sign in
-    // This is handled by the useEffect above after state updates
-    const from = (location.state)?.from?.pathname || '/shop';
-    navigate(from);
-    setLoading(false);
+    // Redirect is handled by the useEffect when user/role state updates.
   };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
-    
+
     try {
       signupSchema.parse(signupForm);
     } catch (err) {
@@ -122,7 +123,6 @@ const CustomerAuth: React.FC = () => {
       phone: signupForm.phone,
     });
     setLoading(false);
-    
     if (error) {
       toast({
         title: 'Signup Failed',
@@ -159,7 +159,7 @@ const CustomerAuth: React.FC = () => {
       return;
     }
 
-    const from = (location.state)?.from?.pathname || '/shop';
+    const from = (location.state)?.from?.pathname || '/';
     navigate(from);
   };
 
@@ -185,11 +185,11 @@ const CustomerAuth: React.FC = () => {
       <div className="absolute top-4 right-4 z-10">
         <ThemeToggle />
       </div>
-      
+
       <div className="absolute inset-0 bg-grid-pattern opacity-5" />
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-3xl animate-pulse-glow" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-accent/20 rounded-full blur-3xl animate-pulse-glow" />
-      
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -273,95 +273,65 @@ const CustomerAuth: React.FC = () => {
             <TabsContent value="signup">
               {!pendingVerificationId ? (
                 <form onSubmit={handleSignup} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signup-name">Full Name *</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="signup-name"
-                      type="text"
-                      placeholder="John Smith"
-                      className="pl-10"
-                      value={signupForm.fullName}
-                      onChange={(e) => setSignupForm({ ...signupForm, fullName: e.target.value })}
-                    />
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-name">Full Name *</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-name"
+                        type="text"
+                        placeholder="John Smith"
+                        className="pl-10"
+                        value={signupForm.fullName}
+                        onChange={(e) => setSignupForm({ ...signupForm, fullName: e.target.value })}
+                      />
+                    </div>
+                    {errors.fullName && <p className="text-sm text-destructive">{errors.fullName}</p>}
                   </div>
-                  {errors.fullName && <p className="text-sm text-destructive">{errors.fullName}</p>}
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="signup-email">Email *</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="signup-email"
-                      type="email"
-                      placeholder="your@email.com"
-                      className="pl-10"
-                      value={signupForm.email}
-                      onChange={(e) => setSignupForm({ ...signupForm, email: e.target.value })}
-                    />
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-email">Email *</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-email"
+                        type="email"
+                        placeholder="your@email.com"
+                        className="pl-10"
+                        value={signupForm.email}
+                        onChange={(e) => setSignupForm({ ...signupForm, email: e.target.value })}
+                      />
+                    </div>
+                    {errors.email && <p className="text-sm text-destructive">{errors.email}</p>}
                   </div>
-                  {errors.email && <p className="text-sm text-destructive">{errors.email}</p>}
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="signup-password">Password *</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="signup-password"
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="••••••••"
-                      className="pl-10 pr-10"
-                      value={signupForm.password}
-                      onChange={(e) => setSignupForm({ ...signupForm, password: e.target.value })}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
+                  <div className="space-y-2">
+                    <Label htmlFor="signup-password">Password *</Label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="signup-password"
+                        type={showPassword ? 'text' : 'password'}
+                        placeholder="••••••••"
+                        className="pl-10 pr-10"
+                        value={signupForm.password}
+                        onChange={(e) => setSignupForm({ ...signupForm, password: e.target.value })}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                    {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
                   </div>
-                  {errors.password && <p className="text-sm text-destructive">{errors.password}</p>}
-                </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="signup-phone">Phone Number</Label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="signup-phone"
-                      type="tel"
-                      placeholder="+94 XX XXX XXXX"
-                      className="pl-10"
-                      value={signupForm.phone}
-                      onChange={(e) => setSignupForm({ ...signupForm, phone: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="signup-address">Default Address</Label>
-                  <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      id="signup-address"
-                      type="text"
-                      placeholder="123 Main Street, Colombo"
-                      className="pl-10"
-                      value={signupForm.address}
-                      onChange={(e) => setSignupForm({ ...signupForm, address: e.target.value })}
-                    />
-                  </div>
-                </div>
-
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Create Account
-                </Button>
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Create Account
+                  </Button>
                 </form>
               ) : (
                 <form onSubmit={handleVerifyOtp} className="space-y-4">

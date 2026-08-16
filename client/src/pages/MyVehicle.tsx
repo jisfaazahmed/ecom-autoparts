@@ -42,12 +42,10 @@ const MyVehicle: React.FC = () => {
           id: active.id,
           brand: active.brand?.name ?? '',
           model: active.model?.name ?? '',
-          variant: active.variant?.name ?? '',
           year: active.year,
-          vin: active.vin,
-          brandId: active.brandId,
-          modelId: active.modelId,
-          variantId: active.variantId,
+          registrationNumber: active.registrationNumber,
+          brandId: active.brandId ?? active.brand?.id,
+          modelId: active.modelId ?? active.model?.id,
         });
       } else {
         setUserVehicle(null);
@@ -77,12 +75,10 @@ const MyVehicle: React.FC = () => {
           id: v.id,
           brand: v.brand?.name ?? '',
           model: v.model?.name ?? '',
-          variant: v.variant?.name ?? '',
           year: v.year,
-          vin: v.vin,
-          brandId: v.brandId,
-          modelId: v.modelId,
-          variantId: v.variantId,
+          registrationNumber: v.registrationNumber,
+          brandId: v.brandId ?? v.brand?.id,
+          modelId: v.modelId ?? v.model?.id,
         });
       }
       toast({
@@ -119,7 +115,7 @@ const MyVehicle: React.FC = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
+
       <main className="container mx-auto px-4 py-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -140,7 +136,7 @@ const MyVehicle: React.FC = () => {
                 Manage your saved vehicles for personalized part recommendations
               </p>
             </div>
-            <VehicleSelector 
+            <VehicleSelector
               trigger={
                 <Button className="gap-2">
                   <Plus className="h-4 w-4" />
@@ -166,7 +162,7 @@ const MyVehicle: React.FC = () => {
                 <p className="text-muted-foreground text-center mb-6 max-w-md">
                   Add your vehicle to get personalized part recommendations and ensure compatibility with every purchase.
                 </p>
-                <VehicleSelector 
+                <VehicleSelector
                   trigger={
                     <Button className="gap-2">
                       <Plus className="h-4 w-4" />
@@ -186,9 +182,8 @@ const MyVehicle: React.FC = () => {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.1 }}
                 >
-                  <Card className={`glass-card relative overflow-hidden transition-all ${
-                    vehicle.isActive ? 'border-primary ring-2 ring-primary/20' : ''
-                  }`}>
+                  <Card className={`glass-card relative overflow-hidden transition-all ${vehicle.isActive ? 'border-primary ring-2 ring-primary/20' : ''
+                    }`}>
                     {vehicle.isActive && (
                       <div className="absolute top-0 right-0">
                         <Badge className="rounded-none rounded-bl-lg gap-1">
@@ -200,17 +195,11 @@ const MyVehicle: React.FC = () => {
                     <CardHeader className="pb-3">
                       <CardTitle className="flex items-center gap-2 text-lg">
                         <Car className="h-5 w-5 text-primary" />
-                        {vehicle.nickname || `${vehicle.brand?.name} ${vehicle.model?.name}`}
+                        {`${vehicle.brand?.name} ${vehicle.model?.name}`}
                       </CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-2 text-sm text-muted-foreground mb-4">
-                        {vehicle.nickname && (
-                          <div className="flex justify-between">
-                            <span>Nickname:</span>
-                            <span className="text-foreground font-medium">{vehicle.nickname}</span>
-                          </div>
-                        )}
                         <div className="flex justify-between">
                           <span>Brand:</span>
                           <span className="text-foreground font-medium">{vehicle.brand?.name}</span>
@@ -219,20 +208,15 @@ const MyVehicle: React.FC = () => {
                           <span>Model:</span>
                           <span className="text-foreground font-medium">{vehicle.model?.name}</span>
                         </div>
-                        {vehicle.variant?.name && (
-                          <div className="flex justify-between">
-                            <span>Variant:</span>
-                            <span className="text-foreground font-medium">{vehicle.variant.name}</span>
-                          </div>
-                        )}
+
                         <div className="flex justify-between">
                           <span>Year:</span>
                           <span className="text-foreground font-medium">{vehicle.year}</span>
                         </div>
-                        {vehicle.vin && (
+                        {vehicle.registrationNumber && (
                           <div className="flex justify-between">
-                            <span>VIN:</span>
-                            <span className="text-foreground font-mono text-xs">{vehicle.vin}</span>
+                            <span>Reg. No:</span>
+                            <span className="text-foreground font-mono text-xs">{vehicle.registrationNumber}</span>
                           </div>
                         )}
                       </div>
@@ -263,7 +247,7 @@ const MyVehicle: React.FC = () => {
                             </AlertDialogHeader>
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction 
+                              <AlertDialogAction
                                 onClick={() => handleDelete(vehicle.id)}
                                 className="bg-destructive hover:bg-destructive/90"
                               >

@@ -71,8 +71,8 @@ const Settlements: React.FC = () => {
         api.getVendorSettlementRangeSummary(selectedVendorId),
       ]);
       if (settlementsRes.status === 'fulfilled') {
-        const data = settlementsRes.value;
-        setSettlements(Array.isArray(data) ? data : (data as { settlements?: Settlement[] }).settlements || []);
+        const data = settlementsRes.value as Settlement[] | { settlements?: Settlement[] };
+        setSettlements(Array.isArray(data) ? data : data.settlements || []);
       }
       if (summaryRes.status === 'fulfilled') {
         setSummary(summaryRes.value);

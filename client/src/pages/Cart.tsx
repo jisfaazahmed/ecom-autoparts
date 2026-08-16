@@ -1,16 +1,34 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Minus, Plus, Trash2, ShoppingBag, ArrowLeft, CreditCard } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import Navbar from '@/components/layout/Navbar';
 import { useStore } from '@/store/useStore';
 import { formatLKR } from '@/lib/currency';
 
 const Cart: React.FC = () => {
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const { cart, removeFromCart, updateQuantity, getCartTotal, clearCart } = useStore();
+
+  const handleClearCartClick = () => {
+    setConfirmClearOpen(true);
+  };
+
+  const handleConfirmClear = async () => {
+    setConfirmClearOpen(false);
+    await clearCart();
+  };
 
   const subtotal = getCartTotal();
   const totalWeight = cart.reduce((sum, item) => {
@@ -61,7 +79,7 @@ const Cart: React.FC = () => {
             <h1 className="font-display text-3xl font-bold">
               SHOPPING <span className="text-primary">CART</span>
             </h1>
-            <Button variant="ghost" onClick={clearCart} className="text-muted-foreground">
+            <Button variant="ghost" onClick={handleClearCartClick} className="text-muted-foreground">
               <Trash2 className="h-4 w-4 mr-2" />
               Clear Cart
             </Button>
@@ -212,6 +230,26 @@ const Cart: React.FC = () => {
           </div>
         </motion.div>
       </div>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={confirmClearOpen} onOpenChange={setConfirmClearOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Clear Cart?</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to remove all items from your cart?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmClearOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmClear}>
+              Clear Cart
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
