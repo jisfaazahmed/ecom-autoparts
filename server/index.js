@@ -1,8 +1,9 @@
-require("dotenv").config();
+const path = require('path');
+// Always load server/.env so Mongo credentials are correct even when started from repo root.
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-const path = require('path');
 
 // Global handlers – must be registered before anything else so stray throws
 // don't silently kill the process.
@@ -20,6 +21,15 @@ const {
   MONGO_IP,
   MONGO_PORT,
 } = require("./config/config");
+
+// Register core models before routes (prevents populate/aggregate "Schema not registered" crashes).
+require('./models/user');
+require('./models/order.model');
+require('./models/orderItem.model');
+require('./models/subOrder.model');
+require('./models/product');
+require('./models/refund.model');
+require('./models/payment.model');
 
 // === 1. Import the New Routes ===
 const authRoutes = require('./routes/authRoutes');
@@ -53,13 +63,22 @@ const app = express();
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 
 // Apply JSON parsing for all other routes
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      process.env.CLIENT_URL,
+    ].filter(Boolean),
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use('/labels', express.static(path.join(__dirname, 'uploads', 'labels')));
 
 //MongoDB connection
 mongoose.connect(`mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_IP}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`).then(() => {
-  console.log('Connected to MongoDB');
+  console.log(`Connected to MongoDB (${MONGO_DB} @ ${MONGO_IP}:${MONGO_PORT})`);
   // Initialize background jobs after DB connection
   BackgroundJobs.initializeJobs();
 }).catch((err) => {
@@ -73,7 +92,13 @@ app.get("/api/message", (req, res) => {
 
 // Health check endpoint
 app.get("/health", (req, res) => {
-  res.json({ status: "OK", timestamp: new Date().toISOString() });
+  res.json({
+    status: "OK",
+    timestamp: new Date().toISOString(),
+    database: MONGO_DB,
+    mongoHost: MONGO_IP,
+    mongoPort: MONGO_PORT,
+  });
 });
 
 // Root API endpoint

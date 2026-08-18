@@ -79,7 +79,7 @@ exports.register = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -98,9 +98,19 @@ exports.login = async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(400).json({ message: 'Invalid Credentials' });
 
-    // GATEKEEPER CHECK
-    if (user.status === 'PENDING') return res.status(403).json({ message: 'Account pending approval.' });
+    if (user.emailVerification?.codeHash) {
+      return res.status(403).json({
+        message: 'Please verify your email before logging in.',
+        verificationId: user.id,
+      });
+    }
+
+    // Vendors may log in while pending; super admin approves before products go live.
+    if (user.status === 'PENDING' && user.role !== 'ADMIN') {
+      return res.status(403).json({ message: 'Account pending approval.' });
+    }
     if (user.status === 'REJECTED') return res.status(403).json({ message: 'Account rejected.' });
+    if (user.status === 'SUSPENDED') return res.status(403).json({ message: 'Account suspended.' });
 
     const payload = { user: { id: user.id, role: user.role } };
 
@@ -125,7 +135,7 @@ exports.login = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -148,7 +158,7 @@ exports.getMe = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    res.status(500).send('Server error');
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
@@ -372,7 +382,6 @@ exports.registerStart = async (req, res) => {
       password: hashedPassword,
       role: normalizedRole,
       shopName: normalizedRole === 'ADMIN' ? shopName : undefined,
-      status: 'PENDING',
       emailVerification: {
         codeHash: otpHash,
         expiresAt: new Date(now.getTime() + OTP_VALID_MINUTES * 60 * 1000),

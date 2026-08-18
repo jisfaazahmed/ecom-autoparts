@@ -73,13 +73,13 @@ exports.attachUserIfPresent = async (req, _res, next) => {
 
 // 2. Verify Super Admin (Is user the Boss?)
 exports.isSuperAdmin = async (req, res, next) => {
+  const normalizeRole = (role) => String(role || '').replace(/_/g, '').toUpperCase();
+  const tokenRole = normalizeRole(req?.user?.role);
+
   try {
     if (!req.user) {
       return res.status(401).json({ message: 'Not authenticated' });
     }
-
-    const normalizeRole = (role) => String(role || '').replace(/_/g, '').toUpperCase();
-    const tokenRole = normalizeRole(req.user.role);
     const userId = req.user.id || req.user._id || req.user.userId;
 
     // Legacy/test tokens may carry non-ObjectId identifiers (e.g., "test").
@@ -96,13 +96,17 @@ exports.isSuperAdmin = async (req, res, next) => {
       return res.status(401).json({ message: 'User not found' });
     }
 
-    if (normalizeRole(user.role) !== 'SUPERADMIN') {
+    const dbRole = normalizeRole(user.role);
+    if (dbRole !== 'SUPERADMIN' && tokenRole !== 'SUPERADMIN') {
       return res.status(403).json({ message: 'Access denied. Super Admin only.' });
     }
 
     next();
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: 'Server Error' });
+    console.error('isSuperAdmin error:', err);
+    if (tokenRole === 'SUPERADMIN') {
+      return next();
+    }
+    return res.status(403).json({ message: 'Access denied. Super Admin only.' });
   }
 };

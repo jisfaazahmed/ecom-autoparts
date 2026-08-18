@@ -153,10 +153,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         }
       } catch (e) {
-        console.warn('Failed to hydrate user, clearing session');
-        localStorage.removeItem('auth_token');
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('user');
+        const message = e instanceof Error ? e.message : '';
+        // Only clear session when the token is rejected — not on network/CORS failures.
+        if (message.includes('Session expired') || message.includes('401')) {
+          console.warn('Failed to hydrate user, clearing session');
+          localStorage.removeItem('auth_token');
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('refreshToken');
+          localStorage.removeItem('user');
+          setUser(null);
+        } else {
+          console.warn('Profile hydrate skipped (API unreachable):', message);
+        }
       } finally {
         setLoading(false);
       }

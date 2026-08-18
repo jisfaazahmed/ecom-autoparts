@@ -8,7 +8,7 @@ class EmailService {
             secure: process.env.EMAIL_SECURE === 'true' || process.env.SMTP_SECURE === 'true',
             auth: {
                 user: process.env.EMAIL_USER || process.env.SMTP_USER || 'ethereal.user@ethereal.email',
-                pass: process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || 'ethereal.pass'
+                pass: process.env.EMAIL_PASS || process.env.SMTP_PASS || process.env.SMTP_PASSWORD || 'ethereal.pass'
             }
         });
     }

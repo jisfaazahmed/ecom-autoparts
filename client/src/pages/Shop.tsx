@@ -29,10 +29,12 @@ import { useStore } from '@/store/useStore';
 import { Badge } from '@/components/ui/badge';
 import { api, ApiProduct, ApiCategory } from '@/lib/api';
 import { usePagination } from '@/hooks/usePagination';
+import { useToast } from '@/hooks/use-toast';
 
 const Shop: React.FC = () => {
   const [searchParams] = useSearchParams();
   const { userVehicle } = useStore();
+  const { toast } = useToast();
   
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [categories, setCategories] = useState<ApiCategory[]>([]);
@@ -59,6 +61,11 @@ const Shop: React.FC = () => {
         setCategories(categoriesRes || []);
       } catch (error) {
         console.error('Failed to fetch data:', error);
+        toast({
+          title: 'Could not load products',
+          description: error instanceof Error ? error.message : 'Check that the API server is running on port 5000.',
+          variant: 'destructive',
+        });
       }
       
       setLoading(false);

@@ -4,9 +4,16 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, '.', '');
+  // Load VITE_* from repo root .env and client/.env
+  const envDir = path.resolve(__dirname, '..');
+  const env = loadEnv(mode, envDir, '');
   const usePolling = env.VITE_USE_POLLING === 'true';
+  // Docker compose sets VITE_PROXY_TARGET=http://server:5000 (process.env).
+  // Local dev without Docker uses 127.0.0.1:5000.
+  const apiProxyTarget =
+    process.env.VITE_PROXY_TARGET || env.VITE_PROXY_TARGET || 'http://127.0.0.1:5000';
   return {
+    envDir,
     plugins: [react()],
     resolve: {
       dedupe: ['react', 'react-dom'],
@@ -30,7 +37,7 @@ export default defineConfig(({ mode }) => {
       },
       proxy: {
         '/api': {
-          target: env.VITE_API_URL || 'http://localhost:5000',
+          target: apiProxyTarget,
           changeOrigin: true,
           secure: false,
         },

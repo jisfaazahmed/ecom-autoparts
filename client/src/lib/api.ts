@@ -1,7 +1,11 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // API Client for Express Backend
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+// In dev always use the Vite proxy (same origin). Direct calls to 127.0.0.1:5000 from
+// localhost:3000 fail CORS and produce "Server error" / "An error occurred" toasts.
+const API_BASE = import.meta.env.DEV
+  ? '/api'
+  : (import.meta.env.VITE_API_URL || '/api');
 
 // Types
 export interface ApiProfile {
@@ -529,36 +533,21 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers,
+      });
+    } catch {
+      throw new Error(
+        'Cannot reach the API. Use http://localhost:3000 and ensure Docker services (client + server) are running.'
+      );
+    }
 
-    // Handle 401 - try token refresh
     if (response.status === 401) {
-      if (this.refreshToken) {
-        const refreshed = await this.refreshAccessToken();
-        if (refreshed) {
-          headers['Authorization'] = `Bearer ${this.accessToken}`;
-          const retryResponse = await fetch(`${API_BASE}${endpoint}`, {
-            ...options,
-            headers,
-          });
-          if (!retryResponse.ok) {
-            throw new Error(await this.getErrorMessage(retryResponse));
-          }
-          return retryResponse.json();
-        }
-      }
-      
-      // If no refresh token or refresh failed, clear tokens and redirect
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/auth/customer?redirect=' + window.location.pathname;
-      throw new Error('Session expired, please login again.');
+      this.clearAuthStorage();
+      throw new Error('Session expired. Please log in again.');
     }
 
     if (!response.ok) {
@@ -569,51 +558,28 @@ class ApiClient {
     if (response.status === 204) {
       return undefined as T;
     }
-    return response.json();
+
+    try {
+      return await response.json();
+    } catch {
+      throw new Error('Invalid JSON response from server');
+    }
   }
 
   private async getErrorMessage(response: Response): Promise<string> {
+    const raw = await response.text();
+    if (!raw) return `Request failed (${response.status})`;
     try {
-      const data = await response.json();
-      return data.message || data.error || 'An error occurred';
+      const data = JSON.parse(raw);
+      return data.message || data.error || `Request failed (${response.status})`;
     } catch {
-      return 'An error occurred';
+      return raw.length > 200 ? `${raw.slice(0, 200)}...` : raw;
     }
   }
 
-  private async refreshAccessToken(): Promise<boolean> {
-    try {
-      const response = await fetch(`${API_BASE}/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refreshToken: this.refreshToken }),
-      });
-
-      if (!response.ok) {
-        this.logout();
-        return false;
-      }
-
-      const data = await response.json();
-      this.setTokens(data.accessToken, data.refreshToken);
-      return true;
-    } catch {
-      this.logout();
-      return false;
-    }
-  }
-
-  setTokens(accessToken: string, refreshToken: string) {
-    this.accessToken = accessToken;
-    this.refreshToken = refreshToken;
-    localStorage.setItem('accessToken', accessToken);
-    localStorage.setItem('refreshToken', refreshToken);
-  }
-
-  logout() {
+  private clearAuthStorage() {
     this.accessToken = null;
     this.refreshToken = null;
-    // Clear all auth keys (new + legacy) so refresh can't restore a session.
     localStorage.removeItem('auth_token');
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
@@ -621,8 +587,20 @@ class ApiClient {
     localStorage.removeItem('user');
   }
 
+  setTokens(accessToken: string, refreshToken: string) {
+    this.accessToken = accessToken;
+    this.refreshToken = refreshToken;
+    localStorage.setItem('auth_token', accessToken);
+    localStorage.setItem('accessToken', accessToken);
+    localStorage.setItem('refreshToken', refreshToken);
+  }
+
+  logout() {
+    this.clearAuthStorage();
+  }
+
   isAuthenticated(): boolean {
-    return !!this.accessToken;
+    return !!(this.getToken());
   }
 
   // ============ AUTH ============
@@ -1428,8 +1406,24 @@ class ApiClient {
   }> {
     const searchParams = new URLSearchParams();
     if (params?.range) searchParams.set('range', params.range);
-    const response = await this.request<{ success: boolean; data: any }>(`/admin-analytics/superadmin?${searchParams.toString()}`);
-    return response.data;
+    const response = await this.request<{ success: boolean; data: any } & Record<string, unknown>>(
+      `/admin-analytics/superadmin?${searchParams.toString()}`
+    );
+    if (response && typeof response === 'object' && 'data' in response && response.data) {
+      return response.data as {
+        totalSales: number;
+        totalCommission: number;
+        totalOrders: number;
+        totalVendors: number;
+        ordersByStatus: Record<string, number>;
+        salesByMonth: Array<{ month: string; sales: number; commission: number; orders: number }>;
+        topCategories: Array<{ categoryId: string; earnings: number }>;
+        topVendors?: Array<{ shopName: string; name: string; sales: number; orders: number }>;
+        aov?: number;
+        totalRefunds?: number;
+      };
+    }
+    return response as any;
   }
 
   // ============ SETTLEMENT / PAYOUT ============

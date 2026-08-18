@@ -31,12 +31,17 @@ const Index: React.FC = () => {
       setLoading(true);
       
       try {
-        const [productsRes, categoriesRes] = await Promise.all([
+        const [featuredRes, categoriesRes] = await Promise.all([
           api.getFeaturedProducts(),
           api.getCategories()
         ]);
 
-        setProducts((productsRes || []).slice(0, 8));
+        let featured = featuredRes || [];
+        if (!featured.length) {
+          const all = await api.getProducts({ limit: 1000 });
+          featured = all.data || [];
+        }
+        setProducts(featured.slice(0, 8));
         setCategories(categoriesRes || []);
       } catch (error) {
         console.error('Failed to fetch data:', error);

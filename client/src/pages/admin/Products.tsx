@@ -35,7 +35,8 @@ const emptyProduct = {
 };
 
 const AdminProducts: React.FC = () => {
-  const { shop } = useAuth();
+  const { shop, user } = useAuth();
+  const vendorId = shop?.id || user?.id;
   const { toast } = useToast();
 
   const [products, setProducts] = useState<ApiProduct[]>([]);
@@ -53,15 +54,15 @@ const AdminProducts: React.FC = () => {
   const [formData, setFormData] = useState(emptyProduct);
 
   useEffect(() => {
-    if (shop?.id) fetchData();
-  }, [shop?.id]);
+    if (vendorId) fetchData();
+  }, [vendorId]);
 
   const fetchData = async () => {
-    if (!shop?.id) return;
+    if (!vendorId) return;
     setLoading(true);
     try {
       const [productsRes, categoriesRes, variantsRes] = await Promise.all([
-        api.getProducts({ shop: shop.id }),
+        api.getProducts({ shop: vendorId }),
         api.getCategories(),
         api.getAllVehicleVariants(),
       ]);
@@ -101,7 +102,7 @@ const AdminProducts: React.FC = () => {
   };
 
   const handleSaveProduct = async () => {
-    if (!shop?.id || !formData.name || !formData.price) {
+    if (!vendorId || !formData.name || !formData.price) {
       toast({ title: 'Error', description: 'Please fill in required fields', variant: 'destructive' });
       return;
     }
@@ -124,7 +125,7 @@ const AdminProducts: React.FC = () => {
         await api.updateProduct(editingProduct.id, productData as any);
         toast({ title: 'Success', description: 'Product updated successfully' });
       } else {
-        await api.createProduct({ ...productData, shopId: shop.id, isActive: true } as any);
+        await api.createProduct({ ...productData, shopId: vendorId, isActive: true } as any);
         toast({ title: 'Success', description: 'Product added successfully' });
       }
       setProductDialogOpen(false);
@@ -318,7 +319,7 @@ const AdminProducts: React.FC = () => {
             <div><Label>SKU</Label><Input value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} placeholder="e.g., BP-001" /></div>
             <div>
               <Label>Product Image</Label>
-              <ImageUpload value={formData.image_url} onChange={(url) => setFormData({ ...formData, image_url: url })} bucket="product-images" folder={shop?.id || ''} disabled={saving} />
+              <ImageUpload value={formData.image_url} onChange={(url) => setFormData({ ...formData, image_url: url })} bucket="product-images" folder={vendorId || ''} disabled={saving} />
             </div>
             <div>
               <Label>Category</Label>

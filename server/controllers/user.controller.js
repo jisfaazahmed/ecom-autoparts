@@ -1,5 +1,7 @@
 const User = require('../models/user');
 
+const normalizeRole = (role) => String(role || '').replace(/_/g, '').toUpperCase();
+
 /**
  * GET /api/users/:id/profile - get minimal profile for a user (superadmin or self)
  * Returns shape expected by client: full_name, email, phone, etc.
@@ -9,8 +11,8 @@ exports.getProfile = async (req, res) => {
     const { id } = req.params;
     const currentUser = req.user;
     // Allow superadmin or the user themselves
-    const isSuperAdmin = currentUser.role === 'SUPER_ADMIN';
-    const isSelf = currentUser.id === id;
+    const isSuperAdmin = normalizeRole(currentUser.role) === 'SUPERADMIN';
+    const isSelf = String(currentUser.id || currentUser._id) === String(id);
     if (!isSuperAdmin && !isSelf) {
       return res.status(403).json({ message: 'Access denied' });
     }

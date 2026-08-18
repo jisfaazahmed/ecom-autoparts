@@ -4,28 +4,60 @@ function isProd() {
   return String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 }
 
+function getSmtpHost() {
+  return process.env.SMTP_HOST || process.env.EMAIL_HOST || '';
+}
+
+function getSmtpPort() {
+  return process.env.SMTP_PORT || process.env.EMAIL_PORT || '';
+}
+
+function getSmtpUser() {
+  return process.env.SMTP_USER || process.env.EMAIL_USER || '';
+}
+
+function getSmtpPass() {
+  return (
+    process.env.SMTP_PASS ||
+    process.env.SMTP_PASSWORD ||
+    process.env.EMAIL_PASS ||
+    ''
+  );
+}
+
 function getFromAddress() {
-  return process.env.EMAIL_FROM || process.env.SMTP_FROM || 'no-reply@automatrix.local';
+  if (process.env.EMAIL_FROM_ADDRESS) {
+    const name = process.env.EMAIL_FROM_NAME || 'AutoMatrix';
+    return `"${name}" <${process.env.EMAIL_FROM_ADDRESS}>`;
+  }
+  return (
+    process.env.EMAIL_FROM ||
+    process.env.SMTP_FROM ||
+    process.env.SMTP_USER ||
+    process.env.EMAIL_USER ||
+    'no-reply@automatrix.local'
+  );
 }
 
 function hasSmtpConfig() {
-  return Boolean(process.env.SMTP_HOST && process.env.SMTP_PORT);
+  return Boolean(getSmtpHost() && getSmtpPort());
 }
 
 function createTransporter() {
   if (!hasSmtpConfig()) return null;
 
-  const port = Number(process.env.SMTP_PORT);
+  const port = Number(getSmtpPort());
+  const secureEnv = process.env.SMTP_SECURE ?? process.env.EMAIL_SECURE;
   const secure =
-    process.env.SMTP_SECURE !== undefined
-      ? String(process.env.SMTP_SECURE).toLowerCase() === 'true'
+    secureEnv !== undefined
+      ? String(secureEnv).toLowerCase() === 'true'
       : port === 465;
 
-  const authUser = process.env.SMTP_USER;
-  const authPass = process.env.SMTP_PASS;
+  const authUser = getSmtpUser();
+  const authPass = getSmtpPass();
 
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
+    host: getSmtpHost(),
     port,
     secure,
     auth: authUser && authPass ? { user: authUser, pass: authPass } : undefined,
@@ -47,7 +79,7 @@ async function sendMail({ to, subject, text, html }) {
     return { delivered: false };
   }
 
-  await transporter.sendMail({
+  const info = await transporter.sendMail({
     from: getFromAddress(),
     to,
     subject,
@@ -55,6 +87,7 @@ async function sendMail({ to, subject, text, html }) {
     html,
   });
 
+  console.log('[MAILER] Sent:', subject, 'to', to, 'id:', info.messageId);
   return { delivered: true };
 }
 

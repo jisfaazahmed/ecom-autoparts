@@ -106,12 +106,12 @@ const SuperAdminAnalytics: React.FC = () => {
 
 
   const stats = [
-    { label: 'Total Sales', value: formatLKRCompact(totalSales), icon: DollarSign, change: '+18%', positive: true, color: 'text-primary' },
-    { label: 'Commission Earned', value: formatLKRCompact(totalCommission), icon: TrendingUp, change: '+12%', positive: true, color: 'text-success' },
+    { label: 'Total Sales', value: formatLKRCompact(totalSales), icon: DollarSign, change: totalSales > 0 ? 'Live data' : 'No data', positive: totalSales > 0, color: 'text-primary' },
+    { label: 'Commission Earned', value: formatLKRCompact(totalCommission), icon: TrendingUp, change: totalCommission > 0 ? 'Live data' : 'No data', positive: totalCommission > 0, color: 'text-success' },
     { label: 'Total Orders', value: totalOrders.toLocaleString(), icon: ShoppingBag, change: '+24%', positive: true, color: 'text-purple-400' },
     { label: 'Average Order Value', value: formatLKRCompact(aov), icon: DollarSign, change: '+5%', positive: true, color: 'text-blue-400' },
     { label: 'Total Refunds', value: formatLKRCompact(totalRefunds), icon: TrendingUp, change: '-2%', positive: false, color: 'text-destructive' },
-    { label: 'Active Vendors', value: totalVendors.toLocaleString(), icon: Users, change: '+3', positive: true, color: 'text-warning' },
+    { label: 'Active Vendors', value: totalVendors.toLocaleString(), icon: Users, change: totalVendors > 0 ? 'Live data' : 'No vendors', positive: totalVendors > 0, color: 'text-warning' },
   ];
 
   if (loading) return <AdminLayout><div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></AdminLayout>;
