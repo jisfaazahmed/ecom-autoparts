@@ -49,6 +49,38 @@ const getValidNextStatuses = (currentStatus: string): string[] => {
   return validStatusTransitions[currentStatus] || [];
 };
 
+const TRACKING_NUMBER_REGEX = /^[A-Za-z0-9-]{4,64}$/;
+const TRACKING_REQUIRED_STATUSES = new Set(['shipped', 'out_for_delivery', 'delivered']);
+const MAX_ORDER_NOTE_LENGTH = 500;
+
+const validateTrackingNumber = (value: string): string | null => {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  if (!TRACKING_NUMBER_REGEX.test(normalized)) {
+    return 'Tracking number must be 4-64 characters using only letters, numbers, or hyphens.';
+  }
+  return null;
+};
+
+const validateOrderNotes = (value: string): string | null => {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  if (normalized.length < 3) {
+    return 'Order notes must be at least 3 characters when provided.';
+  }
+  if (normalized.length > MAX_ORDER_NOTE_LENGTH) {
+    return `Order notes cannot exceed ${MAX_ORDER_NOTE_LENGTH} characters.`;
+  }
+  const hasControlCharacter = Array.from(normalized).some((char) => {
+    const code = char.charCodeAt(0);
+    return (code >= 0 && code <= 31) || code === 127;
+  });
+  if (hasControlCharacter) {
+    return 'Order notes contain invalid characters.';
+  }
+  return null;
+};
+
 const AdminOrders: React.FC = () => {
   const { shop, user } = useAuth();
   const vendorId = shop?.id || user?.id;
@@ -140,6 +172,27 @@ const AdminOrders: React.FC = () => {
     setUpdatingStatus(orderId);
     try {
       const orderToUpdate = orders.find((order) => String(order.id || order._id) === String(orderId));
+      const isSelectedOrder = String(selectedOrder?.id || selectedOrder?._id || '') === String(orderId);
+      const normalizedTracking = isSelectedOrder ? trackingNumber.trim() : String(orderToUpdate?.trackingNumber || '').trim();
+      const normalizedNotes = isSelectedOrder ? orderNotes.trim() : '';
+
+      const notesError = validateOrderNotes(normalizedNotes);
+      if (notesError) {
+        throw new Error(notesError);
+      }
+
+      const trackingError = validateTrackingNumber(normalizedTracking);
+      if (trackingError) {
+        throw new Error(trackingError);
+      }
+      if (TRACKING_REQUIRED_STATUSES.has(status) && !normalizedTracking) {
+        throw new Error('Tracking number is required before moving this order to a shipping status.');
+      }
+
+      if (isSelectedOrder && normalizedTracking !== String(orderToUpdate?.trackingNumber || '').trim()) {
+        await api.updateOrderTracking(orderId, normalizedTracking);
+      }
+
       const itemIds = (orderToUpdate?.items || [])
         .map((item) => item.id || item._id)
         .filter(Boolean);
@@ -149,7 +202,7 @@ const AdminOrders: React.FC = () => {
       }
 
       await Promise.all(
-        itemIds.map((itemId) => api.updateOrderItemStatus(String(orderId), String(itemId), status))
+        itemIds.map((itemId) => api.updateOrderItemStatus(String(orderId), String(itemId), status, normalizedNotes || undefined))
       );
 
       setOrders(orders.map(o => {
@@ -158,7 +211,12 @@ const AdminOrders: React.FC = () => {
           ...item,
           status
         }));
-        return { ...o, items: updatedItems };
+        return {
+          ...o,
+          items: updatedItems,
+          trackingNumber: normalizedTracking || undefined,
+          notes: normalizedNotes || undefined,
+        };
       }));
 
       if (selectedOrder && String(selectedOrder.id || selectedOrder._id) === String(orderId)) {
@@ -166,7 +224,14 @@ const AdminOrders: React.FC = () => {
           ...item,
           status
         }));
-        setSelectedOrder({ ...selectedOrder, items: updatedItems });
+        setSelectedOrder({
+          ...selectedOrder,
+          items: updatedItems,
+          trackingNumber: normalizedTracking || undefined,
+          notes: normalizedNotes || undefined,
+        });
+        setTrackingNumber(normalizedTracking);
+        setOrderNotes(normalizedNotes);
       }
       toast({ title: 'Updated', description: `Order marked as ${status}` });
     } catch (error: unknown) {
@@ -178,10 +243,34 @@ const AdminOrders: React.FC = () => {
   const updateOrderDetails = async () => {
     if (!selectedOrder) return;
     try {
+      const normalizedTracking = trackingNumber.trim();
+      const normalizedNotes = orderNotes.trim();
+
+      const trackingError = validateTrackingNumber(normalizedTracking);
+      if (trackingError) {
+        throw new Error(trackingError);
+      }
+
+      const notesError = validateOrderNotes(normalizedNotes);
+      if (notesError) {
+        throw new Error(notesError);
+      }
+
       const selectedOrderId = String(selectedOrder.id || selectedOrder._id || '');
-      await api.updateOrderTracking(selectedOrderId, trackingNumber);
-      setOrders(orders.map(o => String(o.id || o._id) === selectedOrderId ? { ...o, trackingNumber: trackingNumber || undefined } : o));
-      toast({ title: 'Saved', description: 'Order details updated' });
+      await api.updateOrderTracking(selectedOrderId, normalizedTracking);
+      setOrders(orders.map(o => String(o.id || o._id) === selectedOrderId ? {
+        ...o,
+        trackingNumber: normalizedTracking || undefined,
+        notes: normalizedNotes || undefined,
+      } : o));
+      setSelectedOrder({
+        ...selectedOrder,
+        trackingNumber: normalizedTracking || undefined,
+        notes: normalizedNotes || undefined,
+      });
+      setTrackingNumber(normalizedTracking);
+      setOrderNotes(normalizedNotes);
+      toast({ title: 'Saved', description: 'Tracking details updated. Order notes will be attached on the next status change.' });
     } catch (error: unknown) {
       toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to update order', variant: 'destructive' });
     }
@@ -339,6 +428,18 @@ const AdminOrders: React.FC = () => {
               </div>
               <div className="space-y-4">
                 <div><Label>Tracking Number</Label><Input value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} placeholder="Enter tracking number" /></div>
+                <div>
+                  <Label>Order Notes</Label>
+                  <Textarea
+                    value={orderNotes}
+                    onChange={(e) => setOrderNotes(e.target.value)}
+                    placeholder="Add optional handling note for status updates"
+                    maxLength={MAX_ORDER_NOTE_LENGTH}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {orderNotes.trim().length}/{MAX_ORDER_NOTE_LENGTH} characters
+                  </p>
+                </div>
                 <Button onClick={updateOrderDetails} className="w-full">Save Details</Button>
               </div>
               <div>

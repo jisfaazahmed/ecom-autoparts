@@ -12,6 +12,26 @@ const userSchema = new mongoose.Schema({
     lowercase: true,
     trim: true,
   },
+  phone: {
+    type: String,
+    trim: true,
+    default: null,
+  },
+  address: {
+    type: String,
+    trim: true,
+    default: null,
+  },
+  city: {
+    type: String,
+    trim: true,
+    default: null,
+  },
+  postalCode: {
+    type: String,
+    trim: true,
+    default: null,
+  },
   password: {
     type: String,
     required: true,
@@ -63,6 +83,17 @@ const userSchema = new mongoose.Schema({
   shopName: {
     type: String, // Only for Vendors
   },
+
+  // Vendor/shop extra fields (for role ADMIN)
+  businessRegistration: { type: String },
+  shopDescription: { type: String },
+  logoUrl: { type: String },
+  rejectionReason: { type: String },
+  avatarUrl: {
+    type: String,
+    default: null,
+  },
+
   commissionRate: {
     type: Number,
     default: 10,
@@ -127,7 +158,13 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
-});
+  updatedAt: {
+    type: Date,
+    default: Date.now,
+  }
+
+}, { timestamps: true });
+
 
 // MIDDLEWARE: Force PENDING status for new Admins (Vendors)
 userSchema.pre('save', function(next) {

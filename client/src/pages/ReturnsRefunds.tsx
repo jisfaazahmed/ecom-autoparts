@@ -4,6 +4,7 @@ import { AlertCircle, Loader2, RotateCcw, Search, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import Navbar from '@/components/layout/Navbar';
 import RefundForm from '@/components/orders/RefundForm';
+import type { RefundFormSubmission } from '@/components/orders/RefundForm';
 import { useAuth } from '@/hooks/useAuth';
 import { api, ApiOrderItem, ApiRefund } from '@/lib/api';
 import { formatLKR } from '@/lib/currency';
@@ -87,9 +88,6 @@ const ReturnsRefunds: React.FC = () => {
   const [orderId, setOrderId] = useState('');
   const [paymentId, setPaymentId] = useState('');
   const [amount, setAmount] = useState('');
-  const [reasonCategory, setReasonCategory] = useState('defective_product');
-  const [reasonDescription, setReasonDescription] = useState('');
-  const [details, setDetails] = useState('');
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -122,6 +120,18 @@ const ReturnsRefunds: React.FC = () => {
         'refunded',
         'cancelled',
       ]);
+      const existingRefundOrderIds = new Set(
+        refunds
+          .filter((refund) => String(refund.status || '').toLowerCase() !== 'rejected')
+          .map((refund) => String(refund.order || '').trim())
+          .filter(Boolean)
+      );
+      const existingRefundOrderItemIds = new Set(
+        refunds
+          .filter((refund) => String(refund.status || '').toLowerCase() !== 'rejected')
+          .map((refund) => String(refund.orderItem || '').trim())
+          .filter(Boolean)
+      );
 
       const mappedItems: RefundableItem[] = [];
       const mappedOrderRefs: OrderReference[] = [];
@@ -140,6 +150,15 @@ const ReturnsRefunds: React.FC = () => {
         const canRequestByOrder = refundableStatuses.has(orderStatus);
 
         for (const item of order.items || []) {
+          const currentItemId = String(item._id || item.id || '').trim();
+          const alreadyHasRefund =
+            existingRefundOrderIds.has(currentOrderId) ||
+            (currentItemId && existingRefundOrderItemIds.has(currentItemId));
+
+          if (alreadyHasRefund) {
+            continue;
+          }
+
           const itemStatus = String(item.status || orderStatus || '').toLowerCase();
           const canRequestByItem = itemStatus === 'delivered' || (canRequestByOrder && !blockedItemStatuses.has(itemStatus));
 
@@ -158,6 +177,7 @@ const ReturnsRefunds: React.FC = () => {
 
       setOrderRefs(mappedOrderRefs);
       setItems(mappedItems);
+      setRefunds(refunds);
     } catch (error) {
       console.error('Failed to load returns data:', error);
       toast.error('Failed to load returns and refunds');
@@ -178,9 +198,6 @@ const ReturnsRefunds: React.FC = () => {
       setOrderId(prefOrderId);
       setPaymentId('');
       setAmount('');
-      setReasonCategory('defective_product');
-      setReasonDescription('');
-      setDetails('');
       setDialogOpen(true);
     }
   }, [location.search]); // Remove dialogOpen from dependencies
@@ -203,9 +220,6 @@ const ReturnsRefunds: React.FC = () => {
     setOrderId(item.orderId);
     setAmount(String(item.item.totalPrice || item.item.unitPrice * item.item.quantity || 0));
     setPaymentId('');
-    setReasonCategory('defective_product');
-    setReasonDescription('');
-    setDetails('');
     setDialogOpen(true);
   };
 
@@ -214,9 +228,6 @@ const ReturnsRefunds: React.FC = () => {
     setOrderId('');
     setPaymentId('');
     setAmount('');
-    setReasonCategory('defective_product');
-    setReasonDescription('');
-    setDetails('');
     setDialogOpen(true);
   };
 
@@ -252,7 +263,7 @@ const ReturnsRefunds: React.FC = () => {
     return input;
   };
 
-  const submitRefundRequest = async (formData: any) => {
+  const submitRefundRequest = async (formData: RefundFormSubmission) => {
     if (!orderId.trim()) {
       toast.error('Please enter an order ID');
       return;
@@ -265,9 +276,31 @@ const ReturnsRefunds: React.FC = () => {
       return;
     }
 
-    if (!amount.trim() || Number(amount) <= 0) {
+    const duplicateRefund = refunds.find((refund) => {
+      const status = String(refund.status || '').toLowerCase();
+      if (status === 'rejected') {
+        return false;
+      }
+      return String(refund.order || '').trim() === resolvedOrderId;
+    });
+    if (duplicateRefund) {
+      toast.error(`A refund request already exists for this order (${duplicateRefund.requestNumber || 'existing request'})`);
+      return;
+    }
+
+    const normalizedAmount = Number(amount);
+    if (!amount.trim() || !Number.isFinite(normalizedAmount) || normalizedAmount <= 0) {
       toast.error('Please enter a valid refund amount');
       return;
+    }
+
+    const normalizedPaymentId = paymentId.trim();
+    if (normalizedPaymentId) {
+      const paymentIdRegex = /^[A-Za-z0-9_-]{4,64}$/;
+      if (!paymentIdRegex.test(normalizedPaymentId)) {
+        toast.error('Please enter a valid payment ID');
+        return;
+      }
     }
 
     setSubmitting(true);
@@ -275,8 +308,8 @@ const ReturnsRefunds: React.FC = () => {
       await api.createRefundRequestByOrder({
         orderId: resolvedOrderId,
         orderItemId: selectedItem ? String(selectedItem.item._id || selectedItem.item.id || '') : undefined,
-        paymentId: paymentId.trim() || undefined,
-        amount: Number(amount),
+        paymentId: normalizedPaymentId || undefined,
+        amount: normalizedAmount,
         reason: formData.returnReason.description,
         refundType: 'return',
         details: `Reason: ${formData.returnReason.category}\nCondition: ${formData.productCondition.productState}\nPackaging: ${formData.productCondition.packaging}\nAccessories: ${formData.productCondition.accessories}`,

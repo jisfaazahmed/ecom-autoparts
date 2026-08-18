@@ -5,8 +5,9 @@ const productSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true }, // e.g. "Bosch Ceramic Pads"
   description: { type: String },
   price: { type: Number, required: true },
-  stock: { type: Number, required: true, default: 0 },
-  sku: { type: String, required: true }, // Changed from partNumber to match frontend
+  stock: { type: Number, required: true, min: 0 },
+  sku: { type: String, required: true },
+  partNumber: { type: String, required: true }, // e.g. "BC-1234"
   image: { type: String }, // URL to image
   productDiscountPercent: { type: Number, default: 0, min: 0, max: 90 },
 
@@ -17,11 +18,10 @@ const productSchema = new mongoose.Schema({
     required: true
   },
 
-  // 3. The Link to "Tesla > Model S" (The Fitment Engine)
-  // This array lists EVERY car ID this part fits.
-  compatibleVehicles: [{
+  // 3. Compatible VehicleModels
+  compatibleVehicleModels: [{
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Vehicle'
+    ref: 'VehicleModel'
   }],
 
   // 4. Who created this? (Vendor or Super Admin)
@@ -29,7 +29,7 @@ const productSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
-  
+
   // 5. Is it active? (Visibility controlled by creator)
   isActive: { type: Boolean, default: true },
 
@@ -47,7 +47,25 @@ const productSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
-// Index for fast searching by Category and Vehicle
-productSchema.index({ category: 1, compatibleVehicles: 1 });
+// Index for fast searching by Category and vehicle model compatibility
+productSchema.index({ category: 1, compatibleVehicleModels: 1 });
+// Listing/search indexes
+productSchema.index({ status: 1, isActive: 1, category: 1, createdAt: -1 });
+productSchema.index({ status: 1, isActive: 1, createdBy: 1, createdAt: -1 });
+productSchema.index({ compatibleVehicles: 1, status: 1, isActive: 1 });
+productSchema.index({ featured: 1, status: 1, isActive: 1, updatedAt: -1, createdAt: -1 });
+
+// Text index for product search (name/sku/description)
+productSchema.index(
+  { name: 'text', sku: 'text', description: 'text' },
+  {
+    weights: {
+      name: 10,
+      sku: 8,
+      description: 3,
+    },
+    name: 'product_text_search_idx',
+  }
+);
 
 module.exports = mongoose.model('Product', productSchema);

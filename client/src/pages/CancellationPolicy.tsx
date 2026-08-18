@@ -23,7 +23,7 @@ interface Policy {
   metadata?: {
     cancellationWindow?: number;
     refundProcessingDays?: number;
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 

@@ -34,8 +34,10 @@ interface Policy {
   isActive: boolean;
   version: number;
   createdAt?: string;
-  modifiedBy?: any;
+  modifiedBy?: unknown;
 }
+
+type PolicyType = 'return' | 'shipping' | 'cancellation' | 'terms_conditions' | 'privacy' | 'warranty';
 
 interface PolicyForm {
   title: string;
@@ -61,7 +63,7 @@ const PolicyManager: React.FC = () => {
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingPolicy, setEditingPolicy] = useState<string | null>(null);
-  const [selectedPolicyType, setSelectedPolicyType] = useState<string>('');
+  const [selectedPolicyType, setSelectedPolicyType] = useState<PolicyType | ''>('');
   const [formData, setFormData] = useState<PolicyForm>({
     title: '',
     description: '',
@@ -117,7 +119,7 @@ const PolicyManager: React.FC = () => {
         toast.success('Policy updated successfully');
       } else {
         await api.createPolicy({
-          policyType: selectedPolicyType as any,
+          policyType: selectedPolicyType,
           ...formData,
         });
         toast.success('Policy created successfully');

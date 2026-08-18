@@ -5,7 +5,7 @@ import { Filter, SlidersHorizontal, Grid, List, X, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -29,116 +29,122 @@ import { useStore } from '@/store/useStore';
 import { Badge } from '@/components/ui/badge';
 import { api, ApiProduct, ApiCategory } from '@/lib/api';
 import { usePagination } from '@/hooks/usePagination';
-import { useToast } from '@/hooks/use-toast';
+import type { Vehicle } from '@/types';
+
+function getProductCompatibility(
+  product: ApiProduct,
+  vehicle: Vehicle | null
+): boolean | undefined {
+  if (!vehicle) return undefined;
+
+  const normalize = (value?: string) => String(value || '').trim().toLowerCase();
+  const selectedMake = normalize(vehicle.brand);
+  const selectedModel = normalize(vehicle.model);
+  const selectedYear = Number(vehicle.year);
+  const selectedModelId = vehicle.modelId ? String(vehicle.modelId) : '';
+
+  const models = Array.isArray(product.compatibleVehicleModels)
+    ? product.compatibleVehicleModels
+    : [];
+  if (models.length > 0) {
+    if (selectedModelId) {
+      const idMatch = models.some((m) => m?.id && String(m.id) === selectedModelId);
+      if (idMatch) return true;
+    }
+
+    return models.some((m) => {
+      if (typeof m !== 'object' || !m) return false;
+      const nameMatches = normalize(m.name) === selectedModel;
+      const brandMatches = !m.brandName || normalize(m.brandName) === selectedMake;
+      return nameMatches && brandMatches;
+    });
+  }
+
+  const vehicles = Array.isArray(product.compatibleVehicles)
+    ? product.compatibleVehicles
+    : [];
+  if (vehicles.length > 0) {
+    return vehicles.some((v) => {
+      const makeMatches = normalize(v?.make) === selectedMake;
+      const modelMatches = normalize(v?.model) === selectedModel;
+      const yearMatches = !Number.isFinite(selectedYear) || Number(v?.year) === selectedYear;
+      return makeMatches && modelMatches && yearMatches;
+    });
+  }
+
+  // Vehicle selected but product has no fitment data — treat as not compatible.
+  return false;
+}
 
 const Shop: React.FC = () => {
   const [searchParams] = useSearchParams();
   const { userVehicle } = useStore();
-  const { toast } = useToast();
-  
+  const searchFromUrl = searchParams.get('search') || '';
+  const categoryFromUrl = searchParams.get('category') || 'all';
+
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [categories, setCategories] = useState<ApiCategory[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState(searchParams.get('category') || 'all');
-  const [priceRange, setPriceRange] = useState([0, 500000]);
+
+  const [search, setSearch] = useState(searchFromUrl);
+  const [selectedCategory, setSelectedCategory] = useState(categoryFromUrl);
+  const maxPrice = 50000;
+  const [priceRange, setPriceRange] = useState([0, maxPrice]);
   const [sortBy, setSortBy] = useState('featured');
   const [showCompatibleOnly, setShowCompatibleOnly] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
+  // Auto-enable vehicle filter when user has a saved vehicle
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      
-      try {
-        const [productsRes, categoriesRes] = await Promise.all([
-          api.getProducts({ isActive: true, limit: 1000 }),
-          api.getCategories()
-        ]);
+    if (userVehicle) setShowCompatibleOnly(true);
+  }, [userVehicle]);
 
-        setProducts(productsRes.data || []);
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const categoriesRes = await api.getCategories();
         setCategories(categoriesRes || []);
       } catch (error) {
-        console.error('Failed to fetch data:', error);
-        toast({
-          title: 'Could not load products',
-          description: error instanceof Error ? error.message : 'Check that the API server is running on port 5000.',
-          variant: 'destructive',
-        });
+        console.error('Failed to fetch categories:', error);
       }
-      
+    };
+
+    fetchCategories();
+  }, []);
+
+  useEffect(() => {
+    const fetchProducts = async () => {
+      setLoading(true);
+      try {
+        const productsRes = await api.getProducts({ limit: 1000 });
+        setProducts(productsRes.data || []);
+      } catch (error) {
+        console.error('Failed to fetch products:', error);
+        setProducts([]);
+      }
       setLoading(false);
     };
 
-    fetchData();
+    fetchProducts();
   }, []);
 
-  const [resolvedVehicleId, setResolvedVehicleId] = useState<string | null>(null);
-  const [vehicleResolveLoading, setVehicleResolveLoading] = useState(false);
-
   useEffect(() => {
-    let cancelled = false;
+    setSearch(searchFromUrl);
+    setSelectedCategory(categoryFromUrl);
+  }, [searchFromUrl, categoryFromUrl]);
 
-    const resolve = async () => {
-      if (!userVehicle) {
-        setResolvedVehicleId(null);
-        return;
-      }
-
-      const make = String(userVehicle.brand || '').trim();
-      const model = String(userVehicle.model || '').trim();
-      const submodel = String(userVehicle.variant || '').trim();
-      const year = Number(userVehicle.year);
-
-      if (!make || !model || !Number.isFinite(year)) {
-        setResolvedVehicleId(null);
-        return;
-      }
-
-      setVehicleResolveLoading(true);
-      try {
-        const resolved = await api.resolveVehicle({
-          year,
-          make,
-          model,
-          submodel: submodel || undefined,
-        });
-        if (!cancelled) setResolvedVehicleId(resolved?.id || null);
-      } catch {
-        if (!cancelled) setResolvedVehicleId(null);
-      } finally {
-        if (!cancelled) setVehicleResolveLoading(false);
-      }
-    };
-
-    resolve();
-    return () => {
-      cancelled = true;
-    };
+  // If vehicle is cleared, turn off the compatible-only filter
+  useEffect(() => {
+    if (!userVehicle) setShowCompatibleOnly(false);
   }, [userVehicle]);
-
-  const isProductCompatible = (product: ApiProduct) => {
-    // No resolved vehicle => don't block buying / don't show "Not Compatible".
-    if (!resolvedVehicleId) return true;
-
-    const variants = product.compatibleVariants;
-    // If vendor didn't select any compatibility variants, treat as universal-fit.
-    if (!Array.isArray(variants) || variants.length === 0) return true;
-
-    // Backend exposes compatibleVariants as Vehicle IDs.
-    if (variants.includes(resolvedVehicleId)) return true;
-
-    // Fallback: some older records may store a string key; keep a loose check.
-    return variants.some((v) => String(v).includes(resolvedVehicleId));
-  };
 
   const mapToProductCard = (p: ApiProduct) => ({
     id: p.id || p._id || '',
     name: p.name,
     description: p.description || '',
     price: p.price,
-    image: p.imageUrl || '/placeholder.svg',
+    image: p.imageUrl || p.image_url || p.image || '/placeholder.svg',
+    images: p.images,
     category: p.category?.name || 'Uncategorized',
     brand: '',
     shopId: p.shopId,
@@ -148,51 +154,60 @@ const Shop: React.FC = () => {
     rating: 4.5,
     reviewCount: 0,
     sku: p.sku || '',
+    originalPrice: p.originalPrice,
+    effectiveDiscountPercent: p.effectiveDiscountPercent,
   });
 
-  const filteredProducts = useMemo(() => {
-    let filtered = [...products];
+  // Single source of truth for badges + filter
+  const productsWithFitment = useMemo(() => {
+    return products.map((product) => ({
+      product,
+      isCompatible: getProductCompatibility(product, userVehicle),
+    }));
+  }, [products, userVehicle]);
 
-    // Search filter
+  const filteredProducts = useMemo(() => {
+    let filtered = productsWithFitment;
+
     if (search) {
       const searchLower = search.toLowerCase();
       filtered = filtered.filter(
-        (p) =>
+        ({ product: p }) =>
           p.name.toLowerCase().includes(searchLower) ||
-          (p.description && p.description.toLowerCase().includes(searchLower))
+          (!!p.description && p.description.toLowerCase().includes(searchLower))
       );
     }
 
-    // Category filter
     if (selectedCategory && selectedCategory !== 'all') {
-      filtered = filtered.filter((p) => p.categoryId === selectedCategory);
+      filtered = filtered.filter(({ product: p }) => p.categoryId === selectedCategory);
     }
 
-    // Price filter
     filtered = filtered.filter(
-      (p) => p.price >= priceRange[0] && p.price <= priceRange[1]
+      ({ product: p }) => p.price >= priceRange[0] && p.price <= priceRange[1]
     );
 
-    // Compatibility filter
-    if (showCompatibleOnly && resolvedVehicleId) {
-      filtered = filtered.filter((p) => isProductCompatible(p));
+    // Same flag used by badges: only keep products marked Compatible
+    if (showCompatibleOnly) {
+      filtered = filtered.filter(({ isCompatible }) => isCompatible === true);
     }
 
-    // Sorting
+    const sorted = [...filtered];
     switch (sortBy) {
       case 'price-low':
-        filtered.sort((a, b) => a.price - b.price);
+        sorted.sort((a, b) => a.product.price - b.product.price);
         break;
       case 'price-high':
-        filtered.sort((a, b) => b.price - a.price);
+        sorted.sort((a, b) => b.product.price - a.product.price);
         break;
       case 'newest':
-        filtered.sort((a, b) => b.id.localeCompare(a.id));
+        sorted.sort((a, b) =>
+          String(b.product.id || '').localeCompare(String(a.product.id || ''))
+        );
         break;
     }
 
-    return filtered;
-  }, [products, search, selectedCategory, priceRange, sortBy, showCompatibleOnly, resolvedVehicleId]);
+    return sorted;
+  }, [productsWithFitment, search, selectedCategory, priceRange, sortBy, showCompatibleOnly]);
 
   const {
     paginatedItems: paginatedProducts,
@@ -201,30 +216,28 @@ const Shop: React.FC = () => {
     goToPage,
   } = usePagination(filteredProducts, { itemsPerPage: 12 });
 
-  const FilterContent = () => (
+  const renderFilters = (switchId: string) => (
     <div className="space-y-6">
-      {/* Vehicle */}
       <div className="space-y-3">
         <Label className="text-sm font-medium">My Vehicle</Label>
         <VehicleSelector />
         {userVehicle && (
-          <div className="flex items-center space-x-2 mt-2">
-            <Checkbox
-              id="compatible"
-              checked={showCompatibleOnly}
-              onCheckedChange={(checked) => setShowCompatibleOnly(checked as boolean)}
-            />
-            <label
-              htmlFor="compatible"
-              className="text-sm text-muted-foreground cursor-pointer"
-            >
+          <div className="flex items-center justify-between gap-3 mt-2">
+            <Label htmlFor={switchId} className="text-sm text-muted-foreground font-normal cursor-pointer">
               Show compatible parts only
-            </label>
+            </Label>
+            <Switch
+              id={switchId}
+              checked={showCompatibleOnly}
+              onCheckedChange={(checked) => {
+                setShowCompatibleOnly(checked);
+                goToPage(1);
+              }}
+            />
           </div>
         )}
       </div>
 
-      {/* Categories */}
       <div className="space-y-3">
         <Label className="text-sm font-medium">Category</Label>
         <Select value={selectedCategory} onValueChange={setSelectedCategory}>
@@ -235,7 +248,8 @@ const Shop: React.FC = () => {
             <SelectItem value="all">All Categories</SelectItem>
             {(() => {
               const parents = categories.filter((c) => !c.parentId);
-              const getSubs = (parentId: string) => categories.filter((c) => c.parentId === parentId);
+              const getSubs = (parentId: string) =>
+                categories.filter((c) => c.parentId === parentId);
               return (
                 <>
                   {parents.map((parent) => (
@@ -255,28 +269,29 @@ const Shop: React.FC = () => {
         </Select>
       </div>
 
-      {/* Price Range */}
       <div className="space-y-3">
         <Label className="text-sm font-medium">
-          Price Range: LKR {priceRange[0].toLocaleString()} - LKR {priceRange[1].toLocaleString()}
+          Price Range: LKR {priceRange[0].toLocaleString()} - LKR{' '}
+          {priceRange[1].toLocaleString()}
         </Label>
         <Slider
-          value={priceRange}
-          onValueChange={setPriceRange}
-          max={500000}
+          defaultValue={priceRange}
+          onValueCommit={setPriceRange}
+          min={0}
+          max={maxPrice}
           step={1000}
           className="py-4"
         />
       </div>
 
-      {/* Clear Filters */}
       <Button
         variant="outline"
         className="w-full"
         onClick={() => {
           setSelectedCategory('all');
-          setPriceRange([0, 500000]);
+          setPriceRange([0, maxPrice]);
           setSearch('');
+          setShowCompatibleOnly(false);
         }}
       >
         <X className="h-4 w-4 mr-2" />
@@ -290,7 +305,6 @@ const Shop: React.FC = () => {
       <Navbar />
 
       <div className="container py-8">
-        {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="font-display text-3xl font-bold mb-2">
@@ -298,11 +312,13 @@ const Shop: React.FC = () => {
             </h1>
             <p className="text-muted-foreground">
               {filteredProducts.length} products found
+              {showCompatibleOnly && userVehicle
+                ? ` (compatible with your ${userVehicle.brand} ${userVehicle.model})`
+                : ''}
             </p>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Mobile Filter */}
             <Sheet>
               <SheetTrigger asChild>
                 <Button variant="outline" className="md:hidden">
@@ -314,13 +330,10 @@ const Shop: React.FC = () => {
                 <SheetHeader>
                   <SheetTitle className="font-display">Filters</SheetTitle>
                 </SheetHeader>
-                <div className="mt-6">
-                  <FilterContent />
-                </div>
+                <div className="mt-6">{renderFilters('compatible-mobile')}</div>
               </SheetContent>
             </Sheet>
 
-            {/* Search */}
             <Input
               placeholder="Search products..."
               value={search}
@@ -328,7 +341,6 @@ const Shop: React.FC = () => {
               className="w-64 bg-secondary/50"
             />
 
-            {/* Sort */}
             <Select value={sortBy} onValueChange={setSortBy}>
               <SelectTrigger className="w-40 bg-secondary/50">
                 <SlidersHorizontal className="h-4 w-4 mr-2" />
@@ -342,7 +354,6 @@ const Shop: React.FC = () => {
               </SelectContent>
             </Select>
 
-            {/* View Toggle */}
             <div className="hidden md:flex items-center border border-border/50 rounded-lg p-1">
               <Button
                 variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
@@ -362,8 +373,9 @@ const Shop: React.FC = () => {
           </div>
         </div>
 
-        {/* Active Filters */}
-        {((selectedCategory && selectedCategory !== 'all') || search || userVehicle) && (
+        {((selectedCategory && selectedCategory !== 'all') ||
+          search ||
+          (userVehicle && showCompatibleOnly)) && (
           <div className="flex flex-wrap gap-2 mb-6">
             {selectedCategory && selectedCategory !== 'all' && (
               <Badge variant="secondary" className="gap-1">
@@ -381,23 +393,25 @@ const Shop: React.FC = () => {
               </Badge>
             )}
             {userVehicle && showCompatibleOnly && (
-              <Badge className="bg-primary/20 text-primary border-primary/30">
+              <Badge className="bg-primary/20 text-primary border-primary/30 gap-1">
                 Compatible with: {userVehicle.year} {userVehicle.brand} {userVehicle.model}
+                <X
+                  className="h-3 w-3 cursor-pointer"
+                  onClick={() => setShowCompatibleOnly(false)}
+                />
               </Badge>
             )}
           </div>
         )}
 
         <div className="flex gap-8">
-          {/* Desktop Filters */}
           <aside className="hidden md:block w-64 flex-shrink-0">
             <div className="glass-card p-6 sticky top-24">
               <h2 className="font-display text-lg font-semibold mb-6">Filters</h2>
-              <FilterContent />
+              {renderFilters('compatible-desktop')}
             </div>
           </aside>
 
-          {/* Products Grid */}
           <div className="flex-1">
             {loading ? (
               <div className="flex justify-center py-20">
@@ -409,12 +423,16 @@ const Shop: React.FC = () => {
                 animate={{ opacity: 1 }}
                 className="text-center py-20"
               >
-                <p className="text-muted-foreground mb-4">No products found</p>
+                <p className="text-muted-foreground mb-4">
+                  {showCompatibleOnly
+                    ? 'No compatible products found for your vehicle'
+                    : 'No products found'}
+                </p>
                 <Button
                   variant="outline"
                   onClick={() => {
                     setSelectedCategory('all');
-                    setPriceRange([0, 500000]);
+                    setPriceRange([0, maxPrice]);
                     setSearch('');
                     setShowCompatibleOnly(false);
                   }}
@@ -427,10 +445,10 @@ const Shop: React.FC = () => {
                 className={
                   viewMode === 'grid'
                     ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6'
-                    : 'space-y-4'
+                    : 'flex flex-col gap-3'
                 }
               >
-                {paginatedProducts.map((product, i) => (
+                {paginatedProducts.map(({ product, isCompatible }, i) => (
                   <motion.div
                     key={product.id || product._id || i}
                     initial={{ opacity: 0, y: 20 }}
@@ -439,7 +457,8 @@ const Shop: React.FC = () => {
                   >
                     <ProductCard
                       product={mapToProductCard(product)}
-                      isCompatible={isProductCompatible(product)}
+                      isCompatible={isCompatible}
+                      variant={viewMode}
                     />
                   </motion.div>
                 ))}

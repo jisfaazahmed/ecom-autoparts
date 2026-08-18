@@ -53,10 +53,9 @@ services:
       - /app/node_modules
     environment:
       - NODE_OPTIONS=--max-old-space-size=2048
-      - CHOKIDAR_USEPOLLING=false
-      - VITE_USE_POLLING=false
+      - CHOKIDAR_USEPOLLING=true
+      - VITE_USE_POLLING=true
       - VITE_PROXY_TARGET=http://server:5000
-      - VITE_API_URL=http://server:5000
       - VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
     command: sh -c "npm run dev -- --host 0.0.0.0 --strictPort"
     depends_on:

@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+require('dotenv').config();
 
 function isProd() {
   return String(process.env.NODE_ENV || '').toLowerCase() === 'production';
@@ -61,6 +62,9 @@ function createTransporter() {
     port,
     secure,
     auth: authUser && authPass ? { user: authUser, pass: authPass } : undefined,
+    tls: {
+        rejectUnauthorized: false
+    }
   });
 }
 
@@ -92,29 +96,36 @@ async function sendMail({ to, subject, text, html }) {
 }
 
 async function sendSignupOtpEmail({ to, otp, minutesValid = 10 }) {
+  const AccountTemplates = require('./emails/templates/AccountTemplates');
   const subject = 'Your AutoMatrix verification code';
   const text =
     `Your verification code is: ${otp}\n\n` +
     `This code expires in ${minutesValid} minutes.\n\n` +
     `If you didn't request this, you can ignore this email.`;
 
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.5;">
-      <h2 style="margin: 0 0 12px;">Verify your email</h2>
-      <p style="margin: 0 0 12px;">Use this code to complete your signup:</p>
-      <div style="font-size: 28px; letter-spacing: 6px; font-weight: 700; margin: 12px 0;">
-        ${otp}
-      </div>
-      <p style="margin: 12px 0 0; color: #666;">This code expires in ${minutesValid} minutes.</p>
-      <p style="margin: 12px 0 0; color: #666;">If you didn't request this, you can ignore this email.</p>
-    </div>
-  `;
+  const html = AccountTemplates.accountVerificationTemplate({
+    customerName: 'Customer',
+    otp: otp,
+    minutesValid: minutesValid
+  });
 
   return sendMail({ to, subject, text, html });
+}
+
+async function sendPasswordReset(email, resetLink) {
+  const subject = 'Password Reset Request';
+  const html = `
+            <h1>Password Reset</h1>
+            <p>You requested a password reset. Click the link below to reset your password:</p>
+            <a href="${resetLink}">${resetLink}</a>
+            <p>This link is valid for 1 hour.</p>
+            <p>If you didn't request this, please ignore this email.</p>
+        `;
+  return sendMail({ to: email, subject, html });
 }
 
 module.exports = {
   sendMail,
   sendSignupOtpEmail,
+  sendPasswordReset
 };
-

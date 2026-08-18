@@ -21,8 +21,40 @@ const Register = () => {
     e.preventDefault();
     setMessage('');
 
+    const normalizedName = formData.name.trim();
+    const normalizedEmail = formData.email.trim().toLowerCase();
+    const normalizedPassword = formData.password.trim();
+    const normalizedShopName = formData.shopName.trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (normalizedName.length < 2) {
+      setMessage('Error: Full name must be at least 2 characters');
+      return;
+    }
+
+    if (!emailRegex.test(normalizedEmail)) {
+      setMessage('Error: Please enter a valid email address');
+      return;
+    }
+
+    if (normalizedPassword.length < 6) {
+      setMessage('Error: Password must be at least 6 characters');
+      return;
+    }
+
+    if (formData.role === 'ADMIN' && normalizedShopName.length < 2) {
+      setMessage('Error: Shop name must be at least 2 characters for vendor accounts');
+      return;
+    }
+
     try {
-      await api.post('/auth/register', formData);
+      await api.post('/auth/register', {
+        ...formData,
+        name: normalizedName,
+        email: normalizedEmail,
+        password: normalizedPassword,
+        shopName: formData.role === 'ADMIN' ? normalizedShopName : '',
+      });
       alert('✅ Registration Successful! Please login after Admin approval.');
       navigate('/'); // Redirect to Login
     } catch (err) {

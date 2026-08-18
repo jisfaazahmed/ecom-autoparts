@@ -5,6 +5,7 @@ import {
   Package,
   ShoppingBag,
   Settings,
+  FileText,
   Building2,
   BarChart3,
   Database,
@@ -15,6 +16,8 @@ import {
   Car,
   Home,
   Menu,
+  CreditCard,
+  Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
@@ -36,16 +39,21 @@ const adminLinks = [
   { href: '/admin/products', label: 'Products', icon: Package },
   { href: '/admin/orders', label: 'Orders', icon: ShoppingBag },
   { href: '/admin/refunds', label: 'Refunds', icon: CheckCircle },
+  { href: '/admin/customers', label: 'Customers', icon: Users },
   { href: '/admin/settings', label: 'Settings', icon: Settings },
 ];
 
 const superAdminLinks = [
-  { href: '/superadmin', label: 'Dashboard', icon: LayoutDashboard },    { href: '/superadmin/products', label: 'Products', icon: Package },  { href: '/superadmin/vendors', label: 'Vendors', icon: Building2 },
+  { href: '/superadmin', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/superadmin/products', label: 'Products', icon: Package },
+  { href: '/superadmin/vendors', label: 'Vendors', icon: Building2 },
   { href: '/superadmin/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/superadmin/refunds', label: 'Refunds', icon: CheckCircle },
+  { href: '/superadmin/settlements', label: 'Settlements', icon: CreditCard },
   { href: '/superadmin/vehicles', label: 'Vehicles', icon: Car },
   { href: '/superadmin/categories', label: 'Categories', icon: Database },
   { href: '/superadmin/coupons', label: 'Coupons', icon: Package },
+  { href: '/superadmin/policies', label: 'Policies', icon: FileText },
 ];
 
 const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
@@ -65,9 +73,9 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   };
 
   const SidebarContent = ({ isMobile = false }: { isMobile?: boolean }) => (
-    <div className="flex flex-col h-full">
+    <div className="flex h-dvh max-h-dvh flex-col">
       {/* Header */}
-      <div className="h-16 border-b border-border flex items-center justify-between px-4">
+      <div className="h-14 sm:h-16 border-b border-border flex items-center justify-between px-4">
         {(!collapsed || isMobile) && (
           <Link to="/" className="flex items-center gap-2">
             <div className="w-8 h-8 bg-gradient-to-br from-primary to-primary/60 rounded-lg flex items-center justify-center">
@@ -89,7 +97,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
+      <nav className="flex-1 overflow-y-auto px-2 py-4 space-y-1">
         {links.map((link) => {
           const isActive = location.pathname === link.href || 
             (link.href !== '/admin' && link.href !== '/superadmin' && location.pathname.startsWith(link.href));
@@ -100,14 +108,14 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
               to={link.href}
               onClick={() => isMobile && setMobileOpen(false)}
               className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors',
+                'flex min-h-10 items-center gap-3 rounded-lg px-3 py-2.5 transition-colors',
                 isActive
                   ? 'bg-primary text-primary-foreground'
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               )}
             >
               <link.icon className="w-5 h-5 flex-shrink-0" />
-              {(!collapsed || isMobile) && <span className="font-medium">{link.label}</span>}
+              {(!collapsed || isMobile) && <span className="font-medium truncate">{link.label}</span>}
             </Link>
           );
         })}
@@ -140,11 +148,11 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   );
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex h-dvh overflow-hidden bg-background">
       {/* Desktop Sidebar */}
       <aside 
         className={cn(
-          "hidden lg:flex flex-col bg-card border-r border-border flex-shrink-0 transition-all duration-300",
+          "hidden md:flex h-dvh flex-col bg-card border-r border-border flex-shrink-0 transition-all duration-300",
           collapsed ? "w-16" : "w-64"
         )}
       >
@@ -152,16 +160,16 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
       </aside>
 
       {/* Mobile Header + Sheet */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex min-w-0 flex-1 flex-col h-dvh">
         {/* Mobile Top Bar */}
-        <header className="lg:hidden h-14 border-b border-border bg-card flex items-center px-4 gap-3">
+        <header className="md:hidden sticky top-0 z-30 h-14 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80 flex items-center px-4 gap-3">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <Button variant="ghost" size="icon">
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="p-0 w-64 bg-card">
+            <SheetContent side="left" className="p-0 w-[86vw] max-w-[320px] sm:max-w-sm bg-card border-r border-border">
               <SheetHeader className="sr-only">
                 <SheetTitle>Admin Navigation</SheetTitle>
               </SheetHeader>
@@ -177,7 +185,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         </header>
 
         {/* Main Content */}
-        <main className="flex-1 p-4 lg:p-8 overflow-auto">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-8">
           {children}
         </main>
       </div>

@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { 
-  ShoppingCart, Star, ChevronLeft, Check, Package, 
-  Truck, Shield, MessageSquare, Loader2 
+import {
+  ShoppingCart, Star, ChevronLeft, Check, Package,
+  Truck, Shield, MessageSquare, Loader2, Car, AlertCircle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,10 +18,11 @@ import { useToast } from '@/hooks/use-toast';
 
 const ProductDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { addToCart } = useStore();
-  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { addToCart, userVehicle } = useStore();
+  const { user, profile } = useAuth();
   const { toast } = useToast();
-  
+
   const [product, setProduct] = useState<ApiProduct | null>(null);
   const [reviews, setReviews] = useState<ApiReview[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,34 +69,56 @@ const ProductDetail: React.FC = () => {
     fetchProduct();
   }, [id]);
 
-  const handleAddToCart = () => {
+  const handleAddToCart = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
     if (!product) return;
-    
-    addToCart({
-      id: product.id || product._id || '',
-      product: {
+
+    if (!user) {
+      toast({
+        title: 'Sign In Required',
+        description: 'Please sign in to add items to cart.',
+        variant: 'destructive',
+      });
+      navigate('/auth/customer');
+      return;
+    }
+
+    try {
+      await addToCart({
         id: product.id || product._id || '',
-        name: product.name,
-        description: product.description || '',
-        price: product.price,
-        image: product.imageUrl || '/placeholder.svg',
-        category: product.category?.name || 'Uncategorized',
-        brand: '',
-        shopId: product.shopId,
-        shopName: product.shop?.name || 'Unknown Shop',
-        stock: product.stock,
-        compatibleVehicles: product.compatibleVariants || [],
-        rating: 0,
-        reviewCount: 0,
-        sku: product.sku || '',
-      },
-      quantity: 1
-    });
-    
-    toast({
-      title: 'Added to Cart',
-      description: `${product.name} has been added to your cart.`,
-    });
+        product: {
+          id: product.id || product._id || '',
+          name: product.name,
+          description: product.description || '',
+          price: product.price,
+          image: product.imageUrl || '/placeholder.svg',
+          category: product.category?.name || 'Uncategorized',
+          brand: '',
+          shopId: product.shopId,
+          shopName: product.shop?.name || 'Unknown Shop',
+          stock: product.stock,
+          compatibleVehicles: product.compatibleVariants || [],
+          rating: 0,
+          reviewCount: 0,
+          sku: product.sku || '',
+        },
+        quantity: 1
+      });
+
+      toast({
+        title: 'Added to Cart',
+        description: `${product.name} has been added to your cart.`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to add to cart';
+      toast({
+        title: 'Could not add to cart',
+        description: message,
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleSubmitReview = async () => {
@@ -109,7 +132,7 @@ const ProductDetail: React.FC = () => {
     }
 
     setSubmittingReview(true);
-    
+
     try {
       const productId = product.id || product._id || '';
       await api.createProductReview(productId, {
@@ -121,11 +144,11 @@ const ProductDetail: React.FC = () => {
         title: 'Review Submitted',
         description: 'Thank you for your feedback!',
       });
-      
+
       // Refresh reviews
       const reviewsData = await api.getProductReviews(productId);
       setReviews(reviewsData || []);
-      
+
       setNewComment('');
       setNewRating(5);
     } catch (error: unknown) {
@@ -136,12 +159,12 @@ const ProductDetail: React.FC = () => {
         variant: 'destructive',
       });
     }
-    
+
     setSubmittingReview(false);
   };
 
-  const averageRating = reviews.length > 0 
-    ? reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length 
+  const averageRating = reviews.length > 0
+    ? reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length
     : 0;
 
   if (loading) {
@@ -172,7 +195,7 @@ const ProductDetail: React.FC = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
+
       <div className="container py-8">
         {/* Breadcrumb */}
         <Link to="/shop" className="inline-flex items-center gap-2 text-muted-foreground hover:text-primary mb-6">
@@ -207,18 +230,17 @@ const ProductDetail: React.FC = () => {
               <h1 className="text-3xl font-display font-bold text-foreground mb-2">
                 {product.name}
               </h1>
-              
+
               {/* Rating */}
               <div className="flex items-center gap-2">
                 <div className="flex items-center">
                   {[1, 2, 3, 4, 5].map((star) => (
                     <Star
                       key={star}
-                      className={`h-5 w-5 ${
-                        star <= Math.round(averageRating)
+                      className={`h-5 w-5 ${star <= Math.round(averageRating)
                           ? 'fill-yellow-500 text-yellow-500'
                           : 'text-muted-foreground'
-                      }`}
+                        }`}
                     />
                   ))}
                 </div>
@@ -247,6 +269,40 @@ const ProductDetail: React.FC = () => {
                 <Badge variant="destructive">Out of Stock</Badge>
               )}
             </div>
+
+            {/* Vehicle Compatibility */}
+            {product.compatibleVehicleModels && product.compatibleVehicleModels.length > 0 && (
+              <div className="glass-card rounded-xl p-4 space-y-3">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Car className="h-4 w-4 text-primary" />
+                  Vehicle Compatibility
+                </h3>
+                {userVehicle && (() => {
+                  const isCompatible = product.compatibleVehicleModels!.some((m) =>
+                    m.brandName?.toLowerCase() === userVehicle.brand.toLowerCase() &&
+                    m.name?.toLowerCase() === userVehicle.model.toLowerCase()
+                  );
+                  return isCompatible ? (
+                    <Badge className="bg-green-500/20 text-green-500 border-green-500/30">
+                      <Check className="h-3 w-3 mr-1" />
+                      Fits your {userVehicle.year} {userVehicle.brand} {userVehicle.model}
+                    </Badge>
+                  ) : (
+                    <Badge variant="destructive" className="flex items-center gap-1 w-fit">
+                      <AlertCircle className="h-3 w-3" />
+                      May not fit your {userVehicle.year} {userVehicle.brand} {userVehicle.model}
+                    </Badge>
+                  );
+                })()}
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {product.compatibleVehicleModels!.map((m) => (
+                    <Badge key={m.id} variant="outline" className="text-xs">
+                      {m.brandName} {m.name}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Features */}
             <div className="grid grid-cols-3 gap-4 py-4 border-y border-border/50">
@@ -303,7 +359,7 @@ const ProductDetail: React.FC = () => {
           {user && (
             <div className="glass-card rounded-xl p-6 mb-8">
               <h3 className="font-semibold mb-4">Write a Review</h3>
-              
+
               <div className="space-y-4">
                 <div>
                   <Label>Rating</Label>
@@ -316,11 +372,10 @@ const ProductDetail: React.FC = () => {
                         className="focus:outline-none"
                       >
                         <Star
-                          className={`h-8 w-8 transition-colors ${
-                            star <= newRating
+                          className={`h-8 w-8 transition-colors ${star <= newRating
                               ? 'fill-yellow-500 text-yellow-500'
                               : 'text-muted-foreground hover:text-yellow-500'
-                          }`}
+                            }`}
                         />
                       </button>
                     ))}
@@ -373,11 +428,10 @@ const ProductDetail: React.FC = () => {
                       {[1, 2, 3, 4, 5].map((star) => (
                         <Star
                           key={star}
-                          className={`h-4 w-4 ${
-                            star <= review.rating
+                          className={`h-4 w-4 ${star <= review.rating
                               ? 'fill-yellow-500 text-yellow-500'
                               : 'text-muted-foreground'
-                          }`}
+                            }`}
                         />
                       ))}
                     </div>

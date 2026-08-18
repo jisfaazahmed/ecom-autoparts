@@ -6,15 +6,17 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import Navbar from '@/components/layout/Navbar';
 import { useStore } from '@/store/useStore';
-import { api } from '@/lib/api';
+import { api, ApiOrder } from '@/lib/api';
 import { toast } from 'sonner';
+
+type PaymentDownloadOrder = ApiOrder & { guestInvoiceToken?: string };
 
 const PaymentDownload: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { clearCart } = useStore();
   const [loading, setLoading] = useState(true);
-  const [orderData, setOrderData] = useState<any>(null);
+  const [orderData, setOrderData] = useState<PaymentDownloadOrder | null>(null);
   const [downloading, setDownloading] = useState(false);
 
   const paymentIntentId = searchParams.get('payment_intent');
@@ -58,7 +60,7 @@ const PaymentDownload: React.FC = () => {
       if (ok) {
         toast.success('Invoice downloaded');
         // After download, navigate to final success page
-        navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId || '')}`);
+        navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId || '')}&invoice_redirected=1`);
       } else {
         toast.error('Invoice download failed');
       }
@@ -110,7 +112,7 @@ const PaymentDownload: React.FC = () => {
                   )}
                 </Button>
 
-                <Button variant="outline" onClick={() => navigate(`/payment/success?order_id=${encodeURIComponent(orderId || '')}&payment_intent=${encodeURIComponent(paymentIntentId || '')}`)}>
+                <Button variant="outline" onClick={() => navigate(`/payment/success?order_id=${encodeURIComponent(orderId || '')}&payment_intent=${encodeURIComponent(paymentIntentId || '')}&invoice_redirected=1`)}>
                   Continue
                 </Button>
               </div>

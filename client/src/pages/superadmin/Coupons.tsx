@@ -117,12 +117,63 @@ const SuperAdminCoupons: React.FC = () => {
       return;
     }
 
+    const normalizedCode = formData.code.trim().toUpperCase();
+    if (!/^[A-Z0-9_-]{3,32}$/.test(normalizedCode)) {
+      toast({ title: 'Error', description: 'Coupon code must be 3-32 chars using letters, numbers, _ or -', variant: 'destructive' });
+      return;
+    }
+
+    const discountValue = Number(formData.discountValue);
+    if (!Number.isFinite(discountValue) || discountValue <= 0) {
+      toast({ title: 'Error', description: 'Discount value must be greater than 0', variant: 'destructive' });
+      return;
+    }
+
+    if (formData.discountType === 'percentage' && discountValue > 100) {
+      toast({ title: 'Error', description: 'Percentage discount cannot exceed 100', variant: 'destructive' });
+      return;
+    }
+
+    if (formData.minimumOrderAmount) {
+      const minOrder = Number(formData.minimumOrderAmount);
+      if (!Number.isFinite(minOrder) || minOrder < 0) {
+        toast({ title: 'Error', description: 'Minimum order amount must be 0 or greater', variant: 'destructive' });
+        return;
+      }
+    }
+
+    if (formData.maxUses) {
+      const maxUses = Number(formData.maxUses);
+      if (!Number.isInteger(maxUses) || maxUses <= 0) {
+        toast({ title: 'Error', description: 'Max uses must be a positive whole number', variant: 'destructive' });
+        return;
+      }
+    }
+
+    const validFromDate = new Date(formData.validFrom);
+    if (Number.isNaN(validFromDate.getTime())) {
+      toast({ title: 'Error', description: 'Valid from date is invalid', variant: 'destructive' });
+      return;
+    }
+
+    if (formData.validUntil) {
+      const validUntilDate = new Date(formData.validUntil);
+      if (Number.isNaN(validUntilDate.getTime())) {
+        toast({ title: 'Error', description: 'Valid until date is invalid', variant: 'destructive' });
+        return;
+      }
+      if (validUntilDate < validFromDate) {
+        toast({ title: 'Error', description: 'Valid until date must be on or after valid from date', variant: 'destructive' });
+        return;
+      }
+    }
+
     setSaving(true);
     const couponData = {
-      code: formData.code.toUpperCase(),
+      code: normalizedCode,
       description: formData.description || undefined,
       discountType: formData.discountType as 'percentage' | 'fixed',
-      discountValue: parseFloat(formData.discountValue),
+      discountValue,
       minimumOrderAmount: formData.minimumOrderAmount ? parseFloat(formData.minimumOrderAmount) : undefined,
       maxUses: formData.maxUses ? parseInt(formData.maxUses) : undefined,
       validFrom: new Date(formData.validFrom).toISOString(),
@@ -136,14 +187,9 @@ const SuperAdminCoupons: React.FC = () => {
         toast({ title: 'Updated', description: 'Coupon updated successfully' });
         fetchCoupons();
       } else {
-        try {
-          await api.createCoupon({ ...couponData, isActive: true });
-          toast({ title: 'Created', description: 'Coupon created successfully' });
-          fetchCoupons();
-        } catch (e) {
-          // Creation failed — surface error
-          throw e;
-        }
+        await api.createCoupon({ ...couponData, isActive: true });
+        toast({ title: 'Created', description: 'Coupon created successfully' });
+        fetchCoupons();
       }
       setDialogOpen(false);
     } catch (error: unknown) {
