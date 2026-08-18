@@ -10,18 +10,32 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
+import { isValidSriLankanPhone, normalizeSriLankanPhone } from '@/lib/sriLankaValidation';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
+// Phone and address stay optional, but when filled in they are held to the same rules
+// the Profile page enforces on save — otherwise a number accepted here is rejected the
+// first time the customer edits their profile.
 const signupSchema = z.object({
   fullName: z.string().min(2, 'Name must be at least 2 characters'),
   email: z.string().email('Invalid email address'),
   password: z.string().min(6, 'Password must be at least 6 characters'),
-  phone: z.string().optional(),
-  address: z.string().optional(),
+  phone: z
+    .string()
+    .refine(
+      (v) => v === '' || isValidSriLankanPhone(v),
+      'Please enter a valid Sri Lankan phone number (e.g. 0771234567 or +94771234567)'
+    ),
+  address: z
+    .string()
+    .refine(
+      (v) => v === '' || (v.trim().length >= 3 && v.trim().length <= 250),
+      'Address must be between 3 and 250 characters'
+    ),
 });
 
 const CustomerAuth: React.FC = () => {
@@ -119,7 +133,9 @@ const CustomerAuth: React.FC = () => {
       email: signupForm.email,
       password: signupForm.password,
       fullName: signupForm.fullName,
-      phone: signupForm.phone,
+      // Store the canonical 07XXXXXXXX form, matching what Profile saves.
+      phone: signupForm.phone ? normalizeSriLankanPhone(signupForm.phone) : undefined,
+      address: signupForm.address.trim() || undefined,
     });
     setLoading(false);
     
@@ -341,6 +357,7 @@ const CustomerAuth: React.FC = () => {
                       onChange={(e) => setSignupForm({ ...signupForm, phone: e.target.value })}
                     />
                   </div>
+                  {errors.phone && <p className="text-sm text-destructive">{errors.phone}</p>}
                 </div>
 
                 <div className="space-y-2">
@@ -356,6 +373,7 @@ const CustomerAuth: React.FC = () => {
                       onChange={(e) => setSignupForm({ ...signupForm, address: e.target.value })}
                     />
                   </div>
+                  {errors.address && <p className="text-sm text-destructive">{errors.address}</p>}
                 </div>
 
                 <Button type="submit" className="w-full" disabled={loading}>

@@ -79,6 +79,8 @@ function validateAuthRegister(req, res, next) {
   const password = String(req.body?.password || '');
   const roleRaw = asTrimmed(req.body?.role || 'CUSTOMER').toUpperCase();
   const shopName = asTrimmed(req.body?.shopName);
+  const phone = asTrimmed(req.body?.phone);
+  const address = asTrimmed(req.body?.address);
 
   if (!displayName || displayName.length < 2 || displayName.length > 120) {
     return fail(res, 'Name must be between 2 and 120 characters');
@@ -100,8 +102,19 @@ function validateAuthRegister(req, res, next) {
     return fail(res, 'shopName is required for ADMIN registration');
   }
 
+  // Both are optional at signup, so only validate what was actually filled in.
+  if (phone && !PHONE_RE.test(phone)) {
+    return fail(res, 'Invalid phone format');
+  }
+
+  if (address && (address.length < 3 || address.length > 250)) {
+    return fail(res, 'Address must be between 3 and 250 characters');
+  }
+
   req.body.email = email;
   req.body.role = roleRaw;
+  req.body.phone = phone;
+  req.body.address = address;
   return next();
 }
 

@@ -4,7 +4,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const emailService = require('../services/email.service');
 const NotificationService = require('../services/notification.service');
-const { sendSignupOtpEmail } = require('../services/mailer');
+const { sendSignupOtpEmail, sendWelcomeEmail } = require('../services/mailer');
 
 const OTP_VALID_MINUTES = 10;
 const MAX_VERIFY_ATTEMPTS = 5;
@@ -17,7 +17,7 @@ function generateOtp() {
 
 exports.register = async (req, res) => {
   try {
-    const { name, fullName, email, password, role, shopName } = req.body;
+    const { name, fullName, email, password, role, shopName, phone, address } = req.body;
     const displayName = name || fullName;
     const normalizedEmail = String(email || '').trim().toLowerCase();
     const normalizedRole = role || 'CUSTOMER';
@@ -42,6 +42,8 @@ exports.register = async (req, res) => {
       password: hashedPassword,
       role: normalizedRole,
       shopName: normalizedRole === 'ADMIN' ? shopName : undefined,
+      phone: phone || null,
+      address: address || null,
     });
 
     await user.save();
@@ -99,8 +101,20 @@ exports.login = async (req, res) => {
     if (!isMatch) return res.status(400).json({ message: 'Invalid Credentials' });
 
     // GATEKEEPER CHECK
-    if (user.status === 'PENDING') return res.status(403).json({ message: 'Account pending approval.' });
-    if (user.status === 'REJECTED') return res.status(403).json({ message: 'Account rejected.' });
+    // PENDING covers two very different states. A customer is PENDING only until the
+    // emailed OTP is confirmed — there is no approval step for them at all — while a
+    // vendor additionally waits on a Super Admin. Telling an unverified customer to
+    // "wait for approval" sends them to wait for something that never arrives.
+    if (user.status === 'PENDING') {
+      if (!user.emailVerification?.verifiedAt) {
+        return res.status(403).json({
+          code: 'EMAIL_NOT_VERIFIED',
+          message: 'Your email address is not verified yet. Register again with this email to get a fresh code.',
+        });
+      }
+      return res.status(403).json({ code: 'PENDING_APPROVAL', message: 'Account pending approval.' });
+    }
+    if (user.status === 'REJECTED') return res.status(403).json({ code: 'REJECTED', message: 'Account rejected.' });
 
     const payload = { user: { id: user.id, role: user.role } };
 
@@ -335,7 +349,7 @@ exports.updateProfile = async (req, res) => {
 // Creates a PENDING user, generates a 6-digit OTP and emails it.
 exports.registerStart = async (req, res) => {
   try {
-    const { name, fullName, email, password, role, shopName } = req.body;
+    const { name, fullName, email, password, role, shopName, phone, address } = req.body;
     const displayName = name || fullName;
     const normalizedEmail = String(email || '').trim().toLowerCase();
     const normalizedRole = role || 'CUSTOMER';
@@ -372,6 +386,8 @@ exports.registerStart = async (req, res) => {
       password: hashedPassword,
       role: normalizedRole,
       shopName: normalizedRole === 'ADMIN' ? shopName : undefined,
+      phone: phone || null,
+      address: address || null,
       status: 'PENDING',
       emailVerification: {
         codeHash: otpHash,
@@ -408,9 +424,21 @@ exports.registerVerify = async (req, res) => {
       return res.status(400).json({ message: 'verificationId and otp are required' });
     }
 
+    // A verificationId goes stale whenever the same email is registered again, because
+    // registerStart deletes the previous unverified row. Say which case this is so the
+    // user knows whether to start over or simply log in.
     const user = await User.findById(verificationId);
-    if (!user || user.emailVerification?.verifiedAt) {
-      return res.status(400).json({ message: 'Invalid or already-verified verification.' });
+    if (!user) {
+      return res.status(400).json({
+        code: 'VERIFICATION_EXPIRED',
+        message: 'This verification session is no longer valid. Please register again to get a fresh code.',
+      });
+    }
+    if (user.emailVerification?.verifiedAt) {
+      return res.status(400).json({
+        code: 'ALREADY_VERIFIED',
+        message: 'This email is already verified. You can sign in now.',
+      });
     }
 
     const ev = user.emailVerification;
@@ -444,6 +472,13 @@ exports.registerVerify = async (req, res) => {
     } else if (user.role === 'CUSTOMER') {
       NotificationService.notifySuperAdminCustomerSignup(user).catch(err =>
         console.error('Error notifying customer signup:', err)
+      );
+      // Only customers are usable at this point. A vendor is still PENDING a Super Admin
+      // decision, so "your account is ready, start shopping" would be wrong for them —
+      // they get the vendor-approved mail once that decision is made.
+      // Fire-and-forget, like the OTP: a mail failure must not fail the verification.
+      sendWelcomeEmail({ to: user.email, customerName: user.name }).catch(err =>
+        console.error('Error sending welcome email:', err)
       );
     }
 

@@ -646,6 +646,7 @@ class ApiClient {
     password: string;
     fullName: string;
     phone?: string;
+    address?: string;
   }): Promise<StartRegisterResponse> {
     const normalizedEmail = data.email.trim().toLowerCase();
     return this.request<StartRegisterResponse>('/auth/register/start', {
@@ -655,6 +656,8 @@ class ApiClient {
         email: normalizedEmail,
         password: data.password,
         role: 'CUSTOMER',
+        phone: data.phone?.trim() || undefined,
+        address: data.address?.trim() || undefined,
       }),
     });
   }
@@ -664,6 +667,7 @@ class ApiClient {
     password: string;
     fullName: string;
     phone?: string;
+    address?: string;
     shopName: string;
     shopDescription?: string;
     businessRegistration?: string;
@@ -677,6 +681,8 @@ class ApiClient {
         password: data.password,
         role: 'ADMIN',
         shopName: data.shopName,
+        phone: data.phone?.trim() || undefined,
+        address: data.address?.trim() || undefined,
       }),
     });
   }
@@ -712,6 +718,7 @@ class ApiClient {
     password: string;
     fullName: string;
     phone?: string;
+    address?: string;
     shopName: string;
     shopDescription?: string;
     businessRegistration?: string;
