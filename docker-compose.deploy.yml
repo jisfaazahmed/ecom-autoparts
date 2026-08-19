@@ -84,7 +84,8 @@ services:
     image: ${CLIENT_IMAGE:?CLIENT_IMAGE is required}
     restart: unless-stopped
     ports:
-      - "${HTTP_PORT:-80}:80"
+       - "80:80"
+       - "443:443"
     depends_on:
       - server
 
