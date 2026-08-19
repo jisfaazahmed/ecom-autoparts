@@ -35,8 +35,8 @@ services:
     # Reached only through the client container's nginx /api proxy, so there is
     # nothing to publish on the host. Same reasoning as mongo above: a port open
     # on a public IP is a port someone will find.
-    expose:
-      - "5000"
+    ports:
+      - "127.0.0.1:5000:5000"
     environment:
       PORT: 5000
       NODE_ENV: production
@@ -84,8 +84,7 @@ services:
     image: ${CLIENT_IMAGE:?CLIENT_IMAGE is required}
     restart: unless-stopped
     ports:
-       - "80:80"
-       - "443:443"
+    - "127.0.0.1:8080:80"
     depends_on:
       - server
 
