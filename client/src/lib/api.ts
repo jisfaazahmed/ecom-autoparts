@@ -419,6 +419,64 @@ export interface ApiRefundListResponse {
   };
 }
 
+export type ApiSettlementStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+
+export interface ApiSettlement {
+  _id: string;
+  settlementPeriod: {
+    startDate: string;
+    endDate: string;
+  };
+  ordersSummary: {
+    totalOrders: number;
+    totalOrderAmount: number;
+    totalRefunded: number;
+    netOrderAmount: number;
+  };
+  commission: {
+    rate: number;
+    totalCommission: number;
+  };
+  charges: {
+    platformFee: number;
+    paymentProcessingFee: number;
+    logisticsFee: number;
+    otherCharges: number;
+    totalCharges: number;
+  };
+  payableAmount: number;
+  status: ApiSettlementStatus;
+  payoutMethod?: string;
+  payoutDetails?: {
+    transactionId?: string;
+    payoutDate?: string;
+    confirmationDate?: string;
+    failureReason?: string;
+    referenceNumber?: string;
+  };
+  notes?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ApiSettlementListResponse {
+  settlements: ApiSettlement[];
+  pagination: {
+    total: number;
+    pages: number;
+    currentPage: number;
+    perPage: number;
+  };
+}
+
+export interface ApiEarningsBreakdown {
+  byCategory: Array<{
+    category: string | null;
+    earnings: number;
+    orders: number;
+  }>;
+}
+
 class ApiClient {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
@@ -1510,6 +1568,40 @@ class ApiClient {
 
   async getTotalPayable(vendorId: string): Promise<{ totalPayable: number; totalSettlements: number }> {
     return this.request<{ totalPayable: number; totalSettlements: number }>(`/vendors/${vendorId}/payable`);
+  }
+
+  // ---- Seller self-service (scoped to the logged-in seller, no vendorId) ----
+
+  async getMySettlementSummary(): Promise<ApiSettlement> {
+    return this.request<ApiSettlement>('/settlements/my/summary');
+  }
+
+  async getMySettlements(params?: {
+    status?: string;
+    page?: number;
+    limit?: number;
+    startDate?: string;
+    endDate?: string;
+  }): Promise<ApiSettlementListResponse> {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.set('status', params.status);
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    if (params?.startDate) searchParams.set('startDate', params.startDate);
+    if (params?.endDate) searchParams.set('endDate', params.endDate);
+    return this.request<ApiSettlementListResponse>(`/settlements/my?${searchParams.toString()}`);
+  }
+
+  async getMyPayable(): Promise<{ totalPayable: number; totalSettlements: number }> {
+    return this.request<{ totalPayable: number; totalSettlements: number }>('/settlements/my/payable');
+  }
+
+  async getMyEarningsBreakdown(range = '30d'): Promise<ApiEarningsBreakdown> {
+    return this.request<ApiEarningsBreakdown>(`/settlements/my/earnings?range=${encodeURIComponent(range)}`);
+  }
+
+  async getMySettlementDetails(settlementId: string): Promise<ApiSettlement> {
+    return this.request<ApiSettlement>(`/settlements/my/${settlementId}`);
   }
 
   // ============ COUPONS ============

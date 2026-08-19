@@ -298,3 +298,97 @@ exports.processAutomatedSettlements = async (req, res) => {
     res.status(500).json({ message: 'Error processing settlements' });
   }
 };
+
+// ========== SELLER SELF-SERVICE PAYOUT ENDPOINTS ==========
+// These mirror the superadmin endpoints above, but read the vendor id from the
+// authenticated session instead of the URL, so a seller can only ever reach
+// their own earnings and payouts.
+
+const currentVendorId = (req) => String(req.user.id || req.user._id);
+
+// GET current settlement summary for the logged-in seller (Usage: GET /api/settlements/my/summary)
+exports.getMySettlementSummary = async (req, res) => {
+  try {
+    const summary = await SettlementService.getVendorSettlementSummary(currentVendorId(req));
+    res.json(summary);
+  } catch (err) {
+    console.error('Error fetching own settlement summary:', err);
+    res.status(500).json({ message: 'Error fetching settlement summary' });
+  }
+};
+
+// GET settlement history for the logged-in seller (Usage: GET /api/settlements/my?status=pending&page=1&limit=10)
+exports.getMySettlements = async (req, res) => {
+  try {
+    const { status, page = 1, limit = 10, startDate, endDate } = req.query;
+
+    const parsedPage = Math.max(1, parseInt(page) || 1);
+    const parsedLimit = Math.min(100, Math.max(1, parseInt(limit) || 10));
+
+    const result = await SettlementService.getVendorSettlements(currentVendorId(req), {
+      status,
+      page: parsedPage,
+      limit: parsedLimit,
+      startDate,
+      endDate
+    });
+
+    res.json(result);
+  } catch (err) {
+    console.error('Error fetching own settlements:', err);
+    res.status(500).json({ message: 'Error fetching settlements' });
+  }
+};
+
+// GET total payable to the logged-in seller (Usage: GET /api/settlements/my/payable)
+exports.getMyPayable = async (req, res) => {
+  try {
+    const result = await SettlementService.getTotalPayable(currentVendorId(req));
+    res.json(result);
+  } catch (err) {
+    console.error('Error calculating own payable:', err);
+    res.status(500).json({ message: 'Error calculating payable amount' });
+  }
+};
+
+// GET earnings breakdown for the logged-in seller (Usage: GET /api/settlements/my/earnings?range=30d)
+exports.getMyEarningsBreakdown = async (req, res) => {
+  try {
+    const { range = '30d' } = req.query;
+
+    const breakdown = await VendorAnalyticsService.getEarningsBreakdown(currentVendorId(req), range);
+    res.json(breakdown);
+  } catch (err) {
+    console.error('Error fetching own earnings breakdown:', err);
+    res.status(500).json({ message: 'Error fetching earnings breakdown' });
+  }
+};
+
+// GET one settlement belonging to the logged-in seller (Usage: GET /api/settlements/my/:settlementId)
+exports.getMySettlementDetails = async (req, res) => {
+  try {
+    const { settlementId } = req.params;
+
+    const settlement = await SettlementService.getSettlementById(settlementId);
+    if (!settlement) {
+      return res.status(404).json({ message: 'Settlement not found' });
+    }
+
+    // getSettlementById populates vendor, so unwrap the id before comparing.
+    const ownerId = String(settlement.vendor?._id || settlement.vendor);
+    if (ownerId !== currentVendorId(req)) {
+      // Same response as a genuine miss, so this cannot be used to probe
+      // whether another vendor's settlement id exists.
+      return res.status(404).json({ message: 'Settlement not found' });
+    }
+
+    // internalNotes are superadmin-only commentary; strip before returning.
+    const payload = settlement.toObject();
+    delete payload.internalNotes;
+
+    res.json(payload);
+  } catch (err) {
+    console.error('Error fetching own settlement details:', err);
+    res.status(500).json({ message: 'Error fetching settlement' });
+  }
+};

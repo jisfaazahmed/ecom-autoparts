@@ -1,41 +1,14 @@
 const nodemailer = require('nodemailer');
+const mailConfig = require('../config/mail');
 
 function isProd() {
   return String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 }
 
-function getFromAddress() {
-  return process.env.EMAIL_FROM || process.env.SMTP_FROM || 'no-reply@automatrix.local';
-}
-
-function hasSmtpConfig() {
-  return Boolean(
-    (process.env.SMTP_HOST && process.env.SMTP_PORT) ||
-    (process.env.EMAIL_HOST && process.env.EMAIL_PORT)
-  );
-}
-
 function createTransporter() {
-  if (!hasSmtpConfig()) return null;
+  if (!mailConfig.isConfigured()) return null;
 
-  const host = process.env.SMTP_HOST || process.env.EMAIL_HOST;
-  const port = Number(process.env.SMTP_PORT || process.env.EMAIL_PORT);
-  const secure =
-    process.env.SMTP_SECURE !== undefined
-      ? String(process.env.SMTP_SECURE).toLowerCase() === 'true'
-      : process.env.EMAIL_SECURE !== undefined
-      ? String(process.env.EMAIL_SECURE).toLowerCase() === 'true'
-      : port === 465;
-
-  const authUser = process.env.SMTP_USER || process.env.EMAIL_USER;
-  const authPass = process.env.SMTP_PASS || process.env.EMAIL_PASS || process.env.SMTP_PASSWORD;
-
-  return nodemailer.createTransport({
-    host,
-    port,
-    secure,
-    auth: authUser && authPass ? { user: authUser, pass: authPass } : undefined,
-  });
+  return nodemailer.createTransport(mailConfig.getMailConfig());
 }
 
 function logMail({ to, subject, text, html, reason }) {
@@ -61,15 +34,15 @@ async function sendMail({ to, subject, text, html }) {
   // Dev-safe fallback: log emails if SMTP isn't configured.
   if (!transporter) {
     if (isProd()) {
-      throw new Error('SMTP is not configured');
+      throw new Error(mailConfig.describeMissing());
     }
-    logMail({ to, subject, text, html, reason: 'SMTP is not configured' });
+    logMail({ to, subject, text, html, reason: mailConfig.describeMissing() });
     return { delivered: false };
   }
 
   try {
     await transporter.sendMail({
-      from: getFromAddress(),
+      from: mailConfig.getFromAddress(),
       to,
       subject,
       text,

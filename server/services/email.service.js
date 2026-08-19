@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const mailConfig = require('../config/mail');
 const OrderTemplates = require('./emails/templates/OrderTemplates');
 const PaymentTemplates = require('./emails/templates/PaymentTemplates');
 const RefundReturnTemplates = require('./emails/templates/RefundReturnTemplates');
@@ -6,24 +7,27 @@ const AccountTemplates = require('./emails/templates/AccountTemplates');
 const VendorAdminTemplates = require('./emails/templates/VendorAdminTemplates');
 
 class EmailService {
-    constructor() {
-        this.transporter = nodemailer.createTransport({
-            host: process.env.EMAIL_HOST || process.env.SMTP_HOST || 'smtp.ethereal.email',
-            port: process.env.EMAIL_PORT || process.env.SMTP_PORT || 587,
-            secure: process.env.EMAIL_SECURE === 'true' || process.env.SMTP_SECURE === 'true',
-            auth: {
-                user: process.env.EMAIL_USER || process.env.SMTP_USER || 'ethereal.user@ethereal.email',
-                pass: process.env.EMAIL_PASS || process.env.SMTP_PASSWORD || process.env.SMTP_PASS || 'ethereal.pass'
-            }
-        });
+    // Built on first send rather than in the constructor. This module is exported as a
+    // singleton and required at startup, so constructing here would have made any config
+    // problem a boot-time crash - and previously it did the opposite, quietly falling back
+    // to ethereal test credentials against the real host.
+    getTransporter() {
+        if (!this.transporter) {
+            this.transporter = nodemailer.createTransport(mailConfig.getMailConfig());
+        }
+
+        return this.transporter;
     }
 
     async sendEmail(to, subject, html, text = '') {
+        if (!mailConfig.isConfigured()) {
+            console.error('Error sending email to %s: %s', to, mailConfig.describeMissing());
+            return null;
+        }
+
         try {
-            const fromName = process.env.EMAIL_FROM_NAME || 'AutoMatrix';
-            const fromAddress = process.env.EMAIL_FROM_ADDRESS || process.env.SENDER_EMAIL || process.env.EMAIL_FROM || process.env.EMAIL_USER || process.env.SMTP_USER || 'noreply@automatrix.com';
-            const info = await this.transporter.sendMail({
-                from: `"${fromName}" <${fromAddress}>`,
+            const info = await this.getTransporter().sendMail({
+                from: mailConfig.getFromAddress(),
                 to,
                 subject,
                 text,
@@ -31,9 +35,6 @@ class EmailService {
             });
 
             console.log('Message sent: %s', info.messageId);
-            if (process.env.EMAIL_HOST === 'smtp.ethereal.email' || !process.env.EMAIL_HOST) {
-                console.log('Preview URL: %s', nodemailer.getTestMessageUrl(info));
-            }
             return info;
         } catch (error) {
             console.error('Error sending email:', error);

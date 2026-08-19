@@ -145,7 +145,6 @@ router.post('/login', validateAuthLogin, authController.login);
 
 router.get('/me', verifyToken, authController.getMe);
 router.put('/profile', verifyToken, validateUpdateProfile, authController.updateProfile);
-router.post('/change-password', verifyToken, validateChangePassword, authController.changePassword);
 
 // ========== PASSWORD RESET ENDPOINTS ==========
 /**

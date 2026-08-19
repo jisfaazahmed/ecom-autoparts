@@ -15,6 +15,20 @@ function isObjectId(value) {
   return OBJECT_ID_RE.test(asTrimmed(value));
 }
 
+// Number() coerces booleans and single-element arrays (Number(true) === 1,
+// Number([3]) === 3), so those slipped through as valid quantities. Accept only a real
+// number or a numeric string; anything else yields NaN and fails the caller's range check.
+function toInteger(value) {
+  if (typeof value === 'number') {
+    return Number.isInteger(value) ? value : NaN;
+  }
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value.trim());
+    return Number.isInteger(parsed) ? parsed : NaN;
+  }
+  return NaN;
+}
+
 function validateObjectIdParam(paramName, label = paramName) {
   return (req, res, next) => {
     if (!isObjectId(req.params?.[paramName])) {
@@ -26,8 +40,8 @@ function validateObjectIdParam(paramName, label = paramName) {
 
 function validatePaginationQuery(req, res, next) {
   const { page = '1', limit = '10' } = req.query || {};
-  const pageNum = Number(page);
-  const limitNum = Number(limit);
+  const pageNum = toInteger(page);
+  const limitNum = toInteger(limit);
 
   if (!Number.isInteger(pageNum) || pageNum < 1) {
     return fail(res, 'page must be a positive integer');
@@ -37,14 +51,17 @@ function validatePaginationQuery(req, res, next) {
     return fail(res, 'limit must be an integer between 1 and 100');
   }
 
-  req.query.page = pageNum;
-  req.query.limit = limitNum;
+  // Express 5 exposes req.query as a getter that re-parses the query string on every
+  // access, so assigning to it is silently discarded - the old `req.query.page = pageNum`
+  // never reached the handler, and the defaults above never applied. Publish the parsed
+  // values on the request itself, which is a plain property and does persist.
+  req.pagination = { page: pageNum, limit: limitNum };
   return next();
 }
 
 function validateCartAdd(req, res, next) {
   const productId = asTrimmed(req.body?.productId);
-  const quantity = Number(req.body?.quantity ?? 1);
+  const quantity = toInteger(req.body?.quantity ?? 1);
 
   if (!isObjectId(productId)) {
     return fail(res, 'Invalid productId');
@@ -64,7 +81,7 @@ function validateCartUpdate(req, res, next) {
     return fail(res, 'Invalid productId');
   }
 
-  const quantity = Number(req.body?.quantity);
+  const quantity = toInteger(req.body?.quantity);
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 999) {
     return fail(res, 'quantity must be an integer between 1 and 999');
   }
@@ -183,26 +200,65 @@ function validateChangePassword(req, res, next) {
   return next();
 }
 
+// Optional profile fields are clearable: the controllers write through on any value that
+// is not undefined, so null / "" means "remove this", not "invalid".
+function isClearing(value) {
+  return value === null || (typeof value === 'string' && value.trim() === '');
+}
+
+function checkOptionalText(value, label, min, max) {
+  if (value === undefined || isClearing(value)) return null;
+  if (typeof value !== 'string') return `${label} must be a string`;
+  const trimmed = value.trim();
+  if (trimmed.length < min || trimmed.length > max) {
+    return `${label} must be a string between ${min} and ${max} characters`;
+  }
+  return null;
+}
+
 function validateUpdateProfile(req, res, next) {
-  const { name, fullName, phone, address } = req.body || {};
+  const body = req.body || {};
+  // Both casings reach this middleware: /api/auth/profile sends fullName, the client's
+  // /api/users/profile sends full_name, and the controllers read either.
+  const { name, fullName, full_name: fullNameSnake, phone, address, city } = body;
+  const postalCode = body.postalCode !== undefined ? body.postalCode : body.postal_code;
+  const avatarUrl = body.avatarUrl !== undefined ? body.avatarUrl : body.avatar_url;
 
-  if (name !== undefined && (typeof name !== 'string' || asTrimmed(name).length < 2 || asTrimmed(name).length > 120)) {
-    return fail(res, 'name must be a string between 2 and 120 characters');
+  for (const [value, label] of [[name, 'name'], [fullName, 'fullName'], [fullNameSnake, 'full_name']]) {
+    // A name may be changed or left alone, but not blanked - it is a required column.
+    if (value !== undefined && (typeof value !== 'string' || asTrimmed(value).length < 2 || asTrimmed(value).length > 120)) {
+      return fail(res, `${label} must be a string between 2 and 120 characters`);
+    }
   }
 
-  if (fullName !== undefined && (typeof fullName !== 'string' || asTrimmed(fullName).length < 2 || asTrimmed(fullName).length > 120)) {
-    return fail(res, 'fullName must be a string between 2 and 120 characters');
-  }
-
-  if (phone !== undefined) {
-    const normalizedPhone = asTrimmed(phone);
-    if (!PHONE_RE.test(normalizedPhone)) {
+  if (phone !== undefined && !isClearing(phone)) {
+    if (typeof phone !== 'string' || !PHONE_RE.test(asTrimmed(phone))) {
       return fail(res, 'Invalid phone format');
     }
   }
 
-  if (address !== undefined && (typeof address !== 'string' || asTrimmed(address).length < 3 || asTrimmed(address).length > 250)) {
-    return fail(res, 'address must be a string between 3 and 250 characters');
+  const textError =
+    checkOptionalText(address, 'address', 3, 250) ||
+    checkOptionalText(city, 'city', 2, 100);
+  if (textError) {
+    return fail(res, textError);
+  }
+
+  if (postalCode !== undefined && !isClearing(postalCode)) {
+    const normalized = asTrimmed(postalCode);
+    if (typeof postalCode !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9 -]{1,19}$/.test(normalized)) {
+      return fail(res, 'postalCode must be 2-20 letters, digits, spaces or hyphens');
+    }
+  }
+
+  if (avatarUrl !== undefined && !isClearing(avatarUrl)) {
+    const normalized = asTrimmed(avatarUrl);
+    // Only http(s) or a site-relative path. Anything else (javascript:, data:, vbscript:)
+    // is a stored-XSS vector the moment this value is rendered into an href.
+    const isSafe = /^https?:\/\/[^\s]+$/i.test(normalized) || /^\/[^\s]*$/.test(normalized);
+    if (typeof avatarUrl !== 'string' || !isSafe || normalized.length > 2048) {
+      return fail(res, 'avatarUrl must be an http(s) or site-relative URL up to 2048 characters');
+    }
   }
 
   return next();
@@ -385,7 +441,7 @@ function validateShippingCalculate(req, res, next) {
 
   for (let i = 0; i < items.length; i += 1) {
     const item = items[i];
-    const quantity = Number(item?.quantity);
+    const quantity = toInteger(item?.quantity);
     const price = Number(item?.product?.price);
     const weight = item?.product?.weight === undefined ? 0.5 : Number(item.product.weight);
 
@@ -471,7 +527,7 @@ function validateSubmitRating(req, res, next) {
     return fail(res, 'Invalid shippingId');
   }
 
-  const rating = Number(req.body?.rating);
+  const rating = toInteger(req.body?.rating);
   if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
     return fail(res, 'rating must be an integer between 1 and 5');
   }
@@ -532,7 +588,7 @@ function validateInventoryCheck(req, res, next) {
     return fail(res, 'Invalid productId');
   }
 
-  const quantity = Number(req.body?.quantity);
+  const quantity = toInteger(req.body?.quantity);
   if (!Number.isInteger(quantity) || quantity < 1 || quantity > 9999) {
     return fail(res, 'quantity must be an integer between 1 and 9999');
   }

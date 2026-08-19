@@ -951,7 +951,10 @@ exports.getPaymentDetails = async (req, res) => {
 // Get User Payments
 exports.getUserPayments = async (req, res) => {
   try {
-    const { page = 1, limit = 10, status } = req.query;
+    // Parsed and range-checked by validatePaginationQuery; req.query would still hold
+    // the raw strings, since Express 5 re-parses it on every access.
+    const { status } = req.query;
+    const { page, limit } = req.pagination || { page: 1, limit: 10 };
     const userId = getRequestUserId(req);
     
     const query = { user: userId };
