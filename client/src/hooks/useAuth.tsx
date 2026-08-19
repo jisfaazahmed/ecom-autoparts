@@ -250,6 +250,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const mapped = setSession(response);
       await hydrateActiveVehicle(mapped);
       await useStore.getState().syncCartFromApi();
+      // Fetch full profile (phone, address, etc.) which the login response omits
+      const currentProfile = await api.getMyProfile().catch(() => null);
+      setProfile(currentProfile);
       toast({
         title: 'Welcome Back',
         description: 'You have successfully signed in',

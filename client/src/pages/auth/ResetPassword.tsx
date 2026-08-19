@@ -15,6 +15,15 @@ const resetRequestSchema = z.object({
   email: z.string().trim().min(1, "Please enter your email address").email("Please enter a valid email address"),
 });
 
+const newPasswordSchema = z
+  .string()
+  .trim()
+  .min(8, "Password must be at least 8 characters")
+  .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+  .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+  .regex(/[0-9]/, "Password must contain at least one number")
+  .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character");
+
 const ResetPassword = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -67,18 +76,20 @@ const ResetPassword = () => {
     e.preventDefault();
     setError("");
 
-    const normalizedPassword = password.trim();
     const normalizedConfirmPassword = confirmPassword.trim();
 
-    if (!normalizedPassword || !normalizedConfirmPassword) {
-      setError("Please fill in both password fields");
+    if (!normalizedConfirmPassword) {
+      setError("Please confirm your new password");
       return;
     }
 
-    if (normalizedPassword.length < 6) {
-      setError("Password must be at least 6 characters");
+    const newPasswordValidation = newPasswordSchema.safeParse(password);
+    if (!newPasswordValidation.success) {
+      setError(newPasswordValidation.error.issues[0]?.message || "Invalid password");
       return;
     }
+
+    const normalizedPassword = newPasswordValidation.data;
 
     if (normalizedPassword !== normalizedConfirmPassword) {
       setError("Passwords do not match");
@@ -146,7 +157,7 @@ const ResetPassword = () => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    minLength={6}
+                    minLength={8}
                   />
                   <Button
                     type="button"
@@ -173,7 +184,7 @@ const ResetPassword = () => {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
-                  minLength={6}
+                  minLength={8}
                 />
               </div>
 

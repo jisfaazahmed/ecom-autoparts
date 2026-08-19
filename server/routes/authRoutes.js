@@ -231,6 +231,5 @@ router.post('/reset-password', validateResetPassword, authController.resetPasswo
  * 200:
  * description: Password changed successfully
  */
-router.post('/change-password', verifyToken, validateChangePassword, authController.changePassword);
 
 module.exports = router;

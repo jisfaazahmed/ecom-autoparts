@@ -1,6 +1,5 @@
 require('dotenv').config({ path: require('path').join(__dirname, '..', '.env') });
 const mongoose = require('mongoose');
-const jwt = require('jsonwebtoken');
 const config = require('../config/config');
 
 // Load models like the running server

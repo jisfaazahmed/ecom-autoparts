@@ -178,14 +178,25 @@ const Profile: React.FC = () => {
     e.preventDefault();
     setErrors({});
 
+    let normalizedForm;
     try {
-      const normalizedForm = profileSchema.parse(form);
-      setForm(normalizedForm);
+      normalizedForm = profileSchema.parse(form);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        const fieldErrors: Record<string, string> = {};
+        err.errors.forEach((error) => {
+          if (error.path[0]) fieldErrors[error.path[0].toString()] = error.message;
+        });
+        setErrors(fieldErrors);
+      }
+      return;
+    }
 
-      if (!user) return;
+    setForm(normalizedForm);
+    if (!user) return;
 
-      setLoading(true);
-
+    setLoading(true);
+    try {
       await api.updateProfile({
         fullName: normalizedForm.fullName,
         phone: normalizedForm.phone || undefined,
@@ -200,65 +211,46 @@ const Profile: React.FC = () => {
       });
       refreshProfile();
     } catch (err) {
-      if (err instanceof z.ZodError) {
-        const fieldErrors: Record<string, string> = {};
-        err.errors.forEach((error) => {
-          if (error.path[0]) fieldErrors[error.path[0].toString()] = error.message;
-        });
-        setErrors(fieldErrors);
-        return;
-      }
-
-      if (!user) return;
-
-      setLoading(true);
-
-      try {
-        await api.updateProfile({
-          fullName: form.fullName.trim(),
-          phone: form.phone.trim() || undefined,
-          address: form.address.trim() || undefined,
-          city: form.city.trim() || undefined,
-          postalCode: form.postalCode.trim() || undefined,
-        });
-
-        toast({
-          title: 'Profile Updated',
-          description: 'Your profile has been saved successfully.',
-        });
-        refreshProfile();
-      } catch (error: unknown) {
-        toast({
-          title: 'Error',
-          description: err instanceof Error && err.message ? err.message : 'Failed to update profile',
-          variant: 'destructive',
-        });
-      } finally {
-        setLoading(false);
-      }
+      toast({
+        title: 'Error',
+        description: err instanceof Error && err.message ? err.message : 'Failed to update profile',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
     }
   };
+
+    const newPasswordSchema = z
+      .string()
+      .trim()
+      .min(8, 'Password must be at least 8 characters')
+      .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+      .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
+      .regex(/[0-9]/, 'Password must contain at least one number')
+      .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character');
 
     const handlePasswordChange = async (e: React.FormEvent) => {
       e.preventDefault();
       setErrors({});
 
       const currentPassword = passwordForm.currentPassword.trim();
-      const newPassword = passwordForm.newPassword.trim();
       const confirmPassword = passwordForm.confirmPassword.trim();
 
       if (!currentPassword) {
         setErrors({ currentPassword: 'Current password is required' });
         return;
       }
-      if (!newPassword) {
-        setErrors({ newPassword: 'New password is required' });
+
+      const newPasswordValidation = newPasswordSchema.safeParse(passwordForm.newPassword);
+      if (!newPasswordValidation.success) {
+        setErrors({
+          newPassword: newPasswordValidation.error.issues[0]?.message || 'Invalid new password',
+        });
         return;
       }
-      if (newPassword.length < 6) {
-        setErrors({ newPassword: 'New password must be at least 6 characters' });
-        return;
-      }
+
+      const newPassword = newPasswordValidation.data;
       if (newPassword === currentPassword) {
         setErrors({ newPassword: 'New password must be different from current password' });
         return;

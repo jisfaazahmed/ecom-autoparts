@@ -784,7 +784,7 @@ class ApiClient {
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {
     await this.request('/auth/change-password', {
       method: 'POST',
-      body: JSON.stringify({ currentPassword, newPassword }),
+      body: JSON.stringify({ currentPassword, newPassword, passwordConfirm: newPassword }),
     });
   }
 

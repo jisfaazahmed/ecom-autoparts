@@ -3,10 +3,10 @@ const mongoose = require('mongoose');
 const config = require('../config/config');
 
 // Import models
-const VehicleBrand = require('./models/vehicleBrand.model');
-const VehicleModel = require('./models/vehicleModel.model');
+const VehicleBrand = require('../models/vehicleBrand.model');
+const VehicleModel = require('../models/vehicleModel.model');
 
-const Vehicle = require('./models/vehicle');
+const Vehicle = require('../models/vehicle');
 
 const curatedVehicles = [
   {
