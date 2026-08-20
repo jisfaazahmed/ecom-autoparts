@@ -129,7 +129,7 @@ exports.lookupRegistration = async (req, res) => {
     }
 
     if (!REGCHECK_USERNAME) {
-      return res.status(500).json({ message: 'RegCheck API username not configured' });
+      return res.status(500).json({ message: 'Failed to fetch vehicle data' });
     }
 
     const normalizedRegNumber = normalizeRegNumber(registrationNumber);

@@ -76,6 +76,9 @@ services:
       # key. GEMINI_MODEL is optional - the controller falls back through a list.
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
+
+      # RegCheck API (for vehicle registration lookup)
+      REGCHECK_USERNAME: ${REGCHECK_USERNAME:-}
     depends_on:
       mongo:
         condition: service_healthy
