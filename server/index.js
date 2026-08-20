@@ -70,6 +70,10 @@ app.use(
   })
 );
 app.use(express.json());
+// Legacy/local-only static serving. New uploads go to Cloudflare R2 (see
+// services/storage.service.js) and are served from the media domain instead;
+// these mounts stay so that files written before the migration - and everything
+// written in local development, where R2 is not configured - still resolve.
 app.use('/labels', express.static(path.join(__dirname, 'uploads', 'labels')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 

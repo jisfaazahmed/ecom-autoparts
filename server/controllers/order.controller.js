@@ -681,6 +681,22 @@ module.exports.recoverGuestOrders = async (req, res) => {
     }
 };
 
+// Invoices live in object storage, so there is no local path for res.download().
+// The route has already authorised the caller; this just pipes the bytes back
+// with the same download headers the browser used to get.
+function streamInvoice(res, stream, fileName) {
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+    stream.on('error', (error) => {
+        console.error('Invoice stream failed:', error);
+        if (!res.headersSent) res.status(500).json({ message: 'Failed to read invoice' });
+        else res.destroy(error);
+    });
+
+    return stream.pipe(res);
+}
+
 // Generate or return invoice PDF for an order
 module.exports.getInvoice = async (req, res) => {
     try {
@@ -705,9 +721,9 @@ module.exports.getInvoice = async (req, res) => {
             return res.status(403).json({ message: 'Unauthorized to download invoice' });
         }
 
-        const { filePath, fileName } = await invoiceService.generateInvoicePdf(orderId);
+        const { stream, fileName } = await invoiceService.openInvoiceStream(orderId);
 
-        return res.download(filePath, fileName);
+        return streamInvoice(res, stream, fileName);
     } catch (error) {
         return res.status(500).json({ message: error.message });
     }
@@ -733,8 +749,8 @@ module.exports.getGuestInvoice = async (req, res) => {
             return res.status(401).json({ message: 'Invalid or expired guest invoice token' });
         }
 
-        const { filePath, fileName } = await invoiceService.generateInvoicePdf(orderId);
-        return res.download(filePath, fileName);
+        const { stream, fileName } = await invoiceService.openInvoiceStream(orderId);
+        return streamInvoice(res, stream, fileName);
     } catch (error) {
         return res.status(500).json({ message: error.message });
     }

@@ -2,12 +2,26 @@ const fs = require('fs');
 const path = require('path');
 const PDFDocument = require('pdfkit');
 const Order = require('../models/order.model');
+const storage = require('./storage.service');
+
+// Invoices are private: they are stored under invoices/ in R2 with no public URL
+// and only ever reach a customer through an authorised route (order.controller
+// checks ownership, or verifies a signed guest token) that streams them back.
+const INVOICE_FOLDER = 'invoices';
 
 class InvoiceService {
-    ensureInvoiceDirectory() {
-        const dir = path.join(__dirname, '..', 'uploads', 'invoices');
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        return dir;
+    invoiceFileName(order) {
+        const base = String(order.orderNumber || order._id).replace(/[^a-zA-Z0-9-_]/g, '_');
+        return `${base}.pdf`;
+    }
+
+    // Old records stored an absolute filesystem path in invoiceUrl. Those files
+    // only still exist on a machine that has not redeployed since, so treat a
+    // readable one as a bonus and fall through to regeneration otherwise.
+    legacyDiskPath(order) {
+        const value = order?.invoiceUrl;
+        if (!value || !path.isAbsolute(value)) return null;
+        return fs.existsSync(value) ? value : null;
     }
 
     async generateInvoicePdf(orderId) {
@@ -17,44 +31,42 @@ class InvoiceService {
 
         if (!order) throw new Error('Order not found');
 
-        // Return cached invoice if already generated
-        if (order.invoiceUrl && fs.existsSync(order.invoiceUrl)) {
-            return {
-                filePath: order.invoiceUrl,
-                fileName: path.basename(order.invoiceUrl),
-                cached: true
-            };
+        const fileName = this.invoiceFileName(order);
+
+        // Already in storage - nothing to render.
+        if (order.invoiceKey && await storage.exists(order.invoiceKey)) {
+            return { key: order.invoiceKey, fileName, cached: true };
         }
 
-        const invoicesDir = this.ensureInvoiceDirectory();
-        const fileName = `${String(order.orderNumber || order._id).replace(/[^a-zA-Z0-9-_]/g, '_')}.pdf`;
-        const filePath = path.join(invoicesDir, fileName);
+        const buffer = await this.renderInvoiceBuffer(order);
+        const key = storage.buildKey(INVOICE_FOLDER, fileName);
 
+        await storage.put({ key, body: buffer, contentType: 'application/pdf' });
+
+        try {
+            await Order.findByIdAndUpdate(orderId, {
+                invoiceKey: key,
+                invoiceGeneratedAt: new Date(),
+            });
+        } catch (updateError) {
+            // The PDF is stored either way; a failed bookkeeping write only costs
+            // a re-render next time.
+            console.error('Failed to save invoice key to database:', updateError);
+        }
+
+        return { key, fileName, cached: false };
+    }
+
+    // Draws the invoice and resolves with the finished PDF bytes. Nothing here
+    // touches the filesystem, so the same buffer works for R2 or local disk.
+    renderInvoiceBuffer(order) {
         return new Promise((resolve, reject) => {
             const doc = new PDFDocument({ margin: 40 });
-            const stream = fs.createWriteStream(filePath);
+            const chunks = [];
 
-            stream.on('finish', async () => {
-                try {
-                    // Save invoice URL to database
-                    await Order.findByIdAndUpdate(
-                        orderId,
-                        {
-                            invoiceUrl: filePath,
-                            invoiceGeneratedAt: new Date()
-                        },
-                        { new: true }
-                    );
-                    resolve({ filePath, fileName });
-                } catch (updateError) {
-                    console.error('Failed to save invoice URL to database:', updateError);
-                    resolve({ filePath, fileName }); // Still resolve even if DB save fails
-                }
-            });
-            stream.on('error', reject);
+            doc.on('data', (chunk) => chunks.push(chunk));
+            doc.on('end', () => resolve(Buffer.concat(chunks)));
             doc.on('error', reject);
-
-            doc.pipe(stream);
 
             // Header
             doc.fontSize(20).text('Invoice', { align: 'center' });
@@ -119,32 +131,59 @@ class InvoiceService {
         });
     }
 
+    // What the download routes use: a readable stream plus the name to send it
+    // under. Generates the invoice first if it is not stored yet.
+    async openInvoiceStream(orderId) {
+        const order = await Order.findById(orderId).select('orderNumber invoiceKey invoiceUrl');
+        if (!order) throw new Error('Order not found');
+
+        const legacyPath = this.legacyDiskPath(order);
+        if (!order.invoiceKey && legacyPath) {
+            return { stream: fs.createReadStream(legacyPath), fileName: path.basename(legacyPath) };
+        }
+
+        const { key, fileName } = await this.generateInvoicePdf(orderId);
+        return { stream: await storage.openStream(key), fileName };
+    }
+
     async regenerateInvoice(orderId) {
-        // Force regeneration by clearing the cached URL and regenerating
-        await Order.findByIdAndUpdate(
-            orderId,
-            {
-                invoiceUrl: null,
-                invoiceGeneratedAt: null
-            },
-            { new: true }
-        );
+        // Force regeneration by clearing the stored location first.
+        await Order.findByIdAndUpdate(orderId, {
+            invoiceKey: null,
+            invoiceUrl: null,
+            invoiceGeneratedAt: null,
+        });
         return this.generateInvoicePdf(orderId);
     }
 
     async getInvoiceInfo(orderId) {
-        const order = await Order.findById(orderId).select('invoiceUrl invoiceGeneratedAt');
+        const order = await Order.findById(orderId).select('invoiceKey invoiceUrl invoiceGeneratedAt');
         if (!order) throw new Error('Order not found');
 
-        if (order.invoiceUrl && fs.existsSync(order.invoiceUrl)) {
-            const stats = fs.statSync(order.invoiceUrl);
+        if (order.invoiceKey) {
+            const stats = await storage.stat(order.invoiceKey);
+            if (stats) {
+                return {
+                    exists: true,
+                    path: order.invoiceKey,
+                    fileName: path.posix.basename(order.invoiceKey),
+                    size: stats.size,
+                    generatedAt: order.invoiceGeneratedAt,
+                    fileModified: stats.lastModified,
+                };
+            }
+        }
+
+        const legacyPath = this.legacyDiskPath(order);
+        if (legacyPath) {
+            const stats = fs.statSync(legacyPath);
             return {
                 exists: true,
-                path: order.invoiceUrl,
-                fileName: path.basename(order.invoiceUrl),
+                path: legacyPath,
+                fileName: path.basename(legacyPath),
                 size: stats.size,
                 generatedAt: order.invoiceGeneratedAt,
-                fileModified: stats.mtime
+                fileModified: stats.mtime,
             };
         }
 

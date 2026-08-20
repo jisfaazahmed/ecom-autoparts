@@ -2,9 +2,8 @@ const Shipping = require('../models/shipping.model');
 const Order = require('../models/order.model');
 const OrderTimeline = require('../models/timeline.model');
 const ShippingZone = require('../models/deliveryZone.model');
-const fs = require('fs');
-const path = require('path');
 const PDFDocument = require('pdfkit');
+const storage = require('./storage.service');
 
 const ZONES = {
     'zone1': {
@@ -40,15 +39,12 @@ const ZONES = {
     }
 };
 
-class ShippingService {
+// Shipping labels carry a customer's name, phone and address, so they are kept
+// private in storage and only ever handed out as a short-lived signed URL.
+const LABEL_FOLDER = 'labels';
+const LABEL_URL_TTL_SECONDS = 600;
 
-    ensureLabelDirectory() {
-        const labelsDir = path.join(__dirname, '..', 'uploads', 'labels');
-        if (!fs.existsSync(labelsDir)) {
-            fs.mkdirSync(labelsDir, { recursive: true });
-        }
-        return labelsDir;
-    }
+class ShippingService {
 
     sanitizeFileName(value) {
         return String(value || '')
@@ -71,16 +67,16 @@ class ShippingService {
         return `${prefix}${year}${month}${day}${stamp}`;
     }
 
-    async createLabelPdf(shipping, filePath) {
+    // Renders the label and resolves with the PDF bytes, so the caller can hand
+    // them to object storage without a temporary file.
+    async renderLabelBuffer(shipping) {
         return new Promise((resolve, reject) => {
             const doc = new PDFDocument({ size: 'A4', margin: 40 });
-            const stream = fs.createWriteStream(filePath);
+            const chunks = [];
 
-            stream.on('finish', resolve);
-            stream.on('error', reject);
+            doc.on('data', (chunk) => chunks.push(chunk));
+            doc.on('end', () => resolve(Buffer.concat(chunks)));
             doc.on('error', reject);
-
-            doc.pipe(stream);
 
             const orderNumber = shipping?.order?.orderNumber || 'N/A';
             const trackingNumber = shipping?.trackingNumber || 'N/A';
@@ -711,52 +707,69 @@ class ShippingService {
             throw new Error('Shipping not found');
         }
 
-        const labelsDir = this.ensureLabelDirectory();
-        const safeTracking = this.sanitizeFileName(shipping.trackingNumber || `SHIP-${shipping._id}`);
+        const tracking = shipping.trackingNumber || `SHIP-${shipping._id}`;
+        const safeTracking = this.sanitizeFileName(tracking);
         const fileName = `${safeTracking}.pdf`;
-        const absoluteFilePath = path.join(labelsDir, fileName);
+        const key = storage.buildKey(LABEL_FOLDER, fileName);
 
-        if (!fs.existsSync(absoluteFilePath)) {
-            await this.createLabelPdf(shipping, absoluteFilePath);
+        // Render only when the object is missing - labels never change once the
+        // shipment exists, so a second call just re-signs the stored PDF.
+        if (!await storage.exists(key)) {
+            const buffer = await this.renderLabelBuffer(shipping);
+            await storage.put({ key, body: buffer, contentType: 'application/pdf' });
         }
 
         if (!shipping.documents) {
             shipping.documents = {};
         }
 
-        if (!shipping.documents.shippingLabel) {
-            const baseUrl = process.env.SERVER_PUBLIC_URL || `http://localhost:${process.env.PORT || 5000}`;
-            const tracking = shipping.trackingNumber || `SHIP-${shipping._id}`;
-            shipping.documents.shippingLabel = `${baseUrl}/labels/${fileName}`;
+        if (!shipping.documents.shippingLabelKey) {
+            // A record created before the R2 migration already has its label
+            // event in the timeline - only backfill the key for those, so
+            // regenerating does not log a second "label created".
+            const isBackfill = Boolean(shipping.documents.shippingLabel);
+            shipping.documents.shippingLabelKey = key;
 
             shipping.statusHistory = shipping.statusHistory || [];
-            shipping.statusHistory.push({
-                status: shipping.status,
-                timestamp: new Date(),
-                note: 'Shipping label generated',
-                scanType: 'label_created'
-            });
+            if (!isBackfill) {
+                shipping.statusHistory.push({
+                    status: shipping.status,
+                    timestamp: new Date(),
+                    note: 'Shipping label generated',
+                    scanType: 'label_created'
+                });
+            }
 
             await shipping.save();
 
-            await OrderTimeline.create({
-                order: shipping.order?._id || shipping.order,
-                event: 'label_created',
-                title: 'Shipping Label Created',
-                description: `Label generated for tracking ${tracking}`,
-                actorType: 'system',
-                metadata: {
-                    trackingNumber: tracking,
-                    labelUrl: shipping.documents.shippingLabel,
-                }
-            });
+            if (!isBackfill) {
+                await OrderTimeline.create({
+                    order: shipping.order?._id || shipping.order,
+                    event: 'label_created',
+                    title: 'Shipping Label Created',
+                    description: `Label generated for tracking ${tracking}`,
+                    actorType: 'system',
+                    metadata: {
+                        trackingNumber: tracking,
+                        labelKey: key,
+                    }
+                });
+            }
         }
+
+        // Labels are private in R2, so the caller gets a fresh signed URL rather
+        // than a stored one that would expire in the database.
+        const labelUrl = await storage.getSignedDownloadUrl(key, {
+            expiresIn: LABEL_URL_TTL_SECONDS,
+            fileName,
+        });
 
         return {
             shippingId: shipping._id,
             orderNumber: shipping.order?.orderNumber,
             trackingNumber: shipping.trackingNumber,
-            labelUrl: shipping.documents.shippingLabel,
+            labelUrl,
+            expiresInSeconds: LABEL_URL_TTL_SECONDS,
             fileName,
         };
     }

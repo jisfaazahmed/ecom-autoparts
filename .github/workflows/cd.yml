@@ -106,6 +106,11 @@ jobs:
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           CLIENT_URL: ${{ secrets.CLIENT_URL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
         run: |
           access_set=0
           for v in SSH_HOST SSH_USER SSH_PRIVATE_KEY; do
@@ -133,7 +138,9 @@ jobs:
           # at once instead of failing on whichever is reached first.
           missing=""
           for v in SSH_HOST SSH_USER SSH_PRIVATE_KEY MONGO_USER MONGO_PASSWORD \
-                   JWT_SECRET SESSION_SECRET STRIPE_SECRET_KEY CLIENT_URL; do
+                   JWT_SECRET SESSION_SECRET STRIPE_SECRET_KEY CLIENT_URL \
+                   R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY \
+                   R2_BUCKET_NAME R2_PUBLIC_URL; do
             if [ -z "${!v}" ]; then missing="$missing $v"; fi
           done
 
@@ -203,6 +210,12 @@ jobs:
           SUPER_ADMIN_PASSWORD: ${{ secrets.SUPER_ADMIN_PASSWORD }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET_NAME: ${{ secrets.R2_BUCKET_NAME }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_PUBLIC_URL: ${{ secrets.R2_PUBLIC_URL }}
           HTTP_PORT: ${{ secrets.HTTP_PORT }}
         run: |
           # Built on the runner then copied, so compose reads plain values and
@@ -212,7 +225,9 @@ jobs:
                      CLIENT_URL FRONTEND_URL SERVER_PUBLIC_URL SMTP_HOST SMTP_PORT \
                      SMTP_SECURE SMTP_USER SMTP_PASS EMAIL_FROM ADMIN_EMAIL \
                      SUPER_ADMIN_EMAIL SUPER_ADMIN_PASSWORD GEMINI_API_KEY \
-                     GEMINI_MODEL HTTP_PORT; do
+                     GEMINI_MODEL R2_ACCOUNT_ID R2_ACCESS_KEY_ID \
+                     R2_SECRET_ACCESS_KEY R2_BUCKET_NAME R2_ENDPOINT \
+                     R2_PUBLIC_URL HTTP_PORT; do
             value="${!var}"
             [ -n "$value" ] && printf '%s=%s\n' "$var" "$value" >> deploy.env
           done

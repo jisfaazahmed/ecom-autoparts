@@ -60,6 +60,18 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-${CLIENT_URL}}
       SERVER_PUBLIC_URL: ${SERVER_PUBLIC_URL:-}
 
+      # Cloudflare R2 object storage. Required in production: without it every
+      # upload, invoice and label is written into the container filesystem and
+      # destroyed the next time this stack pulls a new image.
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:?R2_ACCOUNT_ID is required}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:?R2_ACCESS_KEY_ID is required}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:?R2_SECRET_ACCESS_KEY is required}
+      R2_BUCKET_NAME: ${R2_BUCKET_NAME:?R2_BUCKET_NAME is required}
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      # The custom domain in front of the bucket; public image URLs are built
+      # from it, so a wrong value here breaks every product image.
+      R2_PUBLIC_URL: ${R2_PUBLIC_URL:?R2_PUBLIC_URL is required}
+
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_SECURE: ${SMTP_SECURE:-false}

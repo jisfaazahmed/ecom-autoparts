@@ -247,7 +247,11 @@ const shippingSchema = new mongoose.Schema({
 
     //Lables
     documents: {
+        // Legacy public URL of a label PDF served from the container filesystem.
         shippingLabel: String,
+        // Storage key, e.g. "labels/PRO2508201234567.pdf". Private - handed out
+        // only as a short-lived signed URL by shippingService.generateShippingLabel.
+        shippingLabelKey: String,
         invoiceUrl: String,
         customsDeclaration: String,
         packingList: String,

@@ -143,6 +143,12 @@ const orderSchema = new mongoose.Schema({
         type: String,
         default: null
     },
+    // Storage key of the invoice PDF, e.g. "invoices/ORD-1001.pdf". Private -
+    // downloaded only through the authorised invoice routes.
+    invoiceKey: {
+        type: String,
+        default: null
+    },
     invoiceGeneratedAt: {
         type: Date,
         default: null

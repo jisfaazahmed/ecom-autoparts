@@ -72,6 +72,12 @@ Set under **Settings → Secrets and variables → Actions**.
 | `SUPER_ADMIN_PASSWORD` | for seeding | Only read by `npm run seed`, which creates the first super admin |
 | `GEMINI_API_KEY` | for AI analytics | Without it the SuperAdmin AI assistant returns 502 |
 | `GEMINI_MODEL` | no | Overrides the first entry in the model fallback chain |
+| `R2_ACCOUNT_ID` | **yes** | Cloudflare account that owns the R2 bucket |
+| `R2_ACCESS_KEY_ID` | **yes** | R2 API token, scoped to the media bucket |
+| `R2_SECRET_ACCESS_KEY` | **yes** | Server-side only. Never expose it to the client |
+| `R2_BUCKET_NAME` | **yes** | e.g. `automobiles-media` |
+| `R2_ENDPOINT` | no | Defaults to `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com` |
+| `R2_PUBLIC_URL` | **yes** | Custom domain connected to the bucket, e.g. `https://media.automobiles.live`. Every public image URL is built from it |
 | `HTTP_PORT` | no | Host port for the web client, default `80` |
 
 There is no `API_PORT`. The server container is not published on the host — nginx
@@ -79,6 +85,50 @@ in the client container proxies `/api` to it over the compose network.
 
 Anything marked required is enforced by `docker-compose.deploy.yml`, which fails
 immediately with a named error rather than starting a container that crash-loops.
+
+## File storage
+
+Uploaded images, generated invoices and shipping labels go to **Cloudflare R2**,
+not to the container filesystem. This is not an optimisation: the deploy destroys
+and recreates the server container on every push, so anything written inside it
+is gone the next time this workflow runs.
+
+```
+React -> Express (multer memoryStorage) -> R2 -> object key/URL -> MongoDB
+```
+
+- **Public** (`products/`, `avatars/`, `categories/`, `brands/`, `shops/`, `misc/`)
+  are served straight from `R2_PUBLIC_URL`, so Cloudflare caches them and the VPS
+  never sees an image request.
+- **Private** (`invoices/`, `labels/`) are never public. Invoices stream back
+  through the authorised order routes; labels are handed out as R2 presigned URLs
+  that expire after 10 minutes.
+
+`services/storage.service.js` is the only module that knows where files live.
+With the `R2_*` variables unset it falls back to writing under `server/uploads/`,
+which is what local development uses — that fallback is not safe in production.
+
+**Cloudflare setup**, once:
+
+1. **R2 → Create bucket**, e.g. `automobiles-media`. Leave it private.
+2. **R2 → Manage API Tokens** → a token with *Object Read & Write*, restricted to
+   that bucket. Save the account ID, access key ID and secret.
+3. **Bucket → Settings → Custom Domain** → connect `media.<your-domain>`. This is
+   what makes objects publicly readable and CDN-cached; without it, public image
+   URLs would 401.
+4. Set the `R2_*` GitHub secrets above.
+
+**Migrating files that are already on a VPS** (run before the next deploy wipes
+them, from a checkout with the `R2_*` values in `server/.env`):
+
+```bash
+cd server
+npm run migrate:r2            # dry run: lists files and DB rows it would touch
+npm run migrate:r2 -- --apply # uploads to R2 and repoints stored URLs
+```
+
+`npm run qa:storage` round-trips a real object through whichever backend is
+configured — the quickest way to prove a set of credentials works.
 
 ## VPS prerequisites
 
@@ -128,6 +178,10 @@ Or re-run the CD workflow from a known-good commit via **Actions → CD → Run 
   TypeScript errors. CI reports them without blocking every PR. Once they reach
   zero, drop `continue-on-error` from the typecheck step in `ci.yml` to make it a
   hard gate.
+- **No volume holds user uploads, by design.** The server container is stateless:
+  everything a user uploads lives in R2. If you ever unset the `R2_*` variables,
+  uploads silently start landing in the container filesystem again and the next
+  deploy destroys them.
 - **MongoDB is not published to the host** in `docker-compose.deploy.yml`. Only the
   server container reaches it. Do not add a `ports:` entry for it on a public VPS.
 - **`docker-compose.prod.yml` is not used for deployment.** Despite the name it
