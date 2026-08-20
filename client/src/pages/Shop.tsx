@@ -99,7 +99,7 @@ const Shop: React.FC = () => {
 
   const [search, setSearch] = useState(searchFromUrl);
   const [selectedCategory, setSelectedCategory] = useState(categoryFromUrl);
-  const maxPrice = 50000;
+  const maxPrice = 500000;
   const [priceRange, setPriceRange] = useState([0, maxPrice]);
   const [sortBy, setSortBy] = useState('featured');
   const [showCompatibleOnly, setShowCompatibleOnly] = useState(false);
