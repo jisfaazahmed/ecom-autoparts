@@ -136,3 +136,24 @@ exports.isSuperAdmin = async (req, res, next) => {
     return res.status(403).json({ message: 'Access denied. Super Admin only.' });
   }
 };
+
+// 3. Verify Vendor (Is user a seller/shop owner?)
+// Note: verifyToken already hydrates req.user from the database, so the role
+// here is the persisted one, not whatever the token happened to carry.
+exports.requireVendor = async (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Not authenticated' });
+    }
+
+    const normalizeRole = (role) => String(role || '').replace(/_/g, '').toUpperCase();
+    if (normalizeRole(req.user.role) !== 'ADMIN') {
+      return res.status(403).json({ message: 'Access denied. Seller account required.' });
+    }
+
+    next();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server Error' });
+  }
+};

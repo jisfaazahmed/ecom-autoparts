@@ -10,7 +10,7 @@ const RefundReturnTemplates = {
             EmailBuilder.buildOrderSummary({
                 'Order ID': `#${data.orderNumber}`,
                 'Refund Amount': EmailBuilder.formatCurrency(data.refundAmount),
-                'Original Payment Method': data.paymentMethod,
+                'Original Payment Method': data.paymentMethod || 'Original payment method',
                 'Reason': data.reason || 'Requested by customer'
             }),
             EmailBuilder.buildNextSteps([

@@ -14,13 +14,6 @@ process.on('unhandledRejection', (reason) => {
   console.error('💥 unhandledRejection – server will stay alive:', reason);
 });
 
-const {
-  MONGO_DB,
-  MONGO_USER,
-  MONGO_PASSWORD,
-  MONGO_IP,
-  MONGO_PORT,
-} = require("./config/config");
 
 // Register core models before routes (prevents populate/aggregate "Schema not registered" crashes).
 require('./models/user');
@@ -81,8 +74,27 @@ app.use('/labels', express.static(path.join(__dirname, 'uploads', 'labels')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 //MongoDB connection
-mongoose.connect(`mongodb://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_IP}:${MONGO_PORT}/${MONGO_DB}?authSource=admin`).then(() => {
-  console.log(`Connected to MongoDB (${MONGO_DB} @ ${MONGO_IP}:${MONGO_PORT})`);
+// The deploy passes the parts (MONGO_IP/MONGO_PORT/MONGO_USER/...) rather than one
+// whole URI, matching what every script in scripts/ already builds. MONGO_URI stays
+// supported so local .env files and hosted Atlas/Cosmos strings keep working.
+function buildMongoUri() {
+  if (process.env.MONGO_URI) return process.env.MONGO_URI;
+
+  const { MONGO_USER, MONGO_PASSWORD, MONGO_IP, MONGO_PORT, MONGO_DB } = process.env;
+  const auth = MONGO_USER && MONGO_PASSWORD
+    ? `${encodeURIComponent(MONGO_USER)}:${encodeURIComponent(MONGO_PASSWORD)}@`
+    : '';
+  // authSource=admin: the root user created by MONGO_INITDB_ROOT_* lives in the
+  // admin database, not in MONGO_DB.
+  return `mongodb://${auth}${MONGO_IP}:${MONGO_PORT || 27017}/${MONGO_DB}?authSource=admin`;
+}
+
+if (!process.env.MONGO_URI && !process.env.MONGO_IP) {
+  console.error('No MongoDB configuration found: set MONGO_URI, or MONGO_IP/MONGO_PORT/MONGO_USER/MONGO_PASSWORD/MONGO_DB.');
+}
+
+mongoose.connect(buildMongoUri()).then(() => {
+  console.log('Connected to MongoDB');
   // Initialize background jobs after DB connection
   BackgroundJobs.initializeJobs();
 }).catch((err) => {
@@ -95,13 +107,15 @@ app.get("/api/message", (req, res) => {
 });
 
 // Health check endpoint
+// readyState 1 === connected. The CD gate and the image HEALTHCHECK both poll this,
+// so it has to fail while MongoDB is down rather than reporting OK for a process
+// that is listening but cannot serve a single data route.
 app.get("/health", (req, res) => {
-  res.json({
-    status: "OK",
-    timestamp: new Date().toISOString(),
-    database: MONGO_DB,
-    mongoHost: MONGO_IP,
-    mongoPort: MONGO_PORT,
+  const connected = mongoose.connection.readyState === 1;
+  res.status(connected ? 200 : 503).json({
+    status: connected ? "OK" : "DEGRADED",
+    db: connected ? "connected" : "disconnected",
+    timestamp: new Date().toISOString()
   });
 });
 

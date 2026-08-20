@@ -16,7 +16,7 @@ class NotificationService {
                 }
                 
                 // Also send a direct email to the configured ADMIN_EMAIL if it's different
-                const configAdminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER || process.env.EMAIL_USER || process.env.SUPER_ADMIN_EMAIL;
+                const configAdminEmail = process.env.ADMIN_EMAIL || process.env.SMTP_USER || process.env.SUPER_ADMIN_EMAIL;
                 if (configAdminEmail && !superAdmins.some(a => a.email === configAdminEmail)) {
                     const template = this._getTemplate(type, data);
                     if (template.emailFunc && emailService[template.emailFunc]) {
@@ -53,7 +53,10 @@ class NotificationService {
 
             if (prefs.email && user.email) {
                 if (template.emailFunc && emailService[template.emailFunc]) {
-                    await emailService[template.emailFunc](user.email, data);
+                    await emailService[template.emailFunc](user.email, {
+                        customerName: user.name,
+                        ...data
+                    });
                 }
             }
 
@@ -160,22 +163,26 @@ class NotificationService {
             refund_initiated: {
                 title: 'Refund Initiated',
                 message: `Refund of Rs.${data.refundAmount} initiated for order #${data.orderNumber}.`,
-                priority: 'high'
+                priority: 'high',
+                emailFunc: 'sendRefundInitiated'
             },
             refund_completed: {
                 title: 'Refund Completed',
                 message: `Refund of Rs.${data.refundAmount} completed for order #${data.orderNumber}.`,
-                priority: 'high'
+                priority: 'high',
+                emailFunc: 'sendRefundCompleted'
             },
             payment_failed: {
                 title: 'Payment Failed',
                 message: `Payment failed for order #${data.orderNumber}.`,
-                priority: 'high'
+                priority: 'high',
+                emailFunc: 'sendPaymentFailed'
             },
             payment_success: {
                 title: 'Payment Successful',
                 message: `Payment of Rs.${data.paymentAmount} received for order #${data.orderNumber}.`,
-                priority: 'high'
+                priority: 'high',
+                emailFunc: 'sendPaymentSuccessful'
             }
         };
         return templates[type] || { title: 'Notification', message: 'New update', priority: 'normal' };
@@ -392,7 +399,9 @@ class NotificationService {
                 orderId: order._id,
                 refundId: refund._id,
                 orderNumber: order.orderNumber,
-                refundAmount
+                refundAmount,
+                paymentMethod: order.paymentMethod,
+                reason: refund.returnReason?.description
             });
         } catch (error) {
             console.error('Error notifying refund initiated:', error);
@@ -406,7 +415,8 @@ class NotificationService {
                 orderId: order._id,
                 refundId: refund._id,
                 orderNumber: order.orderNumber,
-                refundAmount
+                refundAmount,
+                refundReference: refund.refundTransactionId
             });
         } catch (error) {
             console.error('Error notifying refund completed:', error);
@@ -418,7 +428,8 @@ class NotificationService {
             if (!order.user) return;
             await this.createNotification(order.user, 'payment_failed', {
                 orderId: order._id,
-                orderNumber: order.orderNumber
+                orderNumber: order.orderNumber,
+                totalAmount: order.totalAmount
             });
         } catch (error) {
             console.error('Error notifying payment failed:', error);
@@ -431,7 +442,10 @@ class NotificationService {
             await this.createNotification(order.user, 'payment_success', {
                 orderId: order._id,
                 orderNumber: order.orderNumber,
-                paymentAmount
+                paymentAmount,
+                amountPaid: paymentAmount,
+                totalAmount: order.totalAmount,
+                paymentMethod: order.paymentMethod
             });
         } catch (error) {
             console.error('Error notifying payment success:', error);

@@ -40,6 +40,7 @@ import SuperAdminPolicies from "./pages/superadmin/Policies";
 import Wishlist from "./pages/Wishlist";
 import Compare from "./pages/Compare";
 import AdminCustomers from "./pages/admin/Customers";
+import AdminPayouts from "./pages/admin/Payouts";
 import SuperAdminSettlements from "./pages/superadmin/Settlements";
 import ReturnPolicy from "./pages/ReturnPolicy";
 import ShippingPolicy from "./pages/ShippingPolicy";
@@ -144,6 +145,11 @@ const App = () => (
             <Route path="/admin/customers" element={
               <ProtectedRoute requiredRole="admin" requireApprovedShop>
                 <AdminCustomers />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/payouts" element={
+              <ProtectedRoute requiredRole="admin" requireApprovedShop>
+                <AdminPayouts />
               </ProtectedRoute>
             } />
             

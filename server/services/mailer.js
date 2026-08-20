@@ -1,71 +1,31 @@
 const nodemailer = require('nodemailer');
-require('dotenv').config();
+const mailConfig = require('../config/mail');
 
 function isProd() {
   return String(process.env.NODE_ENV || '').toLowerCase() === 'production';
 }
 
-function getSmtpHost() {
-  return process.env.SMTP_HOST || process.env.EMAIL_HOST || '';
-}
-
-function getSmtpPort() {
-  return process.env.SMTP_PORT || process.env.EMAIL_PORT || '';
-}
-
-function getSmtpUser() {
-  return process.env.SMTP_USER || process.env.EMAIL_USER || '';
-}
-
-function getSmtpPass() {
-  return (
-    process.env.SMTP_PASS ||
-    process.env.SMTP_PASSWORD ||
-    process.env.EMAIL_PASS ||
-    ''
-  );
-}
-
-function getFromAddress() {
-  if (process.env.EMAIL_FROM_ADDRESS) {
-    const name = process.env.EMAIL_FROM_NAME || 'AutoMatrix';
-    return `"${name}" <${process.env.EMAIL_FROM_ADDRESS}>`;
-  }
-  return (
-    process.env.EMAIL_FROM ||
-    process.env.SMTP_FROM ||
-    process.env.SMTP_USER ||
-    process.env.EMAIL_USER ||
-    'no-reply@automatrix.local'
-  );
-}
-
-function hasSmtpConfig() {
-  return Boolean(getSmtpHost() && getSmtpPort());
-}
-
 function createTransporter() {
-  if (!hasSmtpConfig()) return null;
+  if (!mailConfig.isConfigured()) return null;
 
-  const port = Number(getSmtpPort());
-  const secureEnv = process.env.SMTP_SECURE ?? process.env.EMAIL_SECURE;
-  const secure =
-    secureEnv !== undefined
-      ? String(secureEnv).toLowerCase() === 'true'
-      : port === 465;
+  return nodemailer.createTransport(mailConfig.getMailConfig());
+}
 
-  const authUser = getSmtpUser();
-  const authPass = getSmtpPass();
+function logMail({ to, subject, text, html, reason }) {
+  console.log('[DEV_MAILER] Not sent (%s) – logging instead.', reason);
+  console.log('[DEV_MAILER] To:', to);
+  console.log('[DEV_MAILER] Subject:', subject);
+  if (text) console.log('[DEV_MAILER] Text:', text);
+  if (html) console.log('[DEV_MAILER] HTML:', html);
+}
 
-  return nodemailer.createTransport({
-    host: getSmtpHost(),
-    port,
-    secure,
-    auth: authUser && authPass ? { user: authUser, pass: authPass } : undefined,
-    tls: {
-        rejectUnauthorized: false
-    }
-  });
+// SMTP accepting a message is not the same as delivering it: a mistyped or non-existent
+// address is accepted here and bounces minutes later, out of band, where nothing reports
+// back to the app. Echo the plain-text body in dev so local testing never depends on the
+// recipient mailbox actually existing. The HTML part is skipped to keep the log readable.
+function logSentMail({ to, subject, text }) {
+  console.log('[DEV_MAILER] Sent to %s – %s', to, subject);
+  if (text) console.log('[DEV_MAILER] Text:', text);
 }
 
 async function sendMail({ to, subject, text, html }) {
@@ -74,24 +34,33 @@ async function sendMail({ to, subject, text, html }) {
   // Dev-safe fallback: log emails if SMTP isn't configured.
   if (!transporter) {
     if (isProd()) {
-      throw new Error('SMTP is not configured');
+      throw new Error(mailConfig.describeMissing());
     }
-    console.log('[DEV_MAILER] To:', to);
-    console.log('[DEV_MAILER] Subject:', subject);
-    if (text) console.log('[DEV_MAILER] Text:', text);
-    if (html) console.log('[DEV_MAILER] HTML:', html);
+    logMail({ to, subject, text, html, reason: mailConfig.describeMissing() });
     return { delivered: false };
   }
 
-  const info = await transporter.sendMail({
-    from: getFromAddress(),
-    to,
-    subject,
-    text,
-    html,
-  });
+  try {
+    await transporter.sendMail({
+      from: mailConfig.getFromAddress(),
+      to,
+      subject,
+      text,
+      html,
+    });
+  } catch (err) {
+    // Configured-but-broken SMTP (revoked credentials, host unreachable) used to be
+    // indistinguishable from a working mailbox: signup would hand the user an OTP screen
+    // for a code nobody could read. Outside production, fall back to the same log path we
+    // use when SMTP is absent so the flow stays completable locally.
+    if (isProd()) throw err;
+    logMail({ to, subject, text, html, reason: err.message });
+    return { delivered: false };
+  }
 
-  console.log('[MAILER] Sent:', subject, 'to', to, 'id:', info.messageId);
+  if (!isProd()) logSentMail({ to, subject, text });
+
+  console.log('[MAILER] Sent:', subject, 'to', to, 'id:');
   return { delivered: true };
 }
 
@@ -112,6 +81,23 @@ async function sendSignupOtpEmail({ to, otp, minutesValid = 10 }) {
   return sendMail({ to, subject, text, html });
 }
 
+// Sent once the emailed OTP has been confirmed, so it doubles as proof to the customer
+// that the address they registered with actually receives our mail.
+async function sendWelcomeEmail({ to, customerName }) {
+  const AccountTemplates = require('./emails/templates/AccountTemplates');
+  const name = customerName || 'there';
+  const subject = 'Welcome to AutoMatrix - your account is ready';
+  const text =
+    `Hi ${name},\n\n` +
+    `Your AutoMatrix account is verified and ready to use. You can sign in with this ` +
+    `email address and start browsing parts right away.\n\n` +
+    `Happy motoring,\nThe AutoMatrix team`;
+
+  const html = AccountTemplates.welcomeTemplate({ customerName: name });
+
+  return sendMail({ to, subject, text, html });
+}
+
 async function sendPasswordReset(email, resetLink) {
   const subject = 'Password Reset Request';
   const html = `
@@ -127,5 +113,6 @@ async function sendPasswordReset(email, resetLink) {
 module.exports = {
   sendMail,
   sendSignupOtpEmail,
-  sendPasswordReset
+  sendWelcomeEmail,
+  sendPasswordReset,
 };

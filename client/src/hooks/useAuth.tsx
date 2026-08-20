@@ -32,7 +32,7 @@ interface AuthContextType {
   shop: any | null;
   loading: boolean;
   profile: any | null;
-  signUp: (data: { email: string; password: string; fullName: string; phone?: string }) => Promise<{ error: Error | null; verificationId?: string }>;
+  signUp: (data: { email: string; password: string; fullName: string; phone?: string; address?: string }) => Promise<{ error: Error | null; verificationId?: string }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   signUpSeller: (data: any) => Promise<{ error: Error | null; verificationId?: string }>;
@@ -262,13 +262,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const signUp = async (data: { email: string; password: string; fullName: string; phone?: string }) => {
+  const signUp = async (data: { email: string; password: string; fullName: string; phone?: string; address?: string }) => {
     try {
       const response = await api.startRegister({
         email: data.email,
         password: data.password,
         fullName: data.fullName,
         phone: data.phone,
+        address: data.address,
       });
       return { error: null, verificationId: response?.verificationId };
     } catch (error: any) {

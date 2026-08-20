@@ -31,11 +31,7 @@ const Cart: React.FC = () => {
   };
 
   const subtotal = getCartTotal();
-  const totalWeight = cart.reduce((sum, item) => {
-    const weight = item?.product?.weight || 0.5;
-    return sum + (weight * item.quantity);
-  }, 0);
-  const shipping = Math.round(300 + (totalWeight * 50) + 300);
+  const shipping = subtotal > 15000 ? 0 : 500;
   const taxAmount = Math.round(subtotal * 0.18);
   const total = subtotal + shipping + taxAmount;
 

@@ -10,12 +10,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
+import { isValidSriLankanPhone, normalizeSriLankanPhone } from '@/lib/sriLankaValidation';
 
 const loginSchema = z.object({
   email: z.string().trim().min(1, "Please enter your email address").email('Invalid email address'),
   password: z.string().trim().min(8, 'Password must be at least 8 characters'),
 });
 
+// Phone and address stay optional, but when filled in they are held to the same rules
+// the Profile page enforces on save — otherwise a number accepted here is rejected the
+// first time the customer edits their profile.
 const signupSchema = z.object({
   fullName: z.string().trim().min(2, 'Name must be at least 2 characters'),
   email: z.string().trim().min(1, "Please enter your email address").email('Invalid email address'),
@@ -120,7 +124,9 @@ const CustomerAuth: React.FC = () => {
       email: signupForm.email,
       password: signupForm.password,
       fullName: signupForm.fullName,
-      phone: signupForm.phone,
+      // Store the canonical 07XXXXXXXX form, matching what Profile saves.
+      phone: signupForm.phone ? normalizeSriLankanPhone(signupForm.phone) : undefined,
+      address: signupForm.address.trim() || undefined,
     });
     setLoading(false);
     if (error) {

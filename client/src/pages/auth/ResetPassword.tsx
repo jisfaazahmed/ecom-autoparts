@@ -146,7 +146,7 @@ const ResetPassword = () => {
               </Alert>
             )}
 
-            <form onSubmit={handleResetPassword} className="space-y-4">
+            <form onSubmit={handleResetPassword} className="space-y-4" noValidate>
               <div className="space-y-2">
                 <Label htmlFor="password">New Password</Label>
                 <div className="relative">
@@ -156,8 +156,6 @@ const ResetPassword = () => {
                     placeholder="Enter new password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    required
-                    minLength={8}
                   />
                   <Button
                     type="button"
@@ -183,8 +181,6 @@ const ResetPassword = () => {
                   placeholder="Confirm new password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  minLength={8}
                 />
               </div>
 
@@ -285,7 +281,7 @@ const ResetPassword = () => {
             </Alert>
           )}
 
-          <form onSubmit={handleRequestReset} className="space-y-4">
+          <form onSubmit={handleRequestReset} className="space-y-4" noValidate>
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
               <div className="relative">
@@ -297,7 +293,6 @@ const ResetPassword = () => {
                   className="pl-10"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  required
                 />
               </div>
             </div>

@@ -128,7 +128,8 @@ module.exports.trackShipment = async (req, res) => {
 
 module.exports.getVendorShipments = async (req, res) => {
     try {
-        const { status, page = 1, limit = 10 } = req.query;
+        const { status } = req.query;
+        const { page, limit } = req.pagination || { page: 1, limit: 10 };
 
         const userId = req.user?._id || req.user?.id;
         const query = { vendor: userId };
@@ -165,7 +166,7 @@ module.exports.getVendorShipments = async (req, res) => {
 
 exports.getCustomerShipments = async (req, res) => {
     try {
-        const { page = 1, limit = 10 } = req.query;
+        const { page, limit } = req.pagination || { page: 1, limit: 10 };
         const userId = req.user?._id || req.user?.id;
 
         const shipments = await shipping.find({ customer: userId })

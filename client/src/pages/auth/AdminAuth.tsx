@@ -130,7 +130,7 @@ const AdminAuth: React.FC = () => {
         });
         return;
       }
-    } catch (profileError: unknown) {
+    } catch (profileError) {
       setLoading(false);
       toast({
         title: 'Profile Error',

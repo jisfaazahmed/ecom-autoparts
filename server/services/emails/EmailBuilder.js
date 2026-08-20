@@ -1,3 +1,9 @@
+// Every template below builds links from FRONTEND_URL, but only CLIENT_URL is ever set
+// (server/.env, docker-compose). Without this the whole app mails out href="undefined"
+// links. Resolve it once here, since every template goes through EmailBuilder.
+process.env.FRONTEND_URL =
+    process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:3000';
+
 const theme = {
     primary: '#2563EB',
     secondary: '#1E3A8A',
@@ -9,7 +15,7 @@ const theme = {
     text: '#1F2937',
     textLight: '#6B7280',
     border: '#E5E7EB',
-    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
 };
 
 const EmailBuilder = {
