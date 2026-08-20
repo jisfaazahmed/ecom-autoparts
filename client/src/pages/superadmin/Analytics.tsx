@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { BarChart3, DollarSign, TrendingUp, ShoppingBag, Users, Package, Loader2, Calendar, ArrowUpRight, ArrowDownRight, Download } from 'lucide-react';
+import { BarChart3, DollarSign, TrendingUp, ShoppingBag, Users, Package, Loader2, Calendar, ArrowUpRight, ArrowDownRight, Download, Clock, RefreshCw, Truck, CheckCircle2, XCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -102,7 +102,7 @@ const SuperAdminAnalytics: React.FC = () => {
       const categories = await api.getCategories().catch(() => []);
       const categoryNameMap = new Map((categories || []).map((cat: { id: string; name: string }) => [String(cat.id), String(cat.name)]));
 
-      const categoryColors = ['hsl(190, 100%, 50%)', 'hsl(270, 100%, 60%)', 'hsl(330, 100%, 60%)', 'hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)'];
+      const categoryColors = ['#0e7490', '#22d3ee', '#67e8f9', '#a5f3fc', '#cffafe'];
       const topCats = (data.topCategories || []).map((c, idx) => ({
         name: categoryNameMap.get(c.categoryId) || (c.categoryId === 'null' ? 'Uncategorized' : 'Other'),
         value: c.earnings,
@@ -279,18 +279,36 @@ const SuperAdminAnalytics: React.FC = () => {
           <Card className="lg:col-span-2 glass-card">
             <CardHeader><CardTitle className="font-display flex items-center gap-2"><TrendingUp className="h-5 w-5 text-primary" />Sales & Commission Trend</CardTitle></CardHeader>
             <CardContent>
-              <div className="h-[250px] lg:h-[300px]">
+              <div className="h-[330px] lg:h-[400px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={salesByMonth}>
+                  <AreaChart data={salesByMonth} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
                     <defs>
                       <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(190, 100%, 50%)" stopOpacity={0.3} /><stop offset="95%" stopColor="hsl(190, 100%, 50%)" stopOpacity={0} /></linearGradient>
                       <linearGradient id="commissionGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0.3} /><stop offset="95%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0} /></linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(240, 10%, 18%)" />
-                    <XAxis dataKey="month" stroke="hsl(215, 20%, 55%)" fontSize={12} />
-                    <YAxis stroke="hsl(215, 20%, 55%)" fontSize={12} tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(240, 10%, 18%)" vertical={false} />
+                    <XAxis 
+                      dataKey="month" 
+                      stroke="hsl(215, 20%, 55%)" 
+                      fontSize={12} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      interval={0}
+                      angle={-45}
+                      textAnchor="end"
+                      height={60}
+                      dy={10}
+                    />
+                    <YAxis 
+                      stroke="hsl(215, 20%, 55%)" 
+                      fontSize={12} 
+                      tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      width={45} 
+                    />
                     <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} formatter={(value: number) => formatLKR(value)} />
-                    <Legend />
+                    <Legend verticalAlign="top" height={36} iconType="circle" />
                     <Area type="monotone" dataKey="sales" stroke="hsl(190, 100%, 50%)" fill="url(#salesGradient)" strokeWidth={2} name="Sales" />
                     <Area type="monotone" dataKey="commission" stroke="hsl(142, 76%, 36%)" fill="url(#commissionGradient)" strokeWidth={2} name="Commission" />
                   </AreaChart>
@@ -302,12 +320,63 @@ const SuperAdminAnalytics: React.FC = () => {
           <Card className="glass-card">
             <CardHeader><CardTitle className="font-display flex items-center gap-2"><ShoppingBag className="h-5 w-5 text-primary" />Orders by Status</CardTitle></CardHeader>
             <CardContent>
-              <div className="h-[180px] lg:h-[200px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart><Pie data={ordersByStatus.filter(s => s.value > 0)} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" strokeWidth={0}>{ordersByStatus.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} /></PieChart>
-                </ResponsiveContainer>
+              <div className="relative h-[180px] lg:h-[200px]">
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-0">
+                  <span className="text-2xl font-bold font-display leading-none text-foreground">
+                    {ordersByStatus.reduce((acc, curr) => acc + curr.value, 0)}
+                  </span>
+                  <span className="text-xs text-muted-foreground mt-1">Total Orders</span>
+                </div>
+                <div className="absolute inset-0 z-10">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie 
+                        data={ordersByStatus.filter(s => s.value > 0)} 
+                        cx="50%" cy="50%" 
+                        innerRadius={50} outerRadius={70} 
+                        dataKey="value" 
+                        nameKey="name"
+                        strokeWidth={0}
+                        startAngle={90}
+                        endAngle={-270}
+                      >
+                        {ordersByStatus.filter(s => s.value > 0).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                      </Pie>
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} 
+                        itemStyle={{ color: '#f8fafc' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
-              <div className="space-y-2 mt-4">{ordersByStatus.map(item => (<div key={item.name} className="flex items-center justify-between text-sm"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} /><span className="text-muted-foreground">{item.name}</span></div><span className="font-medium">{item.value}</span></div>))}</div>
+              <div className="space-y-1.5 mt-4">
+                {ordersByStatus.map(item => {
+                  const totalStatusOrders = ordersByStatus.reduce((acc, curr) => acc + curr.value, 0);
+                  const percentage = totalStatusOrders > 0 ? Math.round((item.value / totalStatusOrders) * 100) : 0;
+                  
+                  let StatusIcon = Clock;
+                  if (item.name === 'Processing') StatusIcon = RefreshCw;
+                  if (item.name === 'Shipped') StatusIcon = Truck;
+                  if (item.name === 'Delivered') StatusIcon = CheckCircle2;
+                  if (item.name === 'Cancelled') StatusIcon = XCircle;
+                  
+                  return (
+                    <div key={item.name} className="flex items-center text-sm py-0.5">
+                      <div className="flex items-center gap-2.5 flex-1">
+                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                          <StatusIcon className="w-3.5 h-3.5" />
+                          <span>{item.name}</span>
+                        </div>
+                      </div>
+                      <div className="w-24 text-right font-medium text-foreground">
+                        {item.value} <span className="text-muted-foreground font-normal">({percentage}%)</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -322,7 +391,7 @@ const SuperAdminAnalytics: React.FC = () => {
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(240, 10%, 18%)" />
                     <XAxis dataKey="month" stroke="hsl(215, 20%, 55%)" fontSize={12} />
                     <YAxis stroke="hsl(215, 20%, 55%)" fontSize={12} />
-                    <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} />
+                    <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} itemStyle={{ color: '#f8fafc' }} />
                     <Bar dataKey="orders" fill="hsl(270, 100%, 60%)" radius={[4, 4, 0, 0]} name="Orders" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -339,7 +408,7 @@ const SuperAdminAnalytics: React.FC = () => {
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(240, 10%, 18%)" />
                     <XAxis type="number" stroke="hsl(215, 20%, 55%)" fontSize={12} tickFormatter={(v) => formatLKRCompact(v)} />
                     <YAxis type="category" dataKey="name" stroke="hsl(215, 20%, 55%)" width={80} fontSize={12} />
-                    <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} formatter={(value: number) => formatLKR(value)} />
+                    <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} itemStyle={{ color: '#f8fafc' }} formatter={(value: number) => formatLKR(value)} />
                     <Bar dataKey="value" radius={[0, 4, 4, 0]} name="Earnings">{topCategories.map((_, index) => <Cell key={`cell-${index}`} fill={topCategories[index]?.color} />)}</Bar>
                   </BarChart>
                 </ResponsiveContainer>
