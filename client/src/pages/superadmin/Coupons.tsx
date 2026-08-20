@@ -155,10 +155,10 @@ const SuperAdminCoupons: React.FC = () => {
       });
       setBulkDialogOpen(false);
       fetchCoupons();
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: 'Error',
-        description: error.message || 'Failed to generate coupons in bulk',
+        description: error instanceof Error ? error.message : 'Failed to generate coupons in bulk',
         variant: 'destructive'
       });
     } finally {
