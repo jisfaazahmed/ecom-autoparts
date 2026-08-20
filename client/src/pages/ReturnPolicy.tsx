@@ -11,6 +11,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import { useSeo } from '@/hooks/useSeo';
 
 interface PolicySection {
   title: string;
@@ -107,6 +108,12 @@ const RETURN_POLICY_FALLBACK: Policy = {
 };
 
 const ReturnPolicy: React.FC = () => {
+  useSeo({
+    title: 'Return Policy',
+    description:
+      'How returns work on AutoMatrix: eligibility windows, condition requirements, non-returnable items and how refunds are issued.',
+    path: '/policy/return',
+  });
   const [policy, setPolicy] = useState<Policy | null>(RETURN_POLICY_FALLBACK);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<string>('0');

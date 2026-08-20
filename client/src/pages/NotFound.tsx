@@ -1,7 +1,9 @@
 import { useLocation } from "react-router-dom";
 import { useEffect } from "react";
+import { useSeo } from "@/hooks/useSeo";
 
 const NotFound = () => {
+  useSeo({ title: "Page Not Found", description: "This page does not exist.", noindex: true });
   const location = useLocation();
 
   useEffect(() => {

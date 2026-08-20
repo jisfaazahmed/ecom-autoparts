@@ -11,6 +11,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
 import { isValidSriLankanPhone, normalizeSriLankanPhone } from '@/lib/sriLankaValidation';
+import { useSeo } from '@/hooks/useSeo';
 
 const loginSchema = z.object({
   email: z.string().trim().min(1, "Please enter your email address").email('Invalid email address'),
@@ -34,6 +35,7 @@ const signupSchema = z.object({
 });
 
 const CustomerAuth: React.FC = () => {
+  useSeo({ title: 'Sign In or Create an Account', noindex: true });
   const navigate = useNavigate();
   const location = useLocation();
   const { signIn, signUp, verifySignupOtp, resendSignupOtp, user } = useAuth();

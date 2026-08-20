@@ -9,8 +9,10 @@ import { api, ApiProduct } from '@/lib/api';
 import { useStore } from '@/store/useStore';
 import { formatLKR } from '@/lib/currency';
 import { toast } from 'sonner';
+import { useSeo } from '@/hooks/useSeo';
 
 const Wishlist: React.FC = () => {
+  useSeo({ title: 'Wishlist', noindex: true });
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const { addToCart, setWishlistIds, toggleWishlistId } = useStore();

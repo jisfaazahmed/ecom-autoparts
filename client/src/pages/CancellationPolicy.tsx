@@ -11,6 +11,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import { useSeo } from '@/hooks/useSeo';
 
 interface Policy {
   _id?: string;
@@ -96,6 +97,12 @@ const CANCELLATION_POLICY_FALLBACK: Policy = {
 };
 
 const CancellationPolicy: React.FC = () => {
+  useSeo({
+    title: 'Cancellation Policy',
+    description:
+      'When an AutoMatrix order can be cancelled, how to request a cancellation and how cancelled orders are refunded.',
+    path: '/policy/cancellation',
+  });
   const [policy, setPolicy] = useState<Policy | null>(CANCELLATION_POLICY_FALLBACK);
   const [loading, setLoading] = useState(true);
 

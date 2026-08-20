@@ -21,8 +21,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useSeo } from '@/hooks/useSeo';
 
 const MyVehicle: React.FC = () => {
+  useSeo({ title: 'My Garage', noindex: true });
   const { user } = useAuth();
   const { toast } = useToast();
   const { setUserVehicle } = useStore();

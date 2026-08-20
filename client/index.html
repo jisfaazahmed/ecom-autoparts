@@ -3,23 +3,103 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="theme-color" content="#00a6d6" />
-    <!-- TODO: Set the document title to the name of your application -->
-    <title>Ecom-autoparts</title>
-    <!-- TODO: Update og:title to match your application name -->
-    <meta
-      property="og:title"
-      content="ecom-autoparts"/>
-    <meta property="og:description" content="ecom-autoparts Project" />
-    <meta property="og:type" content="website" />
 
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:site" content="@Lovable" />
+    <title>AutoMatrix | Genuine & Performance Auto Parts Marketplace Sri Lanka</title>
     <meta
-      name="twitter:image"
-      content="https://lovable.dev/opengraph-image-p98pqg.png"
+      name="description"
+      content="Shop genuine and performance auto parts from verified Sri Lankan sellers. Filter by your exact vehicle make, model and year, compare prices in LKR and get island-wide delivery with 30-day returns."
     />
+    <meta name="author" content="AutoMatrix" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
+    <link rel="canonical" href="https://automobiles.live/" />
+
+    <!-- Icons -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
+    <link rel="icon" sizes="any" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link rel="mask-icon" href="/favicon.svg" color="#00a6d6" />
+
+    <!-- Theme / PWA -->
+    <meta name="theme-color" content="#00a6d6" />
+    <meta name="application-name" content="AutoMatrix" />
+    <meta name="apple-mobile-web-app-title" content="AutoMatrix" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- Open Graph -->
+    <meta property="og:site_name" content="AutoMatrix" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://automobiles.live/" />
+    <meta property="og:title" content="AutoMatrix | Auto Parts Marketplace Sri Lanka" />
+    <meta
+      property="og:description"
+      content="Thousands of genuine and performance parts from verified sellers. Smart compatibility filtering makes sure every part fits your vehicle."
+    />
+    <!-- No og:image:width/height: product routes swap this image at runtime
+         (see src/hooks/useSeo.ts), so fixed dimensions would be wrong. -->
+    <meta property="og:image" content="https://automobiles.live/og-image.jpg" />
+    <meta property="og:image:alt" content="AutoMatrix — performance auto parts marketplace" />
+    <meta property="og:locale" content="en_LK" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="AutoMatrix | Auto Parts Marketplace Sri Lanka" />
+    <meta
+      name="twitter:description"
+      content="Thousands of genuine and performance parts from verified sellers. Smart compatibility filtering makes sure every part fits your vehicle."
+    />
+    <meta name="twitter:image" content="https://automobiles.live/og-image.jpg" />
+
+    <!-- Preconnect to the Google Fonts hosts used by src/index.css -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://automobiles.live/#organization",
+            "name": "AutoMatrix",
+            "url": "https://automobiles.live/",
+            "logo": "https://automobiles.live/web-app-manifest-512x512.png",
+            "description": "Multi-vendor marketplace for genuine and performance automotive parts in Sri Lanka.",
+            "areaServed": { "@type": "Country", "name": "Sri Lanka" }
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://automobiles.live/#website",
+            "url": "https://automobiles.live/",
+            "name": "AutoMatrix",
+            "publisher": { "@id": "https://automobiles.live/#organization" },
+            "inLanguage": "en",
+            "potentialAction": {
+              "@type": "SearchAction",
+              "target": {
+                "@type": "EntryPoint",
+                "urlTemplate": "https://automobiles.live/shop?search={search_term_string}"
+              },
+              "query-input": "required name=search_term_string"
+            }
+          },
+          {
+            "@type": "OnlineStore",
+            "@id": "https://automobiles.live/#store",
+            "name": "AutoMatrix",
+            "url": "https://automobiles.live/",
+            "image": "https://automobiles.live/og-image.jpg",
+            "parentOrganization": { "@id": "https://automobiles.live/#organization" },
+            "currenciesAccepted": "LKR",
+            "paymentAccepted": "Credit Card, Debit Card, Cash on Delivery"
+          }
+        ]
+      }
+    </script>
   </head>
 
   <body>

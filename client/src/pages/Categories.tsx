@@ -4,12 +4,19 @@ import { motion } from 'framer-motion';
 import { ArrowRight, Cog, Disc, Zap, Car, Gauge, CircleDot, Lightbulb, Loader2 } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
 import { api, ApiCategory } from '@/lib/api';
+import { useSeo } from '@/hooks/useSeo';
 
 const iconMap: Record<string, React.ElementType> = {
   Cog, Disc, Zap, Car, Armchair: Car, Gauge, CircleDot, Lightbulb
 };
 
 const Categories: React.FC = () => {
+  useSeo({
+    title: 'Auto Parts Categories — Engine, Brakes, Suspension & More',
+    description:
+      'Shop auto parts by category: engine and drivetrain, brakes, suspension, electrical, lighting, interior and more, all from verified Sri Lankan sellers.',
+    path: '/categories',
+  });
   const [categories, setCategories] = useState<ApiCategory[]>([]);
   const [loading, setLoading] = useState(true);
 

@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import Navbar from '@/components/layout/Navbar';
 import { toast } from 'sonner';
+import { useSeo } from '@/hooks/useSeo';
 
 const PaymentCancel: React.FC = () => {
+  useSeo({ title: 'Payment Cancelled', noindex: true });
   const navigate = useNavigate();
 
   useEffect(() => {

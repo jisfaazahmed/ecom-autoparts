@@ -13,12 +13,19 @@ import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
 import { api, ApiProduct, ApiCategory } from '@/lib/api';
 import heroImage from '@/assets/hero-automotive.jpg';
+import { useSeo } from '@/hooks/useSeo';
 
 const iconMap: Record<string, React.ElementType> = {
   Cog, Disc, Zap, Car, Armchair: Car, Gauge, CircleDot, Lightbulb
 };
 
 const Index: React.FC = () => {
+  useSeo({
+    title: 'AutoMatrix | Genuine & Performance Auto Parts Marketplace Sri Lanka',
+    description:
+      'Shop genuine and performance auto parts from verified Sri Lankan sellers. Filter by your exact make, model and year, compare prices in LKR and get island-wide delivery.',
+    path: '/',
+  });
   const { userVehicle } = useStore();
   const { user } = useAuth();
   const navigate = useNavigate();

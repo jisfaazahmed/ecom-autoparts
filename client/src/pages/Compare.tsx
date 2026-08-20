@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { useStore, CompareItem } from '@/store/useStore';
 import { formatLKR } from '@/lib/currency';
 import { toast } from 'sonner';
+import { useSeo } from '@/hooks/useSeo';
 
 const MAX_COMPARE = 4;
 
@@ -21,6 +22,7 @@ const ROWS: { label: string; key: keyof CompareItem }[] = [
 ];
 
 const Compare: React.FC = () => {
+  useSeo({ title: 'Compare Parts', noindex: true });
   const { compareItems, removeFromCompare, clearCompare, addToCart } = useStore();
 
   const handleAddToCart = (item: CompareItem) => {

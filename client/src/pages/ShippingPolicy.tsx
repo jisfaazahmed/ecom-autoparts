@@ -12,6 +12,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { formatLKR } from '@/lib/currency';
+import { useSeo } from '@/hooks/useSeo';
 
 interface Policy {
   _id?: string;
@@ -94,6 +95,12 @@ const SHIPPING_POLICY_FALLBACK: Policy = {
 };
 
 const ShippingPolicy: React.FC = () => {
+  useSeo({
+    title: 'Shipping Policy',
+    description:
+      'Delivery zones, dispatch times and shipping rates for auto parts ordered on AutoMatrix, including free-delivery thresholds.',
+    path: '/policy/shipping',
+  });
   const [policy, setPolicy] = useState<Policy | null>(SHIPPING_POLICY_FALLBACK);
   const [loading, setLoading] = useState(true);
 

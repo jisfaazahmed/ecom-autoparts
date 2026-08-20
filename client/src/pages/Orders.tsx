@@ -36,6 +36,7 @@ import { formatLKR } from '@/lib/currency';
 import OrderDetailsDialog from '@/components/orders/OrderDetailsDialog';
 import CancelOrderDialog from '@/components/orders/CancelOrderDialog';
 import { useToast } from '@/hooks/use-toast';
+import { useSeo } from '@/hooks/useSeo';
 
 const statusConfig: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
   pending: {
@@ -115,6 +116,7 @@ const shouldAutoRedirectToInvoice = (order: ApiOrder) => {
 };
 
 const Orders: React.FC = () => {
+  useSeo({ title: 'My Orders', noindex: true });
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();

@@ -10,6 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { api } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
+import { useSeo } from '@/hooks/useSeo';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -17,6 +18,7 @@ const loginSchema = z.object({
 });
 
 const AdminAuth: React.FC = () => {
+  useSeo({ title: 'Admin Portal Sign In', noindex: true });
   const navigate = useNavigate();
   const { signIn, signOut, user, role } = useAuth();
   const { toast } = useToast();

@@ -16,8 +16,10 @@ import {
 import Navbar from '@/components/layout/Navbar';
 import { useStore } from '@/store/useStore';
 import { formatLKR } from '@/lib/currency';
+import { useSeo } from '@/hooks/useSeo';
 
 const Cart: React.FC = () => {
+  useSeo({ title: 'Your Cart', noindex: true });
   const [confirmClearOpen, setConfirmClearOpen] = useState(false);
   const { cart, removeFromCart, updateQuantity, getCartTotal, clearCart } = useStore();
 

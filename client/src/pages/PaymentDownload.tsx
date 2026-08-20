@@ -8,10 +8,12 @@ import Navbar from '@/components/layout/Navbar';
 import { useStore } from '@/store/useStore';
 import { api, ApiOrder } from '@/lib/api';
 import { toast } from 'sonner';
+import { useSeo } from '@/hooks/useSeo';
 
 type PaymentDownloadOrder = ApiOrder & { guestInvoiceToken?: string };
 
 const PaymentDownload: React.FC = () => {
+  useSeo({ title: 'Invoice Download', noindex: true });
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { clearCart } = useStore();

@@ -25,6 +25,7 @@ import {
   SRI_LANKA_DISTRICTS,
   resolveSriLankanDistrict,
 } from '@/lib/sriLankaValidation';
+import { useSeo } from '@/hooks/useSeo';
 
 const profileSchema = z.object({
   fullName: z.string().transform(normalizeWhitespace),
@@ -100,6 +101,7 @@ const profileSchema = z.object({
 });
 
 const Profile: React.FC = () => {
+  useSeo({ title: 'My Profile', noindex: true });
   const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
 

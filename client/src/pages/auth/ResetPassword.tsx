@@ -10,6 +10,7 @@ import { api } from "@/lib/api";
 import { Shield, Eye, EyeOff, Loader2, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { useSeo } from '@/hooks/useSeo';
 
 const resetRequestSchema = z.object({
   email: z.string().trim().min(1, "Please enter your email address").email("Please enter a valid email address"),
@@ -25,6 +26,7 @@ const newPasswordSchema = z
   .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character");
 
 const ResetPassword = () => {
+  useSeo({ title: 'Reset Your Password', noindex: true });
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const resetToken = searchParams.get('token');

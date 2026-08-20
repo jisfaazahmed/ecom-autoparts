@@ -26,6 +26,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { api, ApiProduct, ApiReview } from '@/lib/api';
 import { formatLKR } from '@/lib/currency';
 import { useToast } from '@/hooks/use-toast';
+import { useSeo, absoluteUrl } from '@/hooks/useSeo';
 
 const ProductDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -45,6 +46,49 @@ const ProductDetail: React.FC = () => {
   const [savingEditId, setSavingEditId] = useState<string | null>(null);
   const [newRating, setNewRating] = useState(5);
   const [newComment, setNewComment] = useState('');
+
+  const seoProductId = product?.id || product?._id || id || '';
+  useSeo({
+    title: product ? `${product.name} — ${product.category?.name || 'Auto Parts'}` : 'Product',
+    description: product
+      ? (
+          product.description ||
+          `Buy ${product.name} from ${product.shop?.name || 'a verified seller'} on AutoMatrix.`
+        ).slice(0, 300)
+      : undefined,
+    path: seoProductId ? `/product/${seoProductId}` : undefined,
+    image: product?.imageUrl,
+    type: 'product',
+    noindex: !loading && !product,
+    jsonLd: product
+      ? {
+          '@context': 'https://schema.org',
+          '@type': 'Product',
+          name: product.name,
+          description: product.description || undefined,
+          image: product.imageUrl ? absoluteUrl(product.imageUrl) : undefined,
+          sku: product.sku || undefined,
+          category: product.category?.name || undefined,
+          offers: {
+            '@type': 'Offer',
+            price: product.price,
+            priceCurrency: 'LKR',
+            availability:
+              product.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+            url: absoluteUrl(`/product/${seoProductId}`),
+            seller: { '@type': 'Organization', name: product.shop?.name || 'AutoMatrix' },
+          },
+          aggregateRating:
+            product.reviewCount && product.rating
+              ? {
+                  '@type': 'AggregateRating',
+                  ratingValue: product.rating,
+                  reviewCount: product.reviewCount,
+                }
+              : undefined,
+        }
+      : null,
+  });
 
   useEffect(() => {
     const fetchProduct = async () => {

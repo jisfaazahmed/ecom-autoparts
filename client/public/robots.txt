@@ -1,0 +1,20 @@
+User-agent: *
+Allow: /
+
+# Private / transactional areas — nothing here is useful in a search result.
+Disallow: /admin
+Disallow: /superadmin
+Disallow: /auth/
+Disallow: /cart
+Disallow: /checkout
+Disallow: /orders
+Disallow: /returns
+Disallow: /profile
+Disallow: /wishlist
+Disallow: /compare
+Disallow: /my-vehicle
+Disallow: /payment/
+Disallow: /track-order
+Disallow: /api/
+
+Sitemap: https://automobiles.live/sitemap.xml

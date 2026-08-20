@@ -11,6 +11,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import { useSeo } from '@/hooks/useSeo';
 
 interface Policy {
   _id?: string;
@@ -86,6 +87,12 @@ const TERMS_POLICY_FALLBACK: Policy = {
 };
 
 const TermsConditions: React.FC = () => {
+  useSeo({
+    title: 'Terms & Conditions',
+    description:
+      'The terms governing use of the AutoMatrix marketplace by buyers and sellers, including orders, payments and liability.',
+    path: '/policy/terms',
+  });
   const [policy, setPolicy] = useState<Policy | null>(TERMS_POLICY_FALLBACK);
   const [loading, setLoading] = useState(true);
 

@@ -7,8 +7,15 @@ import PaginationControls from '@/components/common/PaginationControls';
 import { api, ApiProduct, ApiCoupon } from '@/lib/api';
 import { usePagination } from '@/hooks/usePagination';
 import { formatLKR } from '@/lib/currency';
+import { useSeo } from '@/hooks/useSeo';
 
 const Deals: React.FC = () => {
+  useSeo({
+    title: 'Deals & Discounts on Auto Parts',
+    description:
+      'Live discounts and coupon codes on genuine and performance auto parts. Limited-time offers from verified sellers, priced in LKR.',
+    path: '/deals',
+  });
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [coupons, setCoupons] = useState<ApiCoupon[]>([]);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);

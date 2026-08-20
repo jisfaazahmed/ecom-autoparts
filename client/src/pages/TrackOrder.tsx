@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { api, ApiOrder } from '@/lib/api';
+import { useSeo } from '@/hooks/useSeo';
 
 interface TrackingTimelineItem {
   event: string;
@@ -73,6 +74,12 @@ const formatDateTime = (value?: string) => {
 };
 
 const TrackOrder: React.FC = () => {
+  useSeo({
+    title: 'Track Your Order',
+    description: 'Track an AutoMatrix order with your order number and email address.',
+    path: '/track-order',
+    noindex: true,
+  });
   const [searchParams, setSearchParams] = useSearchParams();
   const initialTracking = searchParams.get('tracking') || '';
 

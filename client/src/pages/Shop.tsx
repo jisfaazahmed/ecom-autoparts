@@ -30,6 +30,7 @@ import { Badge } from '@/components/ui/badge';
 import { api, ApiProduct, ApiCategory } from '@/lib/api';
 import { usePagination } from '@/hooks/usePagination';
 import type { Vehicle } from '@/types';
+import { useSeo } from '@/hooks/useSeo';
 
 function getProductCompatibility(
   product: ApiProduct,
@@ -81,6 +82,16 @@ const Shop: React.FC = () => {
   const { userVehicle } = useStore();
   const searchFromUrl = searchParams.get('search') || '';
   const categoryFromUrl = searchParams.get('category') || 'all';
+
+  useSeo({
+    title: searchFromUrl
+      ? `${searchFromUrl} — Auto Parts Search`
+      : 'Shop Auto Parts — Filtered To Fit Your Vehicle',
+    description:
+      'Browse thousands of car, van and SUV parts from verified sellers. Narrow by category, price and vehicle compatibility so every result fits your vehicle.',
+    // Filter and search permutations all fold back to the clean /shop URL.
+    path: '/shop',
+  });
 
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [categories, setCategories] = useState<ApiCategory[]>([]);

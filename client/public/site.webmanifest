@@ -1,0 +1,44 @@
+{
+  "name": "AutoMatrix — Auto Parts Marketplace",
+  "short_name": "AutoMatrix",
+  "description": "Genuine and performance auto parts from verified Sri Lankan sellers, filtered to fit your exact vehicle.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#09090b",
+  "theme_color": "#00a6d6",
+  "lang": "en",
+  "categories": ["shopping", "automotive"],
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    },
+    {
+      "src": "/web-app-manifest-192x192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any"
+    },
+    {
+      "src": "/web-app-manifest-512x512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    },
+    {
+      "src": "/maskable-icon-512x512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    { "name": "Shop all parts", "url": "/shop" },
+    { "name": "Deals", "url": "/deals" },
+    { "name": "My orders", "url": "/orders" }
+  ]
+}

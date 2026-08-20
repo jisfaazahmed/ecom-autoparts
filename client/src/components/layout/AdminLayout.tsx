@@ -30,6 +30,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
+import { useSeo } from '@/hooks/useSeo';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -68,6 +69,12 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
   const signOut = logout;
 
   const links = role === 'superadmin' ? superAdminLinks : adminLinks;
+  const activeLink = links.find((link) => link.href === location.pathname);
+
+  useSeo({
+    title: `${activeLink?.label ?? 'Dashboard'} — ${role === 'superadmin' ? 'Super Admin' : 'Admin'}`,
+    noindex: true,
+  });
 
   const handleSignOut = async () => {
     await signOut();

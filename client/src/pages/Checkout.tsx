@@ -31,6 +31,7 @@ import {
   SRI_LANKA_DISTRICTS,
   resolveSriLankanDistrict,
 } from '@/lib/sriLankaValidation';
+import { useSeo } from '@/hooks/useSeo';
 
 interface StockIssue {
   productId: string;
@@ -276,6 +277,7 @@ function InlineCardForm({
 }
 
 export default function Checkout() {
+  useSeo({ title: 'Checkout', noindex: true });
   const navigate = useNavigate();
   const { cart, clearCart, getCartTotal } = useStore();
   const { user } = useAuth();

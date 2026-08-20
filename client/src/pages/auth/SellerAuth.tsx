@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { z } from 'zod';
+import { useSeo } from '@/hooks/useSeo';
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -29,6 +30,7 @@ const signupSchema = z.object({
 });
 
 const SellerAuth: React.FC = () => {
+  useSeo({ title: 'Seller Portal Sign In', noindex: true });
   const navigate = useNavigate();
   const { signIn, signUpSeller, verifySignupOtp, resendSignupOtp, user, role } = useAuth();
   const { toast } = useToast();
