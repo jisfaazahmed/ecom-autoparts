@@ -1742,6 +1742,13 @@ class ApiClient {
     });
   }
 
+  async bulkCreateCoupons(data: Partial<ApiCoupon> & { count: number; prefix?: string }): Promise<{ count: number; coupons: ApiCoupon[] }> {
+    return this.request<{ count: number; coupons: ApiCoupon[] }>('/coupons/bulk', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   async updateCoupon(id: string, data: Partial<ApiCoupon>): Promise<ApiCoupon> {
     return this.request<ApiCoupon>(`/coupons/${id}`, {
       method: 'PUT',

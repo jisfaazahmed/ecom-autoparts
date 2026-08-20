@@ -8,6 +8,7 @@ router.get('/public/active', couponController.getPublicActiveCoupons);
 
 // Super Admin: coupon management
 router.get('/', verifyToken, isSuperAdmin, couponController.getCoupons);
+router.post('/bulk', verifyToken, isSuperAdmin, couponController.bulkCreateCoupons);
 router.get('/:id', verifyToken, isSuperAdmin, couponController.getCoupon);
 router.post('/', verifyToken, isSuperAdmin, couponController.createCoupon);
 router.put('/:id', verifyToken, isSuperAdmin, couponController.updateCoupon);

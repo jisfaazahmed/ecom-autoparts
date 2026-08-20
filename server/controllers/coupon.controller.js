@@ -1,4 +1,5 @@
 const Coupon = require('../models/coupon.model');
+const crypto = require('crypto');
 
 function normalizeDiscountType(type) {
   const value = String(type || '').toLowerCase();
@@ -208,6 +209,66 @@ exports.createCoupon = async (req, res) => {
       return res.status(409).json({ message: 'Coupon code already exists' });
     }
     res.status(500).json({ message: error.message || 'Failed to create coupon' });
+  }
+};
+
+exports.bulkCreateCoupons = async (req, res) => {
+  try {
+    const count = parseInt(req.body?.count, 10);
+    const prefix = String(req.body?.prefix || '').trim().toUpperCase();
+
+    if (!Number.isFinite(count) || count < 1 || count > 500) {
+      return res.status(400).json({ message: 'Count must be a number between 1 and 500' });
+    }
+
+    const discountType = normalizeDiscountType(req.body?.discountType);
+    const discountValue = Number(req.body?.discountValue || 0);
+
+    if (!Number.isFinite(discountValue) || discountValue <= 0) {
+      return res.status(400).json({ message: 'Discount value must be greater than zero' });
+    }
+
+    if (discountType === 'percentage' && discountValue > 100) {
+      return res.status(400).json({ message: 'Percentage discount cannot exceed 100' });
+    }
+
+    const basePayload = {
+      description: req.body?.description || '',
+      discountType,
+      discountValue,
+      minimumOrderAmount: Number(req.body?.minimumOrderAmount || 0),
+      maxUses: req.body?.maxUses ? Number(req.body.maxUses) : null,
+      validFrom: req.body?.validFrom ? new Date(req.body.validFrom) : new Date(),
+      validUntil: req.body?.validUntil ? new Date(req.body.validUntil) : null,
+      isActive: req.body?.isActive !== false,
+      shopId: req.body?.shopId || null,
+    };
+
+    const couponsToInsert = [];
+    for (let i = 0; i < count; i++) {
+      const randomString = crypto.randomBytes(4).toString('hex').toUpperCase(); // 8 chars
+      const code = prefix ? `${prefix}${randomString}` : randomString;
+      couponsToInsert.push({ ...basePayload, code });
+    }
+
+    const result = await Coupon.insertMany(couponsToInsert, { ordered: false });
+    
+    res.status(201).json({
+      count: result.length,
+      coupons: result.map(mapCoupon)
+    });
+  } catch (error) {
+    if (error?.code === 11000) {
+      const insertedDocs = error?.insertedDocs || [];
+      if (insertedDocs.length > 0) {
+        return res.status(201).json({
+          count: insertedDocs.length,
+          coupons: insertedDocs.map(mapCoupon),
+          message: `Generated ${insertedDocs.length} coupons, some failed due to collision.`
+        });
+      }
+    }
+    res.status(500).json({ message: error.message || 'Failed to bulk create coupons' });
   }
 };
 

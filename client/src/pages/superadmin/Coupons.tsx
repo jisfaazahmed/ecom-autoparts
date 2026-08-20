@@ -72,6 +72,19 @@ const SuperAdminCoupons: React.FC = () => {
   const [couponToDelete, setCouponToDelete] = useState<Coupon | null>(null);
   const [formData, setFormData] = useState(emptyCoupon);
 
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [bulkGenerating, setBulkGenerating] = useState(false);
+  const [bulkFormData, setBulkFormData] = useState({
+    count: '10',
+    prefix: '',
+    discountType: 'percentage',
+    discountValue: '',
+    minimumOrderAmount: '',
+    maxUses: '1',
+    validFrom: new Date().toISOString().split('T')[0],
+    validUntil: '',
+  });
+
   useEffect(() => {
     fetchCoupons();
   }, []);
@@ -109,6 +122,48 @@ const SuperAdminCoupons: React.FC = () => {
       validUntil: coupon.validUntil?.split('T')[0] || '',
     });
     setDialogOpen(true);
+  };
+
+  const handleBulkGenerate = async () => {
+    if (!bulkFormData.discountValue || !bulkFormData.count) {
+      toast({ title: 'Error', description: 'Count and discount value are required', variant: 'destructive' });
+      return;
+    }
+    
+    const count = parseInt(bulkFormData.count, 10);
+    if (isNaN(count) || count < 1 || count > 500) {
+      toast({ title: 'Error', description: 'Count must be between 1 and 500', variant: 'destructive' });
+      return;
+    }
+
+    setBulkGenerating(true);
+    try {
+      const response = await api.bulkCreateCoupons({
+        count,
+        prefix: bulkFormData.prefix || undefined,
+        discountType: bulkFormData.discountType,
+        discountValue: Number(bulkFormData.discountValue),
+        minimumOrderAmount: bulkFormData.minimumOrderAmount ? Number(bulkFormData.minimumOrderAmount) : undefined,
+        maxUses: bulkFormData.maxUses ? Number(bulkFormData.maxUses) : undefined,
+        validFrom: bulkFormData.validFrom,
+        validUntil: bulkFormData.validUntil || undefined,
+      });
+      
+      toast({
+        title: 'Success',
+        description: `Successfully generated ${response.count} coupons.`,
+      });
+      setBulkDialogOpen(false);
+      fetchCoupons();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to generate coupons in bulk',
+        variant: 'destructive'
+      });
+    } finally {
+      setBulkGenerating(false);
+    }
   };
 
   const handleSave = async () => {
@@ -267,7 +322,7 @@ const SuperAdminCoupons: React.FC = () => {
           <div className="flex gap-2">
             <Button
               className="bg-transparent border border-primary/30 text-primary hover:bg-primary hover:text-black transition-all duration-300"
-              onClick={() => toast({ title: "Feature Pending", description: "Bulk generation logic will be implemented with backend integration." })}
+              onClick={() => setBulkDialogOpen(true)}
             >
               <Zap className="h-4 w-4 mr-2" />
               <span className="relative z-10">Bulk Generate</span>
@@ -565,6 +620,127 @@ const SuperAdminCoupons: React.FC = () => {
             <Button variant="destructive" onClick={handleDelete} disabled={saving}>
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
+        <DialogContent className="sm:max-w-[500px] bg-background border-primary/20">
+          <DialogHeader>
+            <DialogTitle className="font-display flex items-center gap-2">
+              <Zap className="h-5 w-5 text-primary" />
+              Bulk Generate Coupons
+            </DialogTitle>
+            <DialogDescription>
+              Automatically create multiple unique coupon codes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="bulk-count">Number of Coupons</Label>
+                <Input
+                  id="bulk-count"
+                  type="number"
+                  min="1"
+                  max="500"
+                  value={bulkFormData.count}
+                  onChange={(e) => setBulkFormData({ ...bulkFormData, count: e.target.value })}
+                  className="bg-background/50"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="bulk-prefix">Code Prefix (Optional)</Label>
+                <Input
+                  id="bulk-prefix"
+                  placeholder="e.g. PROMO-"
+                  value={bulkFormData.prefix}
+                  onChange={(e) => setBulkFormData({ ...bulkFormData, prefix: e.target.value.toUpperCase() })}
+                  className="bg-background/50 uppercase"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label>Discount Type</Label>
+                <Select
+                  value={bulkFormData.discountType}
+                  onValueChange={(value) => setBulkFormData({ ...bulkFormData, discountType: value })}
+                >
+                  <SelectTrigger className="bg-background/50"><SelectValue placeholder="Select type" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="percentage">Percentage (%)</SelectItem>
+                    <SelectItem value="fixed_amount">Fixed Amount</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="bulk-value">Discount Value</Label>
+                <Input
+                  id="bulk-value"
+                  type="number"
+                  placeholder={bulkFormData.discountType === 'percentage' ? 'e.g. 10' : 'e.g. 500'}
+                  value={bulkFormData.discountValue}
+                  onChange={(e) => setBulkFormData({ ...bulkFormData, discountValue: e.target.value })}
+                  className="bg-background/50"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="bulk-min-order">Min Order Amount (Optional)</Label>
+                <Input
+                  id="bulk-min-order"
+                  type="number"
+                  value={bulkFormData.minimumOrderAmount}
+                  onChange={(e) => setBulkFormData({ ...bulkFormData, minimumOrderAmount: e.target.value })}
+                  className="bg-background/50"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="bulk-max-uses">Max Uses per Coupon</Label>
+                <Input
+                  id="bulk-max-uses"
+                  type="number"
+                  min="1"
+                  value={bulkFormData.maxUses}
+                  onChange={(e) => setBulkFormData({ ...bulkFormData, maxUses: e.target.value })}
+                  className="bg-background/50"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="bulk-valid-from">Valid From</Label>
+                <Input
+                  id="bulk-valid-from"
+                  type="date"
+                  value={bulkFormData.validFrom}
+                  onChange={(e) => setBulkFormData({ ...bulkFormData, validFrom: e.target.value })}
+                  className="bg-background/50"
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="bulk-valid-until">Valid Until (Optional)</Label>
+                <Input
+                  id="bulk-valid-until"
+                  type="date"
+                  value={bulkFormData.validUntil}
+                  onChange={(e) => setBulkFormData({ ...bulkFormData, validUntil: e.target.value })}
+                  className="bg-background/50"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleBulkGenerate} disabled={bulkGenerating} className="neon-button">
+              {bulkGenerating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Zap className="mr-2 h-4 w-4" />}
+              {bulkGenerating ? 'Generating...' : 'Generate Coupons'}
             </Button>
           </DialogFooter>
         </DialogContent>
