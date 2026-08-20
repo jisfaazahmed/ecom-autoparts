@@ -306,7 +306,18 @@ exports.changePassword = async (req, res) => {
 // PUT /auth/profile - Update user profile
 exports.updateProfile = async (req, res) => {
   try {
-    const { name, fullName, phone, address } = req.body;
+    const {
+      name,
+      fullName,
+      full_name,
+      phone,
+      address,
+      city,
+      postalCode,
+      postal_code,
+      avatarUrl,
+      avatar_url,
+    } = req.body || {};
     const userId = req.user?.id || req.user?._id;
 
     if (!userId) {
@@ -318,9 +329,17 @@ exports.updateProfile = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    if (name || fullName) user.name = name || fullName;
-    if (phone) user.phone = phone;
-    if (address) user.address = address;
+    const nextName = name || fullName || full_name;
+    if (nextName) user.name = nextName;
+    if (phone !== undefined) user.phone = phone;
+    if (address !== undefined) user.address = address;
+    if (city !== undefined) user.city = city;
+    if (postalCode !== undefined || postal_code !== undefined) {
+      user.postalCode = postalCode !== undefined ? postalCode : postal_code;
+    }
+    if (avatarUrl !== undefined || avatar_url !== undefined) {
+      user.avatarUrl = avatarUrl !== undefined ? avatarUrl : avatar_url;
+    }
 
     await user.save();
 
@@ -335,6 +354,9 @@ exports.updateProfile = async (req, res) => {
         status: user.status,
         phone: user.phone,
         address: user.address,
+        city: user.city,
+        postalCode: user.postalCode,
+        avatarUrl: user.avatarUrl,
         createdAt: user.createdAt,
       },
     });
