@@ -106,7 +106,12 @@ function getZoneMultiplier(city: string) {
 
 type ConfirmInlineCardFn = (
   clientSecret: string,
-  billing: { name: string; email: string; phone: string }
+  billing: {
+    name: string;
+    email: string;
+    phone: string;
+    address: { line1: string; city: string; postal_code: string; country: string };
+  }
 ) => Promise<string>;
 
 function InlineCardForm({
@@ -140,6 +145,9 @@ function InlineCardForm({
             name: billing.name,
             email: billing.email,
             phone: billing.phone,
+            // Sent so the issuer can run an AVS (address/postal) check; the card
+            // input itself hides the postal field via hidePostalCode.
+            address: billing.address,
           },
         },
       });
@@ -228,7 +236,7 @@ function InlineCardForm({
           {cardComplete && !cardError && (
             <div className="flex items-center gap-1.5 text-green-600">
               <Check className="h-4 w-4" />
-              <span className="text-xs font-medium">Card verified</span>
+              <span className="text-xs font-medium">Card details valid</span>
             </div>
           )}
           {cardBrand && (
@@ -288,6 +296,9 @@ export default function Checkout() {
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletOtp, setWalletOtp] = useState('');
   const [walletPendingOrderId, setWalletPendingOrderId] = useState<string | null>(null);
+  const [cardOtp, setCardOtp] = useState('');
+  const [cardOtpRequired, setCardOtpRequired] = useState(false);
+  const [cardPendingOrder, setCardPendingOrder] = useState<{ id: string; guestInvoiceToken?: string } | null>(null);
   
   const [savedAddresses, setSavedAddresses] = useState<ApiAddress[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>('new');
@@ -621,34 +632,64 @@ export default function Checkout() {
       const orderPlacementKey = orderPlacementKeyRef.current || generateIdempotencyKey('order');
       orderPlacementKeyRef.current = orderPlacementKey;
 
-      const order = await api.createOrder({
-        items: orderItems,
-        shippingAddress: form.address,
-        shippingCity: form.city,
-        shippingPostalCode: form.postalCode,
-        fullName: form.fullName,
-        phone: form.phone,
-        shippingCountry: 'Sri Lanka',
-        paymentMethod: 'card',
-        shopId,
-        couponCode: appliedCoupon?.code,
-        idempotencyKey: orderPlacementKey,
-      });
+      // Reuse the order created before the OTP challenge instead of placing a
+      // second one when the customer comes back with their code.
+      let pendingOrder = cardPendingOrder;
 
-      const orderId = order.id || order._id;
-      if (!orderId) {
-        throw new Error('Order created but order ID was not returned');
+      if (!pendingOrder) {
+        const order = await api.createOrder({
+          items: orderItems,
+          shippingAddress: form.address,
+          shippingCity: form.city,
+          shippingPostalCode: form.postalCode,
+          fullName: form.fullName,
+          phone: form.phone,
+          shippingCountry: 'Sri Lanka',
+          paymentMethod: 'card',
+          shopId,
+          couponCode: appliedCoupon?.code,
+          idempotencyKey: orderPlacementKey,
+        });
+
+        const createdOrderId = order.id || order._id;
+        if (!createdOrderId) {
+          throw new Error('Order created but order ID was not returned');
+        }
+
+        pendingOrder = { id: createdOrderId, guestInvoiceToken: order.guestInvoiceToken };
       }
+
+      const orderId = pendingOrder.id;
 
       const paymentIntent = await api.createPaymentIntent({
         orderId,
         email: form.email,
+        otp: cardOtp.trim() || undefined,
       });
+
+      // Email OTP gate runs before Stripe issues a client secret.
+      if (paymentIntent.requiresOtp) {
+        setCardPendingOrder(pendingOrder);
+        setCardOtpRequired(true);
+        setCardOtp('');
+        toast.info('We emailed you a 6-digit code. Enter it to authorize this payment.');
+        return;
+      }
+
+      if (!paymentIntent.clientSecret) {
+        throw new Error('Payment could not be initialized. Please try again.');
+      }
 
       const paymentIntentId = await confirmInlineCard!(paymentIntent.clientSecret, {
         name: form.fullName,
         email: form.email,
         phone: form.phone,
+        address: {
+          line1: form.address,
+          city: form.city,
+          postal_code: form.postalCode,
+          country: 'LK',
+        },
       });
 
       const paymentConfirmationKey = paymentConfirmationKeyRef.current || generateIdempotencyKey('confirm-payment');
@@ -664,8 +705,11 @@ export default function Checkout() {
       clearCart();
       orderPlacementKeyRef.current = null;
       paymentConfirmationKeyRef.current = null;
+      setCardOtp('');
+      setCardOtpRequired(false);
+      setCardPendingOrder(null);
       toast.success('Card payment completed successfully!');
-      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId)}${order.guestInvoiceToken ? `&guest_token=${encodeURIComponent(order.guestInvoiceToken)}` : ''}`);
+      navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId)}${pendingOrder.guestInvoiceToken ? `&guest_token=${encodeURIComponent(pendingOrder.guestInvoiceToken)}` : ''}`);
     } catch (error) {
       console.error('Inline card checkout error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to process card payment');
@@ -1327,6 +1371,25 @@ export default function Checkout() {
                             disabled={loading}
                           />
                         </Elements>
+
+                        {cardOtpRequired && (
+                          <div className="rounded-lg border border-amber-300/60 bg-amber-50/60 p-4 space-y-2">
+                            <Label htmlFor="card-otp" className="text-sm font-semibold">
+                              Email verification code
+                            </Label>
+                            <p className="text-xs text-muted-foreground">
+                              We sent a 6-digit code to {user?.email || 'your email'}. It expires in 5 minutes.
+                            </p>
+                            <Input
+                              id="card-otp"
+                              value={cardOtp}
+                              onChange={(e) => setCardOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                              placeholder="6-digit code"
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1363,7 +1426,7 @@ export default function Checkout() {
                             Processing...
                           </>
                         ) : paymentMethod === 'stripe' ? (
-                          'Pay Card Now'
+                          cardOtpRequired ? 'Verify Code & Pay' : 'Pay Card Now'
                         ) : paymentMethod === 'wallet' ? (
                           walletPendingOrderId ? 'Verify OTP & Pay' : 'Pay With Wallet'
                         ) : (

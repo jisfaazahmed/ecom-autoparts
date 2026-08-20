@@ -152,6 +152,11 @@ export interface ApiOrder {
   shippingCity?: string;
   shippingPostalCode?: string;
   trackingNumber?: string;
+  deliveryConfirmation?: {
+    confirmed?: boolean;
+    confirmedAt?: string;
+    note?: string | null;
+  };
   estimatedDeliveryDate?: string;
   notes?: string;
   stripePaymentId?: string;
@@ -1261,6 +1266,13 @@ class ApiClient {
     });
   }
 
+  async confirmOrderReceipt(id: string, note?: string): Promise<{ message: string; data: ApiOrder }> {
+    return this.request<{ message: string; data: ApiOrder }>(`/orders/${id}/confirm-receipt`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    });
+  }
+
   async trackOrder(trackingNumber: string): Promise<{
     order: ApiOrder;
     timeline: Array<{
@@ -1840,35 +1852,25 @@ class ApiClient {
     return response.data || response;
   }
 
-  async createPaymentIntent(data: { orderId: string; email?: string }): Promise<{
-    paymentIntentId: string;
-    clientSecret: string;
-    amount: number;
-    currency: string;
+  async createPaymentIntent(data: { orderId: string; email?: string; otp?: string }): Promise<{
+    paymentIntentId?: string;
+    clientSecret?: string;
+    amount?: number;
+    currency?: string;
     requiresAction?: boolean;
     nextAction?: any;
+    requiresOtp?: boolean;
+    expiresAt?: string;
+    retryInSeconds?: number;
   }> {
-    const response = await this.request<{
-      paymentIntentId: string;
-      clientSecret: string;
-      amount: number;
-      currency: string;
-      requiresAction?: boolean;
-      nextAction?: any;
-      data?: {
-        paymentIntentId: string;
-        clientSecret: string;
-        amount: number;
-        currency: string;
-        requiresAction?: boolean;
-        nextAction?: any;
-      };
-    }>('/payments/create-payment-intent', {
+    const response = await this.request<any>('/payments/create-payment-intent', {
       method: 'POST',
       body: JSON.stringify(data),
     });
 
-    return response.data || response;
+    // The OTP gate answers 202 with the flag at the top level and the details
+    // nested under `data`, so merge both rather than letting `data` shadow it.
+    return { ...response, ...(response?.data || {}) };
   }
 
   async confirmPaymentIntent(data: { orderId: string; paymentIntentId: string; otp?: string; idempotencyKey?: string }): Promise<{
@@ -1942,7 +1944,10 @@ class ApiClient {
       body: JSON.stringify(data),
     });
 
-    return response.data || response;
+    // `requiresOtp` sits at the top level of the 202 body while `data` holds the
+    // details; returning `response.data` alone dropped the flag and let the
+    // caller treat an OTP challenge as a completed payment.
+    return { ...response, ...(response?.data || {}) };
   }
 
   // ============ PAYMENTS ============

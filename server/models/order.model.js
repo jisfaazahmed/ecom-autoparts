@@ -171,6 +171,25 @@ const orderSchema = new mongoose.Schema({
         endTime: String
     },
 
+    // Customer-side confirmation that the parcel physically arrived. Distinct
+    // from the vendor/courier marking the order delivered, and it is what starts
+    // the return window (see refund.service.js eligibility checks).
+    deliveryConfirmation: {
+        confirmed: {
+            type: Boolean,
+            default: false
+        },
+        confirmedAt: Date,
+        confirmedBy: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User'
+        },
+        note: {
+            type: String,
+            default: null
+        }
+    },
+
     deliveryAttempts: [{
         attemptDate: Date,
         status: {

@@ -296,6 +296,22 @@ function validateOrderIdBody(req, res, next) {
   return next();
 }
 
+function validateCreatePaymentIntent(req, res, next) {
+  if (!isObjectId(req.body?.orderId)) {
+    return fail(res, 'Invalid orderId');
+  }
+
+  const otp = req.body?.otp;
+  if (otp !== undefined && otp !== null && otp !== '') {
+    const code = asTrimmed(otp);
+    if (!/^\d{4,8}$/.test(code)) {
+      return fail(res, 'Invalid OTP format');
+    }
+  }
+
+  return next();
+}
+
 function validateConfirmPaymentIntent(req, res, next) {
   const orderId = asTrimmed(req.body?.orderId);
   const paymentIntentId = asTrimmed(req.body?.paymentIntentId);
@@ -611,6 +627,7 @@ module.exports = {
   validateRegisterVerify,
   validateRegisterResend,
   validateOrderIdBody,
+  validateCreatePaymentIntent,
   validateConfirmPaymentIntent,
   validateRetryPaymentIntent,
   validateConfirmCardPayment,

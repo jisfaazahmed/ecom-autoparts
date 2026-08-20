@@ -942,6 +942,96 @@ class OrderService {
     }
 
     // Cancelling
+    // Customer confirms the parcel actually arrived. This is deliberately separate
+    // from the vendor/courier marking it delivered: it is the customer's own word,
+    // and it is what pins down actualDeliveryDate for the return window.
+    async confirmOrderReceipt(orderId, userId, note = null) {
+        const order = await Order.findById(orderId).populate('items');
+
+        if (!order) {
+            throw new Error('Order not found');
+        }
+
+        if (!userId || !order.user || String(order.user) !== String(userId)) {
+            throw new Error('Unauthorized access to order');
+        }
+
+        order.deliveryConfirmation = order.deliveryConfirmation || {};
+
+        // Idempotent: a second tap returns the existing confirmation rather than
+        // rewriting the timestamp the return window is measured from.
+        if (order.deliveryConfirmation.confirmed) {
+            return order;
+        }
+
+        const currentStatus = this.normalizeStatus(order.overallStatus || order.status);
+        const confirmable = ['out_for_delivery', 'delivered', 'partially_delivered'];
+
+        if (!confirmable.includes(currentStatus)) {
+            throw new Error('This order cannot be confirmed as received yet');
+        }
+
+        const confirmedAt = new Date();
+
+        order.deliveryConfirmation = {
+            confirmed: true,
+            confirmedAt,
+            confirmedBy: userId,
+            note: note ? String(note).trim().slice(0, 500) : null,
+        };
+
+        // The customer has the goods, so treat this as the authoritative delivery
+        // moment when the courier never recorded one.
+        if (!order.actualDeliveryDate) {
+            order.actualDeliveryDate = confirmedAt;
+        }
+
+        // Customer received it while still marked out for delivery — settle the
+        // status rather than leaving it stranded mid-transit.
+        const wasInTransit = currentStatus === 'out_for_delivery';
+        if (wasInTransit) {
+            const itemIds = (order.items || []).map((item) => item._id || item);
+            await OrderItem.updateMany(
+                { _id: { $in: itemIds }, status: { $nin: ['cancelled', 'returned', 'refunded'] } },
+                { $set: { status: 'delivered' } }
+            );
+
+            const refreshedItems = await OrderItem.find({ _id: { $in: itemIds } });
+            order.overallStatus = this.calculateOverallStatus(refreshedItems);
+        }
+
+        await order.save();
+
+        await OrderTimeLine.create({
+            order: order._id,
+            event: 'delivery_confirmed',
+            title: 'Delivery Confirmed by Customer',
+            description: note
+                ? `Customer confirmed receipt: ${String(note).trim().slice(0, 200)}`
+                : 'Customer confirmed they received this order',
+            actor: userId,
+            actorType: 'customer',
+            metadata: { confirmedAt, promotedFromOutForDelivery: wasInTransit },
+        });
+
+        // Let the vendors know the customer acknowledged receipt.
+        try {
+            const vendorIds = [...new Set(
+                (order.items || [])
+                    .map((item) => item.vendor && String(item.vendor))
+                    .filter(Boolean)
+            )];
+
+            await Promise.all(
+                vendorIds.map((vendorId) => NotificationService.notifyVendorOrderDelivered(order, vendorId))
+            );
+        } catch (error) {
+            console.error('Failed to notify vendors of delivery confirmation:', error);
+        }
+
+        return order;
+    }
+
     async cancelOrder(orderId, userId, reason, cancelledBy = 'customer') {
         const runCancellation = async (session = null) => {
             const orderQuery = Order.findById(orderId);

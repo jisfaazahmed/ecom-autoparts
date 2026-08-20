@@ -29,6 +29,9 @@ router.get('/:id/invoice', verifyToken, orderController.getInvoice);
 //customer order details
 router.get('/:id', verifyToken, orderController.getOrderById);
 router.post('/:id/cancel', verifyToken, orderController.cancelOrder)
+
+// Customer confirms receipt of a delivered order
+router.post('/:id/confirm-receipt', verifyToken, orderController.confirmOrderReceipt);
 router.put('/:id/status', verifyToken, orderController.adminUpdateOrderStatus);
 
 //Payment status update (Admin/System)

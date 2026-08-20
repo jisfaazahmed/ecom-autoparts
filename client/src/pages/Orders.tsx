@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Package,
+  PackageCheck,
   Truck,
   CheckCircle,
   Clock,
@@ -127,6 +128,7 @@ const Orders: React.FC = () => {
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [orderToCancel, setOrderToCancel] = useState<string | null>(null);
   const [reorderLoading, setReorderLoading] = useState<string | null>(null);
+  const [confirmingReceipt, setConfirmingReceipt] = useState<string | null>(null);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -283,6 +285,33 @@ const Orders: React.FC = () => {
     }
   };
 
+  const handleConfirmReceipt = async (orderId: string) => {
+    setConfirmingReceipt(orderId);
+    try {
+      const response = await api.confirmOrderReceipt(orderId);
+
+      // Patch the row in place so the button flips without a full refetch.
+      setOrders((previous) =>
+        previous.map((order) =>
+          (order.id || order._id) === orderId ? { ...order, ...response.data } : order
+        )
+      );
+
+      toast({
+        title: 'Receipt Confirmed',
+        description: 'Thanks for letting us know your order arrived.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Could Not Confirm',
+        description: error instanceof Error ? error.message : 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setConfirmingReceipt(null);
+    }
+  };
+
   const handleTrackOrder = (trackingNumber: string) => {
     if (trackingNumber) {
       navigate(`/track-order?tracking=${trackingNumber}`);
@@ -311,6 +340,12 @@ const Orders: React.FC = () => {
 
     return matchesSearch;
   });
+
+  const canConfirmReceipt = (order: ApiOrder) => {
+    if (order.deliveryConfirmation?.confirmed) return false;
+    const status = String(getOrderStatus(order) || '').toLowerCase();
+    return ['out_for_delivery', 'delivered', 'partially_delivered'].includes(status);
+  };
 
   const canCancelOrder = (order: ApiOrder) => {
     const status = getOrderStatus(order);
@@ -543,6 +578,33 @@ const Orders: React.FC = () => {
                         )}
                         Reorder
                       </Button>
+
+                      {orderId && canConfirmReceipt(order) && (
+                        <Button
+                          size="sm"
+                          onClick={() => handleConfirmReceipt(orderId)}
+                          disabled={confirmingReceipt === orderId}
+                        >
+                          {confirmingReceipt === orderId ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <PackageCheck className="h-4 w-4 mr-2" />
+                          )}
+                          I Received This Order
+                        </Button>
+                      )}
+
+                      {order.deliveryConfirmation?.confirmed && (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-green-600 px-2">
+                          <CheckCircle className="h-3.5 w-3.5" />
+                          Receipt confirmed
+                          {order.deliveryConfirmation.confirmedAt && (
+                            <span className="text-muted-foreground font-normal">
+                              on {new Date(order.deliveryConfirmation.confirmedAt).toLocaleDateString()}
+                            </span>
+                          )}
+                        </span>
+                      )}
 
                       {orderId && canRequestReturn(order) && (
                         <Link to={`/returns?orderId=${orderId}`}>

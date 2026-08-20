@@ -4,6 +4,7 @@ const paymentController = require('../controllers/payment.controller');
 const { verifyToken } = require('../middleware/authMiddleware');
 const {
     validateOrderIdBody,
+    validateCreatePaymentIntent,
     validateConfirmPaymentIntent,
     validateRetryPaymentIntent,
     validateConfirmCardPayment,
@@ -23,7 +24,7 @@ router.post('/webhook',
 
 // Customer routes (require authentication)
 router.post('/create-checkout-session', verifyToken, validateOrderIdBody, paymentController.createCheckoutSession);
-router.post('/create-payment-intent', verifyToken, validateOrderIdBody, paymentController.createPaymentIntent);
+router.post('/create-payment-intent', verifyToken, validateCreatePaymentIntent, paymentController.createPaymentIntent);
 router.post('/confirm-payment-intent', verifyToken, validateConfirmPaymentIntent, paymentController.confirmPaymentIntent);
 router.post('/retry-payment-intent', verifyToken, validateRetryPaymentIntent, paymentController.retryPaymentIntent);
 router.get('/wallet/balance', verifyToken, paymentController.getWalletBalance);

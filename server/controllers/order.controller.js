@@ -401,6 +401,38 @@ module.exports.cancelOrder = async (req, res) => {
     }
 };
 
+// Customer confirms they physically received the order
+module.exports.confirmOrderReceipt = async (req, res) => {
+    try {
+        if (!assertValidOrderId(res, req.params.id)) return;
+
+        const userId = req.user?.id || req.user?._id;
+        if (!userId) {
+            return res.status(401).json({ success: false, message: 'Authentication is required' });
+        }
+
+        const order = await orderService.confirmOrderReceipt(
+            req.params.id,
+            userId,
+            req.body?.note
+        );
+
+        res.status(200).json({
+            success: true,
+            message: 'Thanks for confirming you received this order',
+            data: order
+        });
+    } catch (error) {
+        const message = error.message || 'Failed to confirm receipt';
+        const status = message.includes('Unauthorized')
+            ? 403
+            : message.includes('not found')
+                ? 404
+                : 400;
+        res.status(status).json({ success: false, message });
+    }
+};
+
 // Update Payment Status (Pending → Paid lifecycle)
 module.exports.updatePaymentStatus = async (req, res) => {
     try {

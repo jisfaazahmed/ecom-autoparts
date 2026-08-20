@@ -16,6 +16,7 @@ const timelineSchema = new mongoose.Schema({
         enum: [
             'order_placed',
             'payment_pending',
+            'payment_otp_verified',
             'payment_completed',
             'payment_failed',
             'cod_verification_initiated',
@@ -30,6 +31,7 @@ const timelineSchema = new mongoose.Schema({
             'out_for_delivery',
             'delivery_attempted',
             'delivered',
+            'delivery_confirmed',
             'delivery_failed',
             'cancelled_by_customer',
             'cancelled_by_vendor',

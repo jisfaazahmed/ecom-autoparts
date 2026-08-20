@@ -3,6 +3,7 @@ const Order = require('../models/order.model');
 const OrderItem = require('../models/orderItem.model');
 const stripe = require('../config/stripe');
 const OrderTimeline = require('../models/timeline.model');
+const User = require('../models/user');
 
 class PaymentService {
 
@@ -160,13 +161,22 @@ class PaymentService {
             throw new Error('Payment not found');
         }
 
-        const paymentIntent = await stripe.paymentIntents.retrieve(PaymentIntentId);
+        // `charges` was removed from the PaymentIntent object in newer Stripe API
+        // versions; expand `latest_charge` instead of reading `charges.data[0]`.
+        const paymentIntent = await stripe.paymentIntents.retrieve(PaymentIntentId, {
+            expand: ['latest_charge']
+        });
 
         if (paymentIntent.status === 'succeeded') {
+            const latestCharge = typeof paymentIntent.latest_charge === 'object'
+                ? paymentIntent.latest_charge
+                : null;
+
             payment.status = 'completed';
             payment.gateway = 'stripe';
-            payment.provider.chargeId = paymentIntent.charges.data[0]?.id;
-            payment.provider.receiptUrl = paymentIntent.charges.data[0]?.receipt_url;
+            payment.provider = payment.provider || {};
+            payment.provider.chargeId = latestCharge?.id || (typeof paymentIntent.latest_charge === 'string' ? paymentIntent.latest_charge : null);
+            payment.provider.receiptUrl = latestCharge?.receipt_url || null;
 
             payment.statusHistory.push({
                 status: 'completed',
@@ -444,8 +454,16 @@ class PaymentService {
             throw new Error('Payment not found');
         }
 
-        const user = await Order.findById(userId);
-        if (payment.user._id.toString() !== userId.toString() && user.role !== 'admin') {
+        const requester = await User.findById(userId).select('role');
+        if (!requester) {
+            throw new Error('Unauthorized access');
+        }
+
+        const requesterRole = String(requester.role || '').replace(/_/g, '').toUpperCase();
+        const isPrivileged = requesterRole === 'ADMIN' || requesterRole === 'SUPERADMIN';
+        const ownsPayment = String(payment.user?._id || payment.user) === String(userId);
+
+        if (!ownsPayment && !isPrivileged) {
             throw new Error('Unauthorized access');
         }
 

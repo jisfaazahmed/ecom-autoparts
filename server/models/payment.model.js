@@ -159,6 +159,33 @@ const paymentSchema = new mongoose.Schema({
     gatewayResponse: mongoose.Schema.Types.Mixed
   }],
 
+    // Application-level OTP gate that runs before the Stripe PaymentIntent is
+    // created. This is additional to Stripe's own 3DS/SCA authentication, not a
+    // replacement for it.
+    paymentOtp: {
+        codeHash: {
+            type: String,
+            default: null
+        },
+        expiresAt: {
+            type: Date,
+            default: null
+        },
+        attempts: {
+            type: Number,
+            default: 0,
+            min: 0
+        },
+        lastSentAt: {
+            type: Date,
+            default: null
+        },
+        verifiedAt: {
+            type: Date,
+            default: null
+        }
+    },
+
     idempotency: {
         confirmPaymentIntent: {
             key: {

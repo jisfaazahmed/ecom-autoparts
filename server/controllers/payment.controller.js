@@ -1,11 +1,144 @@
+const crypto = require('crypto');
 const Payment = require('../models/payment.model');
 const Order = require('../models/order.model');
+const StripeEvent = require('../models/stripeEvent.model');
 const paymentService = require('../services/payment.service');
 const stripe = require('../config/stripe');
 const OrderTimeline = require('../models/timeline.model');
 const User = require('../models/user');
 const invoiceService = require('../services/invoice.service');
 const emailService = require('../services/email.service');
+
+// Card payment OTP policy. This gate is an application-level check performed
+// before a PaymentIntent exists; Stripe's own 3DS/SCA challenge still runs
+// afterwards during confirmation.
+const PAYMENT_OTP_VALID_MINUTES = 5;
+const PAYMENT_OTP_MAX_ATTEMPTS = 5;
+const PAYMENT_OTP_RESEND_COOLDOWN_MS = 60 * 1000;
+// How long a verified OTP stays good for, so a declined card or a 3DS retry on
+// the same order does not force the customer through a second code.
+const PAYMENT_OTP_SESSION_MINUTES = 15;
+
+function generatePaymentOtp() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+function hashPaymentOtp(code) {
+  return crypto.createHash('sha256').update(String(code)).digest('hex');
+}
+
+function hasFreshOtpVerification(payment) {
+  const verifiedAt = payment?.paymentOtp?.verifiedAt;
+  if (!verifiedAt) return false;
+  const ageMs = Date.now() - new Date(verifiedAt).getTime();
+  return ageMs < PAYMENT_OTP_SESSION_MINUTES * 60 * 1000;
+}
+
+async function sendPaymentOtpEmail({ payment, order, email }) {
+  const now = new Date();
+  const lastSentAt = payment.paymentOtp?.lastSentAt;
+
+  if (lastSentAt && now.getTime() - new Date(lastSentAt).getTime() < PAYMENT_OTP_RESEND_COOLDOWN_MS) {
+    const retryInSeconds = Math.ceil(
+      (PAYMENT_OTP_RESEND_COOLDOWN_MS - (now.getTime() - new Date(lastSentAt).getTime())) / 1000
+    );
+    return { throttled: true, retryInSeconds, expiresAt: payment.paymentOtp?.expiresAt || null };
+  }
+
+  const code = generatePaymentOtp();
+  const expiresAt = new Date(now.getTime() + PAYMENT_OTP_VALID_MINUTES * 60 * 1000);
+
+  payment.paymentOtp = {
+    codeHash: hashPaymentOtp(code),
+    expiresAt,
+    attempts: 0,
+    lastSentAt: now,
+    verifiedAt: null,
+  };
+  await payment.save();
+
+  await emailService.sendEmail(
+    email,
+    `Payment verification code - Order #${order.orderNumber}`,
+    `
+      <h1>Confirm your payment</h1>
+      <p>Your one-time verification code for order <strong>#${order.orderNumber}</strong> is <strong>${code}</strong>.</p>
+      <p>Amount: ${order.currency || 'LKR'} ${order.totalAmount}</p>
+      <p>This code expires in ${PAYMENT_OTP_VALID_MINUTES} minutes.</p>
+      <p>If you did not attempt this payment, do not share this code and ignore this email.</p>
+    `,
+    `Your payment verification code for order #${order.orderNumber} is ${code}. It expires in ${PAYMENT_OTP_VALID_MINUTES} minutes.`
+  );
+
+  return { throttled: false, expiresAt };
+}
+
+// Returns null when the OTP is accepted, or an error payload to send back.
+async function verifyPaymentOtp(payment, submittedOtp) {
+  const otpState = payment.paymentOtp || {};
+
+  if (!otpState.codeHash || !otpState.expiresAt) {
+    return { status: 400, body: { success: false, message: 'No active verification code. Please request a new one.' } };
+  }
+
+  if (Date.now() > new Date(otpState.expiresAt).getTime()) {
+    return { status: 400, body: { success: false, message: 'Verification code has expired. Please request a new one.' } };
+  }
+
+  if (Number(otpState.attempts || 0) >= PAYMENT_OTP_MAX_ATTEMPTS) {
+    return { status: 429, body: { success: false, message: 'Too many incorrect codes. Please request a new one.' } };
+  }
+
+  const submittedHash = hashPaymentOtp(String(submittedOtp).trim());
+  const expectedHash = String(otpState.codeHash);
+  const matches =
+    submittedHash.length === expectedHash.length &&
+    crypto.timingSafeEqual(Buffer.from(submittedHash), Buffer.from(expectedHash));
+
+  if (!matches) {
+    payment.paymentOtp.attempts = Number(otpState.attempts || 0) + 1;
+    await payment.save();
+    const remaining = Math.max(0, PAYMENT_OTP_MAX_ATTEMPTS - payment.paymentOtp.attempts);
+    return {
+      status: 400,
+      body: {
+        success: false,
+        message: 'Invalid verification code',
+        data: { attemptsRemaining: remaining, retryEligible: remaining > 0 },
+      },
+    };
+  }
+
+  payment.paymentOtp.verifiedAt = new Date();
+  payment.paymentOtp.codeHash = null;
+  payment.paymentOtp.expiresAt = null;
+  payment.paymentOtp.attempts = 0;
+  await payment.save();
+
+  return null;
+}
+
+function normalizeRole(role) {
+  return String(role || '').replace(/_/g, '').toUpperCase();
+}
+
+async function requirePrivilegedUser(req, res) {
+  const userId = getRequestUserId(req);
+  if (!userId) {
+    res.status(401).json({ success: false, message: 'Authentication is required' });
+    return null;
+  }
+
+  const requester = await User.findById(userId).select('role');
+  const role = normalizeRole(requester?.role);
+
+  if (role !== 'ADMIN' && role !== 'SUPERADMIN') {
+    res.status(403).json({ success: false, message: 'Administrator access is required' });
+    return null;
+  }
+
+  return requester;
+}
 
 function getRequestUserId(req) {
   return req?.user?._id || req?.user?.id || null;
@@ -87,6 +220,23 @@ async function getAuthorizedOrder(orderId, userId) {
 
 async function finalizeSuccessfulCardPayment({ order, paymentIntentId, sessionId = null, customerEmail = null }) {
   let payment = await Payment.findOne({ order: order._id });
+
+  // Both the client's confirm call and the payment_intent.succeeded webhook reach
+  // this function for the same intent. Short-circuit once the order is already
+  // settled against this intent so the timeline entry, invoice generation and
+  // notification emails are not produced twice.
+  const alreadyFinalized =
+    payment &&
+    payment.status === 'completed' &&
+    String(order.paymentStatus || '').toLowerCase() === 'completed' &&
+    [payment.transactionId, payment.gatewayTransactionId, payment.provider?.paymentIntentId]
+      .filter(Boolean)
+      .map(String)
+      .includes(String(paymentIntentId));
+
+  if (alreadyFinalized) {
+    return payment;
+  }
 
   if (!payment) {
     payment = new Payment({
@@ -258,6 +408,60 @@ exports.createPaymentIntent = async (req, res) => {
       });
     }
 
+    const payment = await getOrCreatePaymentForOrder(order, userId, 'card');
+
+    // Application-level OTP gate: the customer must prove control of their inbox
+    // before a PaymentIntent is created. Stripe's 3DS/SCA challenge still runs
+    // later, at confirmation time — this does not replace it.
+    if (!hasFreshOtpVerification(payment)) {
+      const submittedOtp = String(req.body?.otp || '').trim();
+      // Deliberately the account email, never the client-supplied billing email —
+      // otherwise the code could be redirected to an attacker's inbox.
+      const otpDestination = getRequestUserEmail(req);
+
+      if (!otpDestination) {
+        return res.status(400).json({
+          success: false,
+          message: 'A verified email address is required to pay by card',
+        });
+      }
+
+      if (!submittedOtp) {
+        const sendResult = await sendPaymentOtpEmail({ payment, order, email: otpDestination });
+
+        return res.status(202).json({
+          success: false,
+          requiresOtp: true,
+          message: sendResult.throttled
+            ? 'A verification code was already sent. Please check your email.'
+            : 'A verification code has been sent to your email',
+          data: {
+            orderId: order._id,
+            expiresAt: sendResult.expiresAt,
+            retryInSeconds: sendResult.retryInSeconds || 0,
+          },
+        });
+      }
+
+      const otpError = await verifyPaymentOtp(payment, submittedOtp);
+      if (otpError) {
+        return res.status(otpError.status).json({
+          ...otpError.body,
+          requiresOtp: true,
+          data: { orderId: order._id, ...(otpError.body.data || {}) },
+        });
+      }
+
+      await OrderTimeline.create({
+        order: order._id,
+        event: 'payment_otp_verified',
+        title: 'Payment Verification Passed',
+        description: 'Customer verified the emailed one-time code before card authorization',
+        actor: userId,
+        actorType: 'customer',
+      });
+    }
+
     const paymentIntent = await stripe.paymentIntents.create(withReceiptEmail({
       amount: Math.round(order.totalAmount * 100),
       currency: String(order.currency || 'lkr').toLowerCase(),
@@ -270,7 +474,6 @@ exports.createPaymentIntent = async (req, res) => {
       description: `Payment for order ${order.orderNumber}`,
     }, userEmail));
 
-    const payment = await getOrCreatePaymentForOrder(order, userId, 'card');
     payment.status = 'processing';
     payment.gateway = 'stripe';
     payment.transactionId = paymentIntent.id;
@@ -529,17 +732,32 @@ exports.handleStripeWebhook = async (req, res) => {
         return res.status(400).send(`Webhook Error: ${err.message}`);
     }
 
+    // Idempotency: claim the event id before doing any work. The unique index on
+    // eventId makes the insert fail for a redelivery, so the side effects
+    // (finalizing the order, generating the invoice) only ever run once.
+    let claimed;
+    try {
+        claimed = await StripeEvent.create({ eventId: event.id, type: event.type, status: 'processing' });
+    } catch (claimError) {
+        if (claimError?.code === 11000) {
+            console.log(`Duplicate Stripe event ${event.id} (${event.type}) ignored`);
+            return res.json({ received: true, duplicate: true });
+        }
+        console.error('Failed to record Stripe event:', claimError);
+        return res.status(500).json({ error: 'Webhook handler failed' });
+    }
+
     // Handle the event
     try {
         switch (event.type) {
             case 'checkout.session.completed':
                 await handleCheckoutSessionCompleted(event.data.object);
                 break;
-            
+
             case 'payment_intent.succeeded':
                 await handlePaymentIntentSucceeded(event.data.object);
                 break;
-            
+
             case 'payment_intent.payment_failed':
                 await handlePaymentIntentFailed(event.data.object);
                 break;
@@ -548,9 +766,20 @@ exports.handleStripeWebhook = async (req, res) => {
                 console.log(`Unhandled event type ${event.type}`);
         }
 
+        claimed.status = 'processed';
+        claimed.processedAt = new Date();
+        await claimed.save();
+
         res.json({ received: true });
     } catch (error) {
         console.error('Webhook handler error:', error);
+        // Release the claim so Stripe's retry can genuinely reprocess the event,
+        // rather than being rejected as a duplicate of a run that never finished.
+        try {
+            await StripeEvent.deleteOne({ _id: claimed._id });
+        } catch (cleanupError) {
+            console.error('Failed to release Stripe event claim:', cleanupError);
+        }
         res.status(500).json({ error: 'Webhook handler failed' });
     }
 };
@@ -715,6 +944,10 @@ exports.confirmCardPayment = async (req, res) => {
 // Verify COD
 exports.verifyCOD = async (req, res) => {
   try {
+    if (!(await requirePrivilegedUser(req, res))) {
+      return;
+    }
+
     const { status, notes } = req.body;
     const userId = getRequestUserId(req);
     
@@ -909,6 +1142,11 @@ exports.payWithWallet = async (req, res) => {
 
 exports.processRefund = async (req, res) => {
   try {
+    // Refunds move money out; restrict to staff rather than any authenticated user.
+    if (!(await requirePrivilegedUser(req, res))) {
+      return;
+    }
+
     const userId = getRequestUserId(req);
     const payment = await paymentService.processRefund(
       req.params.paymentId,
