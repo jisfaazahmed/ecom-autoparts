@@ -11,6 +11,7 @@ router.get('/featured', productController.getFeaturedProducts);
 router.get('/categories', productController.getCategories);
 router.get('/:id/reviews', productController.getProductReviews);
 router.post('/:id/reviews', verifyToken, productController.createProductReview);
+router.put('/:id/reviews/:reviewId', verifyToken, productController.updateProductReview);
 router.delete('/:id/reviews/:reviewId', verifyToken, productController.deleteProductReview);
 router.get('/:id', attachUserIfPresent, productController.getProductById);
 

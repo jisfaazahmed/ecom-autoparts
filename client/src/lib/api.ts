@@ -1813,6 +1813,13 @@ class ApiClient {
     return this.createReview(productId, data);
   }
 
+  async updateReview(productId: string, reviewId: string, data: { rating: number; comment?: string }): Promise<ApiReview> {
+    return this.request<ApiReview>(`/products/${productId}/reviews/${reviewId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
   async deleteReview(productId: string, reviewId: string): Promise<void> {
     await this.request(`/products/${productId}/reviews/${reviewId}`, { method: 'DELETE' });
   }

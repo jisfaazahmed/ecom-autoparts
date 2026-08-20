@@ -3,12 +3,23 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   ShoppingCart, Star, ChevronLeft, Check, Package,
-  Truck, Shield, MessageSquare, Loader2, Car, AlertCircle
+  Truck, Shield, MessageSquare, Loader2, Car, AlertCircle, Trash2, Pencil, X
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import Navbar from '@/components/layout/Navbar';
 import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
@@ -27,6 +38,11 @@ const ProductDetail: React.FC = () => {
   const [reviews, setReviews] = useState<ApiReview[]>([]);
   const [loading, setLoading] = useState(true);
   const [submittingReview, setSubmittingReview] = useState(false);
+  const [deletingReviewId, setDeletingReviewId] = useState<string | null>(null);
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
+  const [editRating, setEditRating] = useState(5);
+  const [editComment, setEditComment] = useState('');
+  const [savingEditId, setSavingEditId] = useState<string | null>(null);
   const [newRating, setNewRating] = useState(5);
   const [newComment, setNewComment] = useState('');
 
@@ -118,6 +134,83 @@ const ProductDetail: React.FC = () => {
         description: message,
         variant: 'destructive',
       });
+    }
+  };
+
+  const handleDeleteReview = async (reviewId: string) => {
+    if (!product || !user) {
+      toast({
+        title: 'Sign In Required',
+        description: 'Please sign in to manage your review.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const review = reviews.find((item) => item.id === reviewId);
+    const isOwner = review && (String(review.user?.id || review.userId) === String(user.id));
+
+    if (!isOwner) {
+      toast({
+        title: 'Action Not Allowed',
+        description: 'You can only delete your own review.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setDeletingReviewId(reviewId);
+
+    try {
+      const productId = product.id || product._id || '';
+      await api.deleteReview(productId, reviewId);
+      setReviews((prev) => prev.filter((item) => item.id !== reviewId));
+      toast({
+        title: 'Review Deleted',
+        description: 'Your review has been removed.',
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to delete review';
+      toast({
+        title: 'Error',
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingReviewId(null);
+    }
+  };
+
+  const handleStartEdit = (review: ApiReview) => {
+    setEditingReviewId(review.id);
+    setEditRating(review.rating);
+    setEditComment(review.comment || '');
+  };
+
+  const handleCancelEdit = () => {
+    setEditingReviewId(null);
+    setEditRating(5);
+    setEditComment('');
+  };
+
+  const handleSaveEdit = async (reviewId: string) => {
+    if (!product || !user) return;
+
+    setSavingEditId(reviewId);
+    try {
+      const productId = product.id || product._id || '';
+      const updated = await api.updateReview(productId, reviewId, {
+        rating: editRating,
+        comment: editComment || undefined,
+      });
+      setReviews((prev) => prev.map((r) => (r.id === reviewId ? updated : r)));
+      toast({ title: 'Review Updated', description: 'Your review has been saved.' });
+      handleCancelEdit();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to update review';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+    } finally {
+      setSavingEditId(null);
     }
   };
 
@@ -417,27 +510,137 @@ const ProductDetail: React.FC = () => {
                   animate={{ opacity: 1, y: 0 }}
                   className="glass-card rounded-xl p-6"
                 >
-                  <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-start justify-between gap-3 mb-3">
                     <div>
                       <p className="font-semibold">{review.user?.fullName || 'Anonymous'}</p>
                       <p className="text-xs text-muted-foreground">
                         {new Date(review.createdAt).toLocaleDateString()}
                       </p>
                     </div>
-                    <div className="flex items-center">
-                      {[1, 2, 3, 4, 5].map((star) => (
-                        <Star
-                          key={star}
-                          className={`h-4 w-4 ${star <= review.rating
-                              ? 'fill-yellow-500 text-yellow-500'
-                              : 'text-muted-foreground'
-                            }`}
-                        />
-                      ))}
+                    <div className="flex items-center gap-2">
+                      {editingReviewId !== review.id && (
+                        <div className="flex items-center">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <Star
+                              key={star}
+                              className={`h-4 w-4 ${star <= review.rating
+                                  ? 'fill-yellow-500 text-yellow-500'
+                                  : 'text-muted-foreground'
+                                }`}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {user && String(review.user?.id || review.userId) === String(user.id) && (
+                        <>
+                          {editingReviewId !== review.id ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-2"
+                              onClick={() => handleStartEdit(review)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              <span className="ml-1 hidden sm:inline">Edit</span>
+                            </Button>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-2"
+                              onClick={handleCancelEdit}
+                            >
+                              <X className="h-4 w-4" />
+                              <span className="ml-1 hidden sm:inline">Cancel</span>
+                            </Button>
+                          )}
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive h-8 px-2"
+                                disabled={deletingReviewId === review.id || editingReviewId === review.id}
+                              >
+                                {deletingReviewId === review.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                                <span className="ml-1 hidden sm:inline">Delete</span>
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent className="glass-card">
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Review?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will permanently remove your review for {product.name}.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => handleDeleteReview(review.id)}
+                                  className="bg-destructive hover:bg-destructive/90"
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </>
+                      )}
                     </div>
                   </div>
-                  {review.comment && (
-                    <p className="text-muted-foreground">{review.comment}</p>
+                  {editingReviewId === review.id ? (
+                    <div className="space-y-3 mt-2">
+                      <div>
+                        <Label>Rating</Label>
+                        <div className="flex items-center gap-1 mt-1">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              type="button"
+                              onClick={() => setEditRating(star)}
+                              className="focus:outline-none"
+                            >
+                              <Star
+                                className={`h-7 w-7 transition-colors ${star <= editRating
+                                    ? 'fill-yellow-500 text-yellow-500'
+                                    : 'text-muted-foreground hover:text-yellow-500'
+                                  }`}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <Label>Comment</Label>
+                        <Textarea
+                          className="mt-1"
+                          rows={3}
+                          value={editComment}
+                          onChange={(e) => setEditComment(e.target.value)}
+                        />
+                      </div>
+                      <Button
+                        size="sm"
+                        onClick={() => handleSaveEdit(review.id)}
+                        disabled={savingEditId === review.id}
+                      >
+                        {savingEditId === review.id && (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        )}
+                        Save Changes
+                      </Button>
+                    </div>
+                  ) : (
+                    review.comment && (
+                      <p className="text-muted-foreground">{review.comment}</p>
+                    )
                   )}
                 </motion.div>
               ))}

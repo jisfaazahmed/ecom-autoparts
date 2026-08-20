@@ -889,6 +889,56 @@ exports.createProductReview = async (req, res) => {
   }
 };
 
+exports.updateProductReview = async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const { reviewId } = req.params;
+    const userId = req.user?.id || req.user?._id || req.user?.userId;
+    const { rating, comment } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(reviewId)) {
+      return res.status(400).json({ message: 'Invalid review ID' });
+    }
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Invalid user context' });
+    }
+
+    const parsedRating = Number(rating);
+    if (!Number.isFinite(parsedRating) || parsedRating < 1 || parsedRating > 5) {
+      return res.status(400).json({ message: 'Rating must be a number between 1 and 5' });
+    }
+
+    const review = await Review.findOne({ _id: reviewId, product: productId });
+    if (!review) {
+      return res.status(404).json({ message: 'Review not found' });
+    }
+
+    const requesterRole = normalizeRole(req.user?.role);
+    const isOwner = String(review.user) === String(userId);
+    const isAdmin = requesterRole === 'admin' || requesterRole === 'superadmin';
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ message: 'Not authorized to edit this review' });
+    }
+
+    review.rating = parsedRating;
+    review.comment = typeof comment === 'string' && comment.trim() ? comment.trim() : undefined;
+    await review.save();
+
+    const hydrated = await Review.findById(review._id)
+      .populate('user', 'name email role status shopName commissionRate createdAt');
+
+    res.json(mapReview(hydrated));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
 exports.deleteProductReview = async (req, res) => {
   try {
     const productId = req.params.id;
