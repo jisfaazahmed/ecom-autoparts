@@ -60,6 +60,7 @@ async function sendMail({ to, subject, text, html }) {
 
   if (!isProd()) logSentMail({ to, subject, text });
 
+  console.log('[MAILER] Sent:', subject, 'to', to, 'id:');
   return { delivered: true };
 }
 
@@ -97,9 +98,21 @@ async function sendWelcomeEmail({ to, customerName }) {
   return sendMail({ to, subject, text, html });
 }
 
+async function sendPasswordReset(email, resetLink) {
+  const subject = 'Password Reset Request';
+  const html = `
+            <h1>Password Reset</h1>
+            <p>You requested a password reset. Click the link below to reset your password:</p>
+            <a href="${resetLink}">${resetLink}</a>
+            <p>This link is valid for 1 hour.</p>
+            <p>If you didn't request this, please ignore this email.</p>
+        `;
+  return sendMail({ to: email, subject, html });
+}
+
 module.exports = {
   sendMail,
   sendSignupOtpEmail,
   sendWelcomeEmail,
+  sendPasswordReset,
 };
-

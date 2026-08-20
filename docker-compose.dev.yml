@@ -24,6 +24,8 @@ services:
     restart: unless-stopped
     ports:
       - "5000:5000"
+    env_file:
+      - ./server/.env
     environment:
       - PORT=5000
       - NODE_ENV=development
@@ -34,7 +36,7 @@ services:
       - MONGO_USER=root
       - MONGO_PASSWORD=password
       - MONGO_DB=ecom-autoparts
-      - CLIENT_URL=${CLIENT_URL}
+      - CLIENT_URL=${CLIENT_URL:-http://localhost:3000}
     volumes:
       - ./server:/app
       - /app/node_modules
@@ -46,16 +48,16 @@ services:
     build: ./client
     ports:
       - "3000:3000"
+    volumes:
+      - ./client:/app
+      - /app/node_modules
     environment:
       - NODE_OPTIONS=--max-old-space-size=2048
       - CHOKIDAR_USEPOLLING=true
       - VITE_USE_POLLING=true
-      - VITE_API_URL=http://127.0.0.1:5000/api
+      - VITE_PROXY_TARGET=http://server:5000
       - VITE_STRIPE_PUBLISHABLE_KEY=${VITE_STRIPE_PUBLISHABLE_KEY}
     command: sh -c "npm run dev -- --host 0.0.0.0 --strictPort"
-    volumes:
-      - ./client:/app
-      - /app/node_modules
     depends_on:
       - server
 

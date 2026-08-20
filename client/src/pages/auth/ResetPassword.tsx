@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,20 @@ import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { api } from "@/lib/api";
 import { Shield, Eye, EyeOff, Loader2, Mail } from "lucide-react";
 import { toast } from "sonner";
+import { z } from "zod";
+
+const resetRequestSchema = z.object({
+  email: z.string().trim().min(1, "Please enter your email address").email("Please enter a valid email address"),
+});
+
+const newPasswordSchema = z
+  .string()
+  .trim()
+  .min(8, "Password must be at least 8 characters")
+  .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+  .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+  .regex(/[0-9]/, "Password must contain at least one number")
+  .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character");
 
 const ResetPassword = () => {
   const navigate = useNavigate();
@@ -24,6 +38,7 @@ const ResetPassword = () => {
   // Request reset state
   const [email, setEmail] = useState("");
   const [resetRequested, setResetRequested] = useState(false);
+  const [resetMessage, setResetMessage] = useState("");
 
   const handleRequestReset = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +49,7 @@ const ResetPassword = () => {
 
     if (!normalizedEmail) {
       setError("Please enter your email address");
+
       return;
     }
 
@@ -45,10 +61,10 @@ const ResetPassword = () => {
     setLoading(true);
 
     try {
-      await api.forgotPassword(normalizedEmail);
-      setEmail(normalizedEmail);
+      const response = await api.forgotPassword(normalizedEmail);
+      setResetMessage(response.message);
       setResetRequested(true);
-      toast.success("Check your email for reset instructions!");
+      toast.success(response.message);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to send reset email");
     }
@@ -60,18 +76,20 @@ const ResetPassword = () => {
     e.preventDefault();
     setError("");
 
-    const normalizedPassword = password.trim();
     const normalizedConfirmPassword = confirmPassword.trim();
 
-    if (!normalizedPassword || !normalizedConfirmPassword) {
-      setError("Please fill in both password fields");
+    if (!normalizedConfirmPassword) {
+      setError("Please confirm your new password");
       return;
     }
 
-    if (normalizedPassword.length < 6) {
-      setError("Password must be at least 6 characters");
+    const newPasswordValidation = newPasswordSchema.safeParse(password);
+    if (!newPasswordValidation.success) {
+      setError(newPasswordValidation.error.issues[0]?.message || "Invalid password");
       return;
     }
+
+    const normalizedPassword = newPasswordValidation.data;
 
     if (normalizedPassword !== normalizedConfirmPassword) {
       setError("Passwords do not match");
@@ -86,7 +104,7 @@ const ResetPassword = () => {
     setLoading(true);
 
     try {
-      await api.resetPassword(resetToken, normalizedPassword);
+      await api.resetPassword(resetToken, normalizedPassword, normalizedConfirmPassword);
       toast.success("Password updated successfully!");
       navigate("/auth/customer");
     } catch (err: unknown) {
@@ -128,7 +146,7 @@ const ResetPassword = () => {
               </Alert>
             )}
 
-            <form onSubmit={handleResetPassword} className="space-y-4">
+            <form onSubmit={handleResetPassword} className="space-y-4" noValidate>
               <div className="space-y-2">
                 <Label htmlFor="password">New Password</Label>
                 <div className="relative">
@@ -138,8 +156,6 @@ const ResetPassword = () => {
                     placeholder="Enter new password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    required
-                    minLength={6}
                   />
                   <Button
                     type="button"
@@ -165,8 +181,6 @@ const ResetPassword = () => {
                   placeholder="Confirm new password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  minLength={6}
                 />
               </div>
 
@@ -208,7 +222,7 @@ const ResetPassword = () => {
             <div>
               <CardTitle className="text-2xl font-bold">Check Your Email</CardTitle>
               <CardDescription className="mt-2">
-                We've sent password reset instructions to <strong>{email}</strong>
+                {resetMessage || "If an account with this email exists, a password reset link will be sent."}
               </CardDescription>
             </div>
           </CardHeader>
@@ -267,7 +281,7 @@ const ResetPassword = () => {
             </Alert>
           )}
 
-          <form onSubmit={handleRequestReset} className="space-y-4">
+          <form onSubmit={handleRequestReset} className="space-y-4" noValidate>
             <div className="space-y-2">
               <Label htmlFor="email">Email Address</Label>
               <div className="relative">
@@ -279,7 +293,6 @@ const ResetPassword = () => {
                   className="pl-10"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  required
                 />
               </div>
             </div>

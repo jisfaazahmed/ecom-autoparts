@@ -1,8 +1,9 @@
-require("dotenv").config();
+const path = require('path');
+// Always load server/.env so Mongo credentials are correct even when started from repo root.
+require('dotenv').config({ path: path.join(__dirname, '.env'), quiet: true });
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
-const path = require('path');
 
 // Global handlers – must be registered before anything else so stray throws
 // don't silently kill the process.
@@ -13,6 +14,15 @@ process.on('unhandledRejection', (reason) => {
   console.error('💥 unhandledRejection – server will stay alive:', reason);
 });
 
+
+// Register core models before routes (prevents populate/aggregate "Schema not registered" crashes).
+require('./models/user');
+require('./models/order.model');
+require('./models/orderItem.model');
+require('./models/subOrder.model');
+require('./models/product');
+require('./models/refund.model');
+require('./models/payment.model');
 
 // === 1. Import the New Routes ===
 const authRoutes = require('./routes/authRoutes');
@@ -49,7 +59,16 @@ const app = express();
 app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 
 // Apply JSON parsing for all other routes
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      'http://localhost:3000',
+      'http://127.0.0.1:3000',
+      process.env.CLIENT_URL,
+    ].filter(Boolean),
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use('/labels', express.static(path.join(__dirname, 'uploads', 'labels')));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -102,7 +121,7 @@ app.get("/health", (req, res) => {
 
 // Root API endpoint
 app.get("/", (req, res) => {
-  res.json({ 
+  res.json({
     name: "E-Commerce Autoparts API",
     version: "1.0.0",
     status: "running",
@@ -134,7 +153,6 @@ app.use('/api/users', userRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/wishlist', wishlistRoutes);
 app.use('/api-docs', swaggerUI.serve, swaggerUI.setup(swaggerSpecs));
-console.log("📄 Documentation available at http://localhost:5000/api-docs");
 
 // Return a consistent payload for unknown API routes.
 app.use((req, res, next) => {
@@ -148,4 +166,4 @@ app.use((req, res, next) => {
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT);

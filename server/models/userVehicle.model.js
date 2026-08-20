@@ -17,21 +17,12 @@ const userVehicleSchema = new mongoose.Schema(
       ref: 'VehicleModel',
       required: true,
     },
-    variant: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'VehicleVariant',
-      required: true,
-    },
+
     year: {
       type: Number,
       required: true,
     },
-    nickname: {
-      type: String,
-      default: null,
-      trim: true,
-    },
-    vin: {
+    registrationNumber: {
       type: String,
       default: null,
       trim: true,

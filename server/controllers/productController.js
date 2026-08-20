@@ -1,12 +1,22 @@
 const Product = require('../models/product');
 const Vehicle = require('../models/vehicle');
-const VehicleVariant = require('../models/vehicleVariant.model');
+const VehicleBrand = require('../models/vehicleBrand.model');
+const VehicleModel = require('../models/vehicleModel.model');
 const Review = require('../models/review.model');
 const VendorProduct = require('../models/vendorProduct');
 const mongoose = require('mongoose');
 const NotificationService = require('../services/notification.service');
 const User = require('../models/user');
 
+const escapeRegex = (str) => String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+function emptyProductsPage(limit) {
+  const limitNum = Math.max(1, parseInt(limit, 10) || 20);
+  return {
+    products: [],
+    pagination: { page: 1, limit: limitNum, total: 0, totalPages: 0 },
+  };
+}
 
 const normalizeRole = (role) => {
   const normalized = String(role || '').toLowerCase().replace('_', '');
@@ -29,6 +39,24 @@ const applyDiscount = (price, percent) => {
   const discounted = base - (base * pct) / 100;
   return Number(discounted.toFixed(2));
 };
+
+function mapCompatibleVehicleModels(models) {
+  if (!Array.isArray(models)) return [];
+  return models.map((m) => {
+    if (m && typeof m === 'object' && m._id) {
+      const mapped = {
+        id: m._id.toString(),
+        name: m.name,
+      };
+      if (m.brand && typeof m.brand === 'object' && m.brand._id) {
+        mapped.brandId = m.brand._id.toString();
+        mapped.brandName = m.brand.name;
+      }
+      return mapped;
+    }
+    return typeof m === 'object' ? String(m) : m;
+  });
+}
 
 const mapProduct = (productDoc) => {
   const product = productDoc?.toJSON ? productDoc.toJSON() : productDoc;
@@ -64,6 +92,7 @@ const mapProduct = (productDoc) => {
     effectiveDiscountPercent,
     hasDiscount: effectiveDiscountPercent > 0,
     compatibleVariants: compatibleVehicles.map((vehicle) => String(vehicle?._id || vehicle?.id || vehicle || '')),
+    compatibleVehicleModels: mapCompatibleVehicleModels(product.compatibleVehicleModels),
     featured: !!product.featured,
     shopId,
     shop: sellerObj
@@ -85,8 +114,6 @@ const getRequester = (req) => ({
 
 const normalizeSearchTerm = (value) => String(value || '').trim();
 
-const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
 const buildSearchQuery = (searchTerm) => {
   const normalized = normalizeSearchTerm(searchTerm);
   if (!normalized) return null;
@@ -98,7 +125,9 @@ const buildSearchQuery = (searchTerm) => {
       query: {
         $or: [
           { name: { $regex: safe, $options: 'i' } },
+          { description: { $regex: safe, $options: 'i' } },
           { sku: { $regex: safe, $options: 'i' } },
+          { partNumber: { $regex: safe, $options: 'i' } },
         ],
       },
       sort: null,
@@ -139,6 +168,20 @@ const mapReview = (reviewDoc) => {
   };
 };
 
+async function resolveVehicleModelId(make, model) {
+  if (!make || !model) return null;
+  const brand = await VehicleBrand.findOne({
+    name: { $regex: new RegExp(`^${escapeRegex(make)}$`, 'i') },
+  });
+  if (!brand) return null;
+
+  const vModel = await VehicleModel.findOne({
+    name: { $regex: new RegExp(`^${escapeRegex(model)}$`, 'i') },
+    brand: brand._id,
+  });
+  return vModel ? vModel._id : null;
+}
+
 const resolveCompatibleVehicleIds = async (compatibleVariants) => {
   if (!Array.isArray(compatibleVariants)) return [];
 
@@ -150,54 +193,40 @@ const resolveCompatibleVehicleIds = async (compatibleVariants) => {
   if (normalizedIds.length === 0) return [];
 
   const directVehicles = await Vehicle.find({ _id: { $in: normalizedIds } }).select('_id');
-  const directVehicleIdSet = new Set(directVehicles.map((v) => String(v._id)));
-  const unresolvedVariantIds = normalizedIds.filter((id) => !directVehicleIdSet.has(id));
-
-  if (unresolvedVariantIds.length === 0) {
-    return [...directVehicleIdSet];
-  }
-
-  const variants = await VehicleVariant.find({ _id: { $in: unresolvedVariantIds } })
-    .populate({
-      path: 'model',
-      select: 'name brand',
-      populate: { path: 'brand', select: 'name' },
-    });
-
-  if (variants.length !== unresolvedVariantIds.length) {
+  if (directVehicles.length !== normalizedIds.length) {
     throw new Error('INVALID_COMPATIBLE_VARIANTS');
   }
 
-  const mappedVehicleIds = new Set([...directVehicleIdSet]);
-  const currentYear = new Date().getFullYear();
+  return directVehicles.map((vehicle) => String(vehicle._id));
+};
 
-  for (const variant of variants) {
-    const modelDoc = variant.model;
-    const brandDoc = modelDoc?.brand;
-    const makeName = brandDoc?.name;
-    const modelName = modelDoc?.name;
+async function resolveCompatibleVehicleModelIds(modelIds) {
+  if (!Array.isArray(modelIds)) return [];
 
-    if (!makeName || !modelName) {
-      throw new Error('INVALID_COMPATIBLE_VARIANTS');
-    }
+  const normalizedIds = [...new Set(modelIds.map((id) => String(id)))];
+  if (normalizedIds.some((id) => !mongoose.Types.ObjectId.isValid(id))) {
+    throw new Error('INVALID_COMPATIBLE_MODELS');
+  }
+  if (normalizedIds.length === 0) return [];
 
-    const yearEnd = variant.yearEnd || currentYear;
-    const matchedVehicles = await Vehicle.find({
-      make: makeName,
-      model: modelName,
-      submodel: variant.name,
-      year: { $gte: variant.yearStart, $lte: yearEnd },
-    }).select('_id');
-
-    if (!matchedVehicles.length) {
-      throw new Error('INVALID_COMPATIBLE_VARIANTS');
-    }
-
-    matchedVehicles.forEach((vehicle) => mappedVehicleIds.add(String(vehicle._id)));
+  const count = await VehicleModel.countDocuments({ _id: { $in: normalizedIds } });
+  if (count !== normalizedIds.length) {
+    throw new Error('INVALID_COMPATIBLE_MODELS');
   }
 
-  return [...mappedVehicleIds];
-};
+  return normalizedIds;
+}
+
+function applyProductPopulates(query) {
+  return query
+    .populate('category', 'name slug')
+    .populate('createdBy', 'name shopName email status role shopWideDiscountPercent')
+    .populate({
+      path: 'compatibleVehicleModels',
+      select: 'name brand',
+      populate: { path: 'brand', select: 'name' },
+    });
+}
 
 exports.checkStock = async (req, res) => {
   try {
@@ -214,11 +243,11 @@ exports.checkStock = async (req, res) => {
           name: 'Unknown Product',
           available: 0,
           requested: item.quantity,
-          sufficient: false
+          sufficient: false,
         });
         continue;
       }
-      
+
       const product = await Product.findById(item.productId);
       if (!product) {
         results.push({
@@ -226,18 +255,18 @@ exports.checkStock = async (req, res) => {
           name: 'Unknown Product',
           available: 0,
           requested: item.quantity,
-          sufficient: false
+          sufficient: false,
         });
         continue;
       }
-      
+
       const available = product.stock || 0;
       results.push({
         productId: product._id,
         name: product.name,
-        available: available,
+        available,
         requested: item.quantity,
-        sufficient: available >= item.quantity
+        sufficient: available >= item.quantity,
       });
     }
 
@@ -248,10 +277,23 @@ exports.checkStock = async (req, res) => {
   }
 };
 
-// 1. CREATE PRODUCT (Sellers & Admins)
 exports.createProduct = async (req, res) => {
   try {
-    const { name, sku, price, stock, categoryId, compatibleVariants, description, imageUrl, shopId, productDiscountPercent } = req.body;
+    const {
+      name,
+      sku,
+      price,
+      stock,
+      categoryId,
+      compatibleVariants,
+      compatibleModels,
+      compatibleVehicleModels,
+      description,
+      imageUrl,
+      shopId,
+      productDiscountPercent,
+      partNumber,
+    } = req.body;
     const requester = getRequester(req);
 
     if (!['admin', 'superadmin'].includes(requester.role)) {
@@ -266,7 +308,6 @@ exports.createProduct = async (req, res) => {
       return res.status(400).json({ message: 'Product name and category are required' });
     }
 
-    // Map compatibleVariants (variant IDs or vehicle IDs) to vehicle IDs.
     let vehicleIds = [];
     if (compatibleVariants !== undefined) {
       if (!Array.isArray(compatibleVariants)) {
@@ -275,53 +316,63 @@ exports.createProduct = async (req, res) => {
       vehicleIds = await resolveCompatibleVehicleIds(compatibleVariants);
     }
 
-    // Default status to 'Pending' for sellers. Super Admin could theoretially approve immediately, 
-    // but let's keep all new creations as 'Pending' or let admin pass 'Approved'
-    const finalStatus = requester.role === 'superadmin' ? 'Approved' : 'Pending';
+    const modelIdsInput = compatibleModels || compatibleVehicleModels;
+    let vehicleModelIds = [];
+    if (modelIdsInput !== undefined) {
+      if (!Array.isArray(modelIdsInput)) {
+        return res.status(400).json({ message: 'compatibleModels must be an array' });
+      }
+      vehicleModelIds = await resolveCompatibleVehicleModelIds(modelIdsInput);
+    }
 
-    // Sellers must not be able to spoof ownership by posting a different shopId.
+    const finalStatus = requester.role === 'superadmin' ? 'Approved' : 'Pending';
     const ownerId = requester.role === 'superadmin' && shopId && mongoose.Types.ObjectId.isValid(String(shopId))
       ? String(shopId)
       : String(requester.id);
 
-    // Create the product
+    const generatedSku = sku || `SKU-${Date.now()}`;
     const newProduct = new Product({
       name,
-      sku: sku || 'SKU-' + Date.now(),
+      sku: generatedSku,
+      partNumber: partNumber || generatedSku,
       price: price || 0,
       stock: stock || 0,
       productDiscountPercent: toPercent(productDiscountPercent),
       image: imageUrl,
       category: categoryId || null,
       compatibleVehicles: vehicleIds,
+      compatibleVehicleModels: vehicleModelIds,
       description,
       createdBy: ownerId,
-      status: finalStatus
+      status: finalStatus,
     });
 
     await newProduct.save();
 
-    const savedProduct = await Product.findById(newProduct._id)
-      .populate('category', 'name')
-      .populate('createdBy', 'name shopName email status role shopWideDiscountPercent');
+    const savedProduct = await applyProductPopulates(Product.findById(newProduct._id));
 
-    // Notify Super Admin if created by a vendor (role ADMIN)
     if (requester.role === 'admin') {
       const vendor = await User.findById(requester.id);
       if (vendor) {
-        NotificationService.notifySuperAdminProductAdded(savedProduct, vendor).catch(err => console.error('Error notifying super admin product added:', err));
+        NotificationService.notifySuperAdminProductAdded(savedProduct, vendor).catch((err) =>
+          console.error('Error notifying super admin product added:', err)
+        );
       }
     }
-
 
     res.status(201).json(mapProduct(savedProduct));
   } catch (err) {
     console.error(err);
+    if (err?.message === 'INVALID_COMPATIBLE_VARIANTS') {
+      return res.status(400).json({ message: 'One or more Vehicle Variant IDs are invalid.' });
+    }
+    if (err?.message === 'INVALID_COMPATIBLE_MODELS') {
+      return res.status(400).json({ message: 'One or more Vehicle Model IDs are invalid.' });
+    }
     res.status(500).json({ message: 'Server Error', error: err.message });
   }
 };
 
-// 1.05 UPDATE PRODUCT (Owner seller or Super Admin)
 exports.updateProduct = async (req, res) => {
   try {
     const { id } = req.params;
@@ -333,6 +384,8 @@ exports.updateProduct = async (req, res) => {
       stock,
       categoryId,
       compatibleVariants,
+      compatibleModels,
+      compatibleVehicleModels,
       description,
       imageUrl,
       isActive,
@@ -366,6 +419,14 @@ exports.updateProduct = async (req, res) => {
       product.compatibleVehicles = await resolveCompatibleVehicleIds(compatibleVariants);
     }
 
+    const modelIdsInput = compatibleModels !== undefined ? compatibleModels : compatibleVehicleModels;
+    if (modelIdsInput !== undefined) {
+      if (!Array.isArray(modelIdsInput)) {
+        return res.status(400).json({ message: 'compatibleModels must be an array' });
+      }
+      product.compatibleVehicleModels = await resolveCompatibleVehicleModelIds(modelIdsInput);
+    }
+
     if (name !== undefined) product.name = name;
     if (sku !== undefined) product.sku = sku;
     if (price !== undefined) product.price = price;
@@ -384,20 +445,20 @@ exports.updateProduct = async (req, res) => {
 
     await product.save();
 
-    const updated = await Product.findById(product._id)
-      .populate('category', 'name')
-      .populate('createdBy', 'name shopName email status role shopWideDiscountPercent')
-      .populate('compatibleVehicles', 'year make model');
-
+    const updated = await applyProductPopulates(Product.findById(product._id));
     res.json(mapProduct(updated));
   } catch (err) {
     console.error(err);
     if (err?.message === 'INVALID_COMPATIBLE_VARIANTS') {
       return res.status(400).json({ message: 'One or more Vehicle Variant IDs are invalid.' });
     }
+    if (err?.message === 'INVALID_COMPATIBLE_MODELS') {
+      return res.status(400).json({ message: 'One or more Vehicle Model IDs are invalid.' });
+    }
     res.status(500).json({ message: 'Server Error', error: err.message });
   }
 };
+
 
 // 1.06 DELETE PRODUCT (Admin or Super Admin)
 exports.deleteProduct = async (req, res) => {
@@ -433,14 +494,10 @@ exports.deleteProduct = async (req, res) => {
     res.status(204).send();
   } catch (err) {
     console.error(err);
-    if (err?.message === 'INVALID_COMPATIBLE_VARIANTS') {
-      return res.status(400).json({ message: 'One or more Vehicle Variant IDs are invalid.' });
-    }
     res.status(500).json({ message: 'Server Error', error: err.message });
   }
 };
 
-// 1.1 UPDATE PRODUCT STATUS (Super Admin Only)
 exports.updateProductStatus = async (req, res) => {
   try {
     const { id } = req.params;
@@ -449,15 +506,14 @@ exports.updateProductStatus = async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ message: 'Invalid product ID' });
     }
-    
+
     if (!['Pending', 'Approved', 'Rejected'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status' });
     }
 
-    const product = await Product.findByIdAndUpdate(id, { status }, { new: true })
-      .populate('category', 'name')
-      .populate('createdBy', 'name shopName email status role shopWideDiscountPercent')
-      .populate('compatibleVehicles', 'year make model');
+    const product = await applyProductPopulates(
+      Product.findByIdAndUpdate(id, { status }, { new: true })
+    );
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
     res.json(mapProduct(product));
@@ -467,7 +523,6 @@ exports.updateProductStatus = async (req, res) => {
   }
 };
 
-// 1.2 UPDATE FEATURED FLAG (Super Admin Only)
 exports.updateProductFeatured = async (req, res) => {
   try {
     const { id } = req.params;
@@ -480,14 +535,9 @@ exports.updateProductFeatured = async (req, res) => {
       return res.status(400).json({ message: 'featured must be a boolean' });
     }
 
-    const product = await Product.findByIdAndUpdate(
-      id,
-      { featured },
-      { new: true }
-    )
-      .populate('category', 'name')
-      .populate('createdBy', 'name shopName email status role shopWideDiscountPercent')
-      .populate('compatibleVehicles', 'year make model submodel');
+    const product = await applyProductPopulates(
+      Product.findByIdAndUpdate(id, { featured }, { new: true })
+    );
 
     if (!product) return res.status(404).json({ message: 'Product not found' });
 
@@ -498,16 +548,29 @@ exports.updateProductFeatured = async (req, res) => {
   }
 };
 
-// 2. SEARCH PRODUCTS (The "Tesla > Model S > Brakes" Logic)
 exports.getProducts = async (req, res) => {
   try {
-    const { vehicleId, categoryId, category, shop, status, search } = req.query;
+    const {
+      vehicleId,
+      categoryId,
+      category,
+      shop,
+      status,
+      isActive,
+      search,
+      minPrice,
+      maxPrice,
+      sortBy,
+      sortOrder,
+      page = 1,
+      limit = 20,
+      make,
+      model: vehicleModel,
+    } = req.query;
     const requester = getRequester(req);
     const categoryFilter = categoryId || category;
-    
     const query = {};
 
-    // 1. If searching by a specific shop/seller (Vendor Dashboard)
     if (shop) {
       query.createdBy = shop;
 
@@ -515,64 +578,102 @@ exports.getProducts = async (req, res) => {
       const isSuperAdmin = requester.role === 'superadmin';
 
       if (isSelfVendor || isSuperAdmin) {
-        // Vendor owner and super admin can inspect all statuses when needed.
         if (status) query.status = status;
       } else {
-        // Public/customer should only see approved and active products.
         query.status = 'Approved';
         query.isActive = true;
       }
+    } else if (requester.role === 'superadmin') {
+      if (status) query.status = status;
     } else {
-      // 2. Or, public facing search: ONLY SHOW APPROVED
-      if (requester.role === 'superadmin') {
-        // Super Admins can see specific status or ALL if no status provided
-        if (status) query.status = status;
-      } else {
-        // Public sees only approved
-        query.status = 'Approved';
-        query.isActive = true;
-      }
+      query.status = 'Approved';
+      query.isActive = true;
     }
 
-    // Filter by Category (e.g., "Brake Pads")
     if (categoryFilter) {
       query.category = categoryFilter;
     }
 
-    // Filter by Vehicle (e.g., "Tesla Model S")
     if (vehicleId) {
-      // Find products where the 'compatibleVehicles' array CONTAINS this vehicleId
-      query.compatibleVehicles = vehicleId;
-    }
+      const vehicle = await Vehicle.findById(vehicleId).lean();
+      if (!vehicle) {
+        return res.json(emptyProductsPage(limit));
+      }
 
-    const searchConfig = buildSearchQuery(search);
-    let finalQuery = query;
-    let sortQuery = { createdAt: -1 };
-
-    if (searchConfig) {
-      finalQuery = {
-        ...query,
-        ...searchConfig.query,
-      };
-      if (searchConfig.sort) {
-        sortQuery = searchConfig.sort;
+      const modelId = await resolveVehicleModelId(vehicle.make, vehicle.model);
+      if (modelId) {
+        query.compatibleVehicleModels = modelId;
+      } else {
+        // No matching VehicleModel found for this vehicle, so no products can match
+        return res.json(emptyProductsPage(limit));
       }
     }
 
-    const products = await Product.find(finalQuery)
-      .sort(sortQuery)
-      .populate('category', 'name')
-      .populate('createdBy', 'name shopName email status role shopWideDiscountPercent')
-      .populate('compatibleVehicles', 'year make model'); // Show car names in result
+    if (make && vehicleModel) {
+      const modelId = await resolveVehicleModelId(make, vehicleModel);
+      if (!modelId) {
+        return res.json(emptyProductsPage(limit));
+      }
+      query.compatibleVehicleModels = modelId;
+    }
 
-    res.json(products.map(mapProduct));
+    if (isActive !== undefined && query.isActive === undefined) {
+      query.isActive = isActive === 'true';
+    }
+
+    const searchQuery = buildSearchQuery(search);
+    if (searchQuery) {
+      const searchClause = searchQuery.query;
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, searchClause];
+        delete query.$or;
+      } else {
+        Object.assign(query, searchClause);
+      }
+    }
+
+    if (minPrice || maxPrice) {
+      query.price = {};
+      if (minPrice) query.price.$gte = Number(minPrice);
+      if (maxPrice) query.price.$lte = Number(maxPrice);
+    }
+
+    let sort = {};
+    if (sortBy) {
+      sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
+    } else if (searchQuery?.sort) {
+      sort = searchQuery.sort;
+    } else {
+      sort.createdAt = -1;
+    }
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.max(1, parseInt(limit, 10) || 20);
+    const skip = (pageNum - 1) * limitNum;
+
+    const [products, total] = await Promise.all([
+      applyProductPopulates(Product.find(query))
+        .sort(sort)
+        .skip(skip)
+        .limit(limitNum),
+      Product.countDocuments(query),
+    ]);
+
+    res.json({
+      products: products.map(mapProduct),
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+      },
+    });
   } catch (err) {
     console.error(err);
     res.status(500).send('Server Error');
   }
 };
 
-// 2.1 SUPER ADMIN PRODUCT LIST (strictly authenticated)
 exports.getSuperAdminProducts = async (req, res) => {
   try {
     const { vehicleId, categoryId, category, status, search, shop, shopId } = req.query;
@@ -589,33 +690,35 @@ exports.getSuperAdminProducts = async (req, res) => {
     }
 
     if (vehicleId) {
-      query.compatibleVehicles = vehicleId;
+      const vehicle = await Vehicle.findById(vehicleId).lean();
+      if (!vehicle) {
+        return res.json([]);
+      }
+
+      const modelId = await resolveVehicleModelId(vehicle.make, vehicle.model);
+      if (modelId) {
+        query.compatibleVehicleModels = modelId;
+      } else {
+        return res.json([]);
+      }
     }
 
     if (sellerFilter) {
       query.createdBy = sellerFilter;
     }
 
-    const searchConfig = buildSearchQuery(search);
-    let finalQuery = query;
-    let sortQuery = { createdAt: -1 };
-
-    if (searchConfig) {
-      finalQuery = {
-        ...query,
-        ...searchConfig.query,
-      };
-      if (searchConfig.sort) {
-        sortQuery = searchConfig.sort;
+    const searchQuery = buildSearchQuery(search);
+    if (searchQuery) {
+      const searchClause = searchQuery.query;
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, searchClause];
+        delete query.$or;
+      } else {
+        Object.assign(query, searchClause);
       }
     }
 
-    const products = await Product.find(finalQuery)
-      .sort(sortQuery)
-      .populate('category', 'name')
-      .populate('createdBy', 'name shopName email status role shopWideDiscountPercent')
-      .populate('compatibleVehicles', 'year make model');
-
+    const products = await applyProductPopulates(Product.find(query).sort(searchQuery?.sort || { createdAt: -1 }));
     res.json(products.map(mapProduct));
   } catch (err) {
     console.error(err);
@@ -632,11 +735,15 @@ exports.getFeaturedProducts = async (req, res) => {
     })
       .sort({ updatedAt: -1, createdAt: -1 })
       .limit(8);
-    
+
     const hydrated = await Product.populate(products, [
       { path: 'category', select: 'name' },
       { path: 'createdBy', select: 'name shopName email status role shopWideDiscountPercent' },
-      { path: 'compatibleVehicles', select: 'year make model submodel' },
+      {
+        path: 'compatibleVehicleModels',
+        select: 'name brand',
+        populate: { path: 'brand', select: 'name' },
+      },
     ]);
 
     res.json(hydrated.map(mapProduct));
@@ -652,17 +759,17 @@ exports.getFeaturedProducts = async (req, res) => {
 exports.getCategories = async (req, res) => {
   try {
     const categories = await Product.distinct('category', { isActive: true });
-    
+
     res.json({
       success: true,
       count: categories.length,
-      categories
+      categories,
     });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Server error' 
+      message: 'Server error',
     });
   }
 };
@@ -676,14 +783,11 @@ exports.getProductById = async (req, res) => {
       return res.status(400).json({ message: 'Invalid product ID' });
     }
 
-    const product = await Product.findById(req.params.id)
-      .populate('category', 'name')
-      .populate('createdBy', 'name shopName email status role shopWideDiscountPercent')
-      .populate('compatibleVehicles', 'year make model');
-    
+    const product = await applyProductPopulates(Product.findById(req.params.id));
+
     if (!product) {
-      return res.status(404).json({ 
-        message: 'Product not found' 
+      return res.status(404).json({
+        message: 'Product not found',
       });
     }
 
@@ -697,12 +801,12 @@ exports.getProductById = async (req, res) => {
     res.json(mapProduct(product));
   } catch (err) {
     console.error(err);
-    res.status(500).json({ 
+    res.status(500).json({
       message: 'Server error',
-      error: err.message 
+      error: err.message,
     });
   }
-}; 
+};
 
 exports.getProductReviews = async (req, res) => {
   try {
@@ -777,10 +881,59 @@ exports.createProductReview = async (req, res) => {
 
     res.status(statusCode).json(mapReview(hydrated));
   } catch (err) {
-    // Duplicate key can happen if race condition creates same product/user review concurrently.
     if (err && err.code === 11000) {
       return res.status(409).json({ message: 'You have already reviewed this product' });
     }
+    console.error(err);
+    res.status(500).json({ message: 'Server error', error: err.message });
+  }
+};
+
+exports.updateProductReview = async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const { reviewId } = req.params;
+    const userId = req.user?.id || req.user?._id || req.user?.userId;
+    const { rating, comment } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(productId)) {
+      return res.status(400).json({ message: 'Invalid product ID' });
+    }
+
+    if (!mongoose.Types.ObjectId.isValid(reviewId)) {
+      return res.status(400).json({ message: 'Invalid review ID' });
+    }
+
+    if (!userId || !mongoose.Types.ObjectId.isValid(String(userId))) {
+      return res.status(401).json({ message: 'Invalid user context' });
+    }
+
+    const parsedRating = Number(rating);
+    if (!Number.isFinite(parsedRating) || parsedRating < 1 || parsedRating > 5) {
+      return res.status(400).json({ message: 'Rating must be a number between 1 and 5' });
+    }
+
+    const review = await Review.findOne({ _id: reviewId, product: productId });
+    if (!review) {
+      return res.status(404).json({ message: 'Review not found' });
+    }
+
+    const requesterRole = normalizeRole(req.user?.role);
+    const isOwner = String(review.user) === String(userId);
+    const isAdmin = requesterRole === 'admin' || requesterRole === 'superadmin';
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ message: 'Not authorized to edit this review' });
+    }
+
+    review.rating = parsedRating;
+    review.comment = typeof comment === 'string' && comment.trim() ? comment.trim() : undefined;
+    await review.save();
+
+    const hydrated = await Review.findById(review._id)
+      .populate('user', 'name email role status shopName commissionRate createdAt');
+
+    res.json(mapReview(hydrated));
+  } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error', error: err.message });
   }

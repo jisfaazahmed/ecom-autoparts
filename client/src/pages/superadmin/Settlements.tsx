@@ -18,8 +18,10 @@ interface Settlement {
   _id: string;
   amount?: number;
   totalPayable?: number;
+  payableAmount?: number;
   status: string;
   period?: { start: string; end: string };
+  settlementPeriod?: { startDate: string; endDate: string };
   createdAt: string;
   vendor?: { name?: string; shopName?: string };
 }
@@ -71,8 +73,8 @@ const Settlements: React.FC = () => {
         api.getVendorSettlementRangeSummary(selectedVendorId),
       ]);
       if (settlementsRes.status === 'fulfilled') {
-        const data = settlementsRes.value;
-        setSettlements(Array.isArray(data) ? data : (data as { settlements?: Settlement[] }).settlements || []);
+        const data = settlementsRes.value as Settlement[] | { settlements?: Settlement[] };
+        setSettlements(Array.isArray(data) ? data : data.settlements || []);
       }
       if (summaryRes.status === 'fulfilled') {
         setSummary(summaryRes.value);
@@ -192,10 +194,12 @@ const Settlements: React.FC = () => {
                       <td className="px-4 py-3 text-xs">
                         {s.period
                           ? `${new Date(s.period.start).toLocaleDateString()} – ${new Date(s.period.end).toLocaleDateString()}`
+                          : s.settlementPeriod
+                          ? `${new Date(s.settlementPeriod.startDate).toLocaleDateString()} – ${new Date(s.settlementPeriod.endDate).toLocaleDateString()}`
                           : '—'}
                       </td>
                       <td className="px-4 py-3 text-right font-semibold text-primary">
-                        {formatLKR(s.totalPayable ?? s.amount ?? 0)}
+                        {formatLKR(s.payableAmount ?? s.totalPayable ?? s.amount ?? 0)}
                       </td>
                       <td className="px-4 py-3">
                         <span

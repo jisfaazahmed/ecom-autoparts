@@ -28,6 +28,7 @@ const SuperAdminDashboard: React.FC = () => {
   
   const [shops, setShops] = useState<Shop[]>([]);
   const [totalSales, setTotalSales] = useState(0);
+  const [totalCommission, setTotalCommission] = useState(0);
   const [pendingRefunds, setPendingRefunds] = useState(0);
   const [salesData, setSalesData] = useState<Array<{ month: string; sales: number; commission: number }>>([]);
   const [categoryData, setCategoryData] = useState<Array<{ name: string; value: number; color: string }>>([]);
@@ -55,17 +56,38 @@ const SuperAdminDashboard: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [shopsData, refundsData, categories, analyticsData] = await Promise.all([
+      const [shopsResult, refundsResult, categoriesResult, analyticsResult] = await Promise.allSettled([
         api.getShops(),
         api.getAdminRefunds({ limit: 200 }),
         api.getCategories(),
         api.getSuperAdminAnalytics({ range: '1y' })
       ]);
 
-      setShops(shopsData.data);
-      setPendingRefunds((refundsData.refunds || []).filter((refund) => String(refund.status || '').toLowerCase() === 'requested').length);
+      if (shopsResult.status === 'fulfilled') {
+        setShops(shopsResult.value.data || []);
+      } else {
+        const msg = shopsResult.reason instanceof Error ? shopsResult.reason.message : 'Failed to load vendors';
+        console.error('Failed to load shops:', shopsResult.reason);
+        toast({ title: 'Vendors unavailable', description: msg, variant: 'destructive' });
+      }
+
+      if (refundsResult.status === 'fulfilled') {
+        setPendingRefunds((refundsResult.value.refunds || []).filter((refund) => String(refund.status || '').toLowerCase() === 'requested').length);
+      } else {
+        console.error('Failed to load refunds:', refundsResult.reason);
+      }
+
+      if (analyticsResult.status === 'rejected') {
+        const msg = analyticsResult.reason instanceof Error ? analyticsResult.reason.message : 'Failed to load analytics';
+        console.error('Failed to load analytics:', analyticsResult.reason);
+        toast({ title: 'Analytics unavailable', description: msg, variant: 'destructive' });
+      }
+
+      const categories = categoriesResult.status === 'fulfilled' ? categoriesResult.value : [];
+      const analyticsData = analyticsResult.status === 'fulfilled' ? analyticsResult.value : { totalSales: 0, salesByMonth: [], topCategories: [], totalCommission: 0 };
 
       setTotalSales(analyticsData.totalSales || 0);
+      setTotalCommission(analyticsData.totalCommission || 0);
 
       const salesSeries = (analyticsData.salesByMonth || []).map(item => ({
         month: toMonthLabel(item.month),
@@ -100,14 +122,16 @@ const SuperAdminDashboard: React.FC = () => {
     }
   };
 
-  const commission = totalSales * 0.1;
+  const commission = totalCommission > 0
+    ? totalCommission
+    : salesData.reduce((sum, row) => sum + (row.commission || 0), 0);
   const pendingVendors = shops.filter(s => s.status === 'pending').length;
   const approvedVendors = shops.filter(s => s.status === 'approved').length;
 
   const stats = [
-    { label: 'Total Sales', value: formatLKR(totalSales), icon: DollarSign, change: '+18%', positive: true },
-    { label: 'Commission Earned', value: formatLKR(commission), icon: TrendingUp, change: '+12%', positive: true },
-    { label: 'Active Vendors', value: approvedVendors, icon: Building2, change: '+3', positive: true },
+    { label: 'Total Sales', value: formatLKR(totalSales), icon: DollarSign, change: totalSales > 0 ? 'Live data' : 'No sales yet', positive: totalSales > 0 },
+    { label: 'Commission Earned', value: formatLKR(commission), icon: TrendingUp, change: commission > 0 ? 'Live data' : 'No commission yet', positive: commission > 0 },
+    { label: 'Active Vendors', value: approvedVendors, icon: Building2, change: `${shops.length} total`, positive: true },
     { label: 'Pending Approvals', value: pendingVendors, icon: Clock, change: pendingVendors > 0 ? 'Needs attention' : 'All clear', positive: pendingVendors === 0 },
     { label: 'Pending Refund Reviews', value: pendingRefunds, icon: AlertCircle, change: pendingRefunds > 0 ? 'Needs attention' : 'All clear', positive: pendingRefunds === 0 },
   ];

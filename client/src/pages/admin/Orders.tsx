@@ -82,7 +82,8 @@ const validateOrderNotes = (value: string): string | null => {
 };
 
 const AdminOrders: React.FC = () => {
-  const { shop } = useAuth();
+  const { shop, user } = useAuth();
+  const vendorId = shop?.id || user?.id;
   const { toast } = useToast();
 
   const [orders, setOrders] = useState<ApiOrder[]>([]);
@@ -100,7 +101,7 @@ const AdminOrders: React.FC = () => {
   const [trackingNumber, setTrackingNumber] = useState('');
   const [orderNotes, setOrderNotes] = useState('');
 
-  useEffect(() => { if (shop?.id) fetchOrders(); }, [shop?.id]);
+  useEffect(() => { if (vendorId) fetchOrders(); }, [vendorId]);
 
   const formatShippingAddress = (
     shippingAddress: unknown,
@@ -140,7 +141,7 @@ const AdminOrders: React.FC = () => {
   };
 
   const fetchOrders = async () => {
-    if (!shop?.id) return;
+    if (!vendorId) return;
     setLoading(true);
     try {
       const response = await api.getVendorOrders();

@@ -24,14 +24,20 @@ exports.getSuperAdminAnalytics = async (req, res) => {
         const endDate = new Date();
 
         // 1. Total active vendors
-        const totalVendors = await User.countDocuments({ role: 'ADMIN', status: { $in: ['APPROVED', 'ACTIVE'] } });
+        const totalVendors = await User.countDocuments({ role: 'ADMIN', status: 'ACTIVE' });
 
         // 2. Aggregate Sales & Commission (SuperAdmin)
         // We use SubOrders to easily compute commission based on vendor's commissionRate
-        const subOrders = await SubOrder.find({
+        let subOrders = await SubOrder.find({
             createdAt: { $gte: startDate, $lte: endDate },
             status: { $ne: 'cancelled' }
-        }).populate('seller', 'commissionRate');
+        }).lean();
+
+        try {
+            subOrders = await SubOrder.populate(subOrders, { path: 'seller', select: 'commissionRate' });
+        } catch (populateErr) {
+            console.warn('Analytics: seller populate skipped, using subOrder.commissionRate:', populateErr.message);
+        }
 
         let totalSales = 0;
         let totalCommission = 0;
@@ -42,9 +48,12 @@ exports.getSuperAdminAnalytics = async (req, res) => {
 
         // Loop through all suborders
         subOrders.forEach(so => {
-            const amount = so.totalAmount || 0;
+            const amount = Number(so.totalAmount || 0);
             const status = so.status || 'pending';
-            const rate = (so.seller && so.seller.commissionRate ? so.seller.commissionRate : 10) / 100;
+            const sellerRate = so.seller && typeof so.seller === 'object'
+                ? so.seller.commissionRate
+                : null;
+            const rate = Number(sellerRate ?? so.commissionRate ?? 10) / 100;
 
             totalSales += amount;
             totalCommission += amount * rate;
@@ -56,7 +65,9 @@ exports.getSuperAdminAnalytics = async (req, res) => {
             }
 
             // Monthly breakdown
-            const period = so.createdAt.toISOString().slice(0, 7); // YYYY-MM
+            const created = so.createdAt ? new Date(so.createdAt) : null;
+            if (!created || Number.isNaN(created.getTime())) return;
+            const period = created.toISOString().slice(0, 7); // YYYY-MM
             if (!monthlyAggr[period]) {
                 monthlyAggr[period] = { sales: 0, commission: 0, orders: 0 };
             }
@@ -73,7 +84,9 @@ exports.getSuperAdminAnalytics = async (req, res) => {
         ordersByStatusMap['cancelled'] = cancelledSubOrders;
 
         // Note: For accurately matching frontend exact Orders, we can count distinct `order` references.
-        const distinctOrderSet = new Set(subOrders.map(so => so.order.toString()));
+        const distinctOrderSet = new Set(
+            subOrders.map((so) => (so.order ? String(so.order) : null)).filter(Boolean)
+        );
         const totalOrders = distinctOrderSet.size;
 
         // Calculate Average Order Value (AOV)

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { BarChart3, DollarSign, TrendingUp, ShoppingBag, Users, Package, Loader2, Calendar, ArrowUpRight, ArrowDownRight, Download } from 'lucide-react';
+import { BarChart3, DollarSign, TrendingUp, ShoppingBag, Users, Package, Loader2, Calendar, ArrowUpRight, ArrowDownRight, Download, Clock, RefreshCw, Truck, CheckCircle2, XCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,19 @@ import { jsPDF } from 'jspdf';
 import 'jspdf-autotable';
 import AnalyticsAIChat from './AnalyticsAIChat';
 // Use live data via API; remove mock fallbacks
+
+interface AnalyticsData {
+  totalSales: number;
+  totalCommission: number;
+  totalOrders: number;
+  totalVendors: number;
+  aov: number;
+  totalRefunds: number;
+  topVendors: { shopName: string; name: string; sales: number; orders: number }[];
+  ordersByStatus: Record<string, number>;
+  salesByMonth: { month: string; sales: number; commission: number; orders: number }[];
+  topCategories: { categoryId: string; earnings: number }[];
+}
 
 const SuperAdminAnalytics: React.FC = () => {
   const { toast } = useToast();
@@ -89,7 +102,7 @@ const SuperAdminAnalytics: React.FC = () => {
       const categories = await api.getCategories().catch(() => []);
       const categoryNameMap = new Map((categories || []).map((cat: { id: string; name: string }) => [String(cat.id), String(cat.name)]));
 
-      const categoryColors = ['hsl(190, 100%, 50%)', 'hsl(270, 100%, 60%)', 'hsl(330, 100%, 60%)', 'hsl(142, 76%, 36%)', 'hsl(38, 92%, 50%)'];
+      const categoryColors = ['#0e7490', '#22d3ee', '#67e8f9', '#a5f3fc', '#cffafe'];
       const topCats = (data.topCategories || []).map((c, idx) => ({
         name: categoryNameMap.get(c.categoryId) || (c.categoryId === 'null' ? 'Uncategorized' : 'Other'),
         value: c.earnings,
@@ -150,7 +163,6 @@ const SuperAdminAnalytics: React.FC = () => {
         ['Active Vendors', totalVendors.toLocaleString()]
       ];
 
-      // @ts-expect-error jspdf-autotable augments the jsPDF prototype at runtime but ships no module augmentation for its types
       doc.autoTable({
         startY: 47,
         head: summaryHeaders,
@@ -161,7 +173,6 @@ const SuperAdminAnalytics: React.FC = () => {
       });
 
       // Section 2: Top Performing Vendors Table
-      // @ts-expect-error jspdf-autotable augments the jsPDF prototype at runtime but ships no module augmentation for its types
       const finalY1 = doc.lastAutoTable.finalY;
       
       doc.setFont('helvetica', 'bold');
@@ -177,7 +188,6 @@ const SuperAdminAnalytics: React.FC = () => {
         formatLKR(vendor.sales)
       ]);
 
-      // @ts-expect-error jspdf-autotable augments the jsPDF prototype at runtime but ships no module augmentation for its types
       doc.autoTable({
         startY: finalY1 + 20,
         head: vendorHeaders,
@@ -188,7 +198,6 @@ const SuperAdminAnalytics: React.FC = () => {
       });
 
       // Section 3: Top Product Categories
-      // @ts-expect-error jspdf-autotable augments the jsPDF prototype at runtime but ships no module augmentation for its types
       const finalY2 = doc.lastAutoTable.finalY;
       
       doc.setFont('helvetica', 'bold');
@@ -201,7 +210,6 @@ const SuperAdminAnalytics: React.FC = () => {
         formatLKR(cat.value)
       ]);
 
-      // @ts-expect-error jspdf-autotable augments the jsPDF prototype at runtime but ships no module augmentation for its types
       doc.autoTable({
         startY: finalY2 + 20,
         head: categoryHeaders,
@@ -213,20 +221,20 @@ const SuperAdminAnalytics: React.FC = () => {
 
       doc.save(`platform-analytics-${timeRange}-${new Date().toISOString().slice(0, 10)}.pdf`);
       toast({ title: 'Success', description: 'PDF report downloaded successfully' });
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('PDF export failed:', err);
-      toast({ title: 'Export Error', description: err instanceof Error ? err.message : 'Failed to export PDF', variant: 'destructive' });
+      toast({ title: 'Export Error', description: (err as Error).message || 'Failed to export PDF', variant: 'destructive' });
     }
   };
 
 
   const stats = [
-    { label: 'Total Sales', value: formatLKRCompact(totalSales), icon: DollarSign, change: '+18%', positive: true, color: 'text-primary' },
-    { label: 'Commission Earned', value: formatLKRCompact(totalCommission), icon: TrendingUp, change: '+12%', positive: true, color: 'text-success' },
+    { label: 'Total Sales', value: formatLKRCompact(totalSales), icon: DollarSign, change: totalSales > 0 ? 'Live data' : 'No data', positive: totalSales > 0, color: 'text-primary' },
+    { label: 'Commission Earned', value: formatLKRCompact(totalCommission), icon: TrendingUp, change: totalCommission > 0 ? 'Live data' : 'No data', positive: totalCommission > 0, color: 'text-success' },
     { label: 'Total Orders', value: totalOrders.toLocaleString(), icon: ShoppingBag, change: '+24%', positive: true, color: 'text-purple-400' },
     { label: 'Average Order Value', value: formatLKRCompact(aov), icon: DollarSign, change: '+5%', positive: true, color: 'text-blue-400' },
     { label: 'Total Refunds', value: formatLKRCompact(totalRefunds), icon: TrendingUp, change: '-2%', positive: false, color: 'text-destructive' },
-    { label: 'Active Vendors', value: totalVendors.toLocaleString(), icon: Users, change: '+3', positive: true, color: 'text-warning' },
+    { label: 'Active Vendors', value: totalVendors.toLocaleString(), icon: Users, change: totalVendors > 0 ? 'Live data' : 'No vendors', positive: totalVendors > 0, color: 'text-warning' },
   ];
 
   if (loading) return <AdminLayout><div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></AdminLayout>;
@@ -271,18 +279,36 @@ const SuperAdminAnalytics: React.FC = () => {
           <Card className="lg:col-span-2 glass-card">
             <CardHeader><CardTitle className="font-display flex items-center gap-2"><TrendingUp className="h-5 w-5 text-primary" />Sales & Commission Trend</CardTitle></CardHeader>
             <CardContent>
-              <div className="h-[250px] lg:h-[300px]">
+              <div className="h-[330px] lg:h-[400px]">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={salesByMonth}>
+                  <AreaChart data={salesByMonth} margin={{ top: 10, right: 10, left: 0, bottom: 20 }}>
                     <defs>
                       <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(190, 100%, 50%)" stopOpacity={0.3} /><stop offset="95%" stopColor="hsl(190, 100%, 50%)" stopOpacity={0} /></linearGradient>
                       <linearGradient id="commissionGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0.3} /><stop offset="95%" stopColor="hsl(142, 76%, 36%)" stopOpacity={0} /></linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(240, 10%, 18%)" />
-                    <XAxis dataKey="month" stroke="hsl(215, 20%, 55%)" fontSize={12} />
-                    <YAxis stroke="hsl(215, 20%, 55%)" fontSize={12} tickFormatter={(v) => `${(v / 1000).toFixed(0)}K`} />
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(240, 10%, 18%)" vertical={false} />
+                    <XAxis 
+                      dataKey="month" 
+                      stroke="hsl(215, 20%, 55%)" 
+                      fontSize={12} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      interval={0}
+                      angle={-45}
+                      textAnchor="end"
+                      height={60}
+                      dy={10}
+                    />
+                    <YAxis 
+                      stroke="hsl(215, 20%, 55%)" 
+                      fontSize={12} 
+                      tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      width={45} 
+                    />
                     <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} formatter={(value: number) => formatLKR(value)} />
-                    <Legend />
+                    <Legend verticalAlign="top" height={36} iconType="circle" />
                     <Area type="monotone" dataKey="sales" stroke="hsl(190, 100%, 50%)" fill="url(#salesGradient)" strokeWidth={2} name="Sales" />
                     <Area type="monotone" dataKey="commission" stroke="hsl(142, 76%, 36%)" fill="url(#commissionGradient)" strokeWidth={2} name="Commission" />
                   </AreaChart>
@@ -294,12 +320,63 @@ const SuperAdminAnalytics: React.FC = () => {
           <Card className="glass-card">
             <CardHeader><CardTitle className="font-display flex items-center gap-2"><ShoppingBag className="h-5 w-5 text-primary" />Orders by Status</CardTitle></CardHeader>
             <CardContent>
-              <div className="h-[180px] lg:h-[200px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart><Pie data={ordersByStatus.filter(s => s.value > 0)} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value" strokeWidth={0}>{ordersByStatus.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}</Pie><Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} /></PieChart>
-                </ResponsiveContainer>
+              <div className="relative h-[180px] lg:h-[200px]">
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-0">
+                  <span className="text-2xl font-bold font-display leading-none text-foreground">
+                    {ordersByStatus.reduce((acc, curr) => acc + curr.value, 0)}
+                  </span>
+                  <span className="text-xs text-muted-foreground mt-1">Total Orders</span>
+                </div>
+                <div className="absolute inset-0 z-10">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie 
+                        data={ordersByStatus.filter(s => s.value > 0)} 
+                        cx="50%" cy="50%" 
+                        innerRadius={50} outerRadius={70} 
+                        dataKey="value" 
+                        nameKey="name"
+                        strokeWidth={0}
+                        startAngle={90}
+                        endAngle={-270}
+                      >
+                        {ordersByStatus.filter(s => s.value > 0).map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                      </Pie>
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} 
+                        itemStyle={{ color: '#f8fafc' }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
-              <div className="space-y-2 mt-4">{ordersByStatus.map(item => (<div key={item.name} className="flex items-center justify-between text-sm"><div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }} /><span className="text-muted-foreground">{item.name}</span></div><span className="font-medium">{item.value}</span></div>))}</div>
+              <div className="space-y-1.5 mt-4">
+                {ordersByStatus.map(item => {
+                  const totalStatusOrders = ordersByStatus.reduce((acc, curr) => acc + curr.value, 0);
+                  const percentage = totalStatusOrders > 0 ? Math.round((item.value / totalStatusOrders) * 100) : 0;
+                  
+                  let StatusIcon = Clock;
+                  if (item.name === 'Processing') StatusIcon = RefreshCw;
+                  if (item.name === 'Shipped') StatusIcon = Truck;
+                  if (item.name === 'Delivered') StatusIcon = CheckCircle2;
+                  if (item.name === 'Cancelled') StatusIcon = XCircle;
+                  
+                  return (
+                    <div key={item.name} className="flex items-center text-sm py-0.5">
+                      <div className="flex items-center gap-2.5 flex-1">
+                        <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                          <StatusIcon className="w-3.5 h-3.5" />
+                          <span>{item.name}</span>
+                        </div>
+                      </div>
+                      <div className="w-24 text-right font-medium text-foreground">
+                        {item.value} <span className="text-muted-foreground font-normal">({percentage}%)</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -314,7 +391,7 @@ const SuperAdminAnalytics: React.FC = () => {
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(240, 10%, 18%)" />
                     <XAxis dataKey="month" stroke="hsl(215, 20%, 55%)" fontSize={12} />
                     <YAxis stroke="hsl(215, 20%, 55%)" fontSize={12} />
-                    <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} />
+                    <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} itemStyle={{ color: '#f8fafc' }} />
                     <Bar dataKey="orders" fill="hsl(270, 100%, 60%)" radius={[4, 4, 0, 0]} name="Orders" />
                   </BarChart>
                 </ResponsiveContainer>
@@ -331,7 +408,7 @@ const SuperAdminAnalytics: React.FC = () => {
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(240, 10%, 18%)" />
                     <XAxis type="number" stroke="hsl(215, 20%, 55%)" fontSize={12} tickFormatter={(v) => formatLKRCompact(v)} />
                     <YAxis type="category" dataKey="name" stroke="hsl(215, 20%, 55%)" width={80} fontSize={12} />
-                    <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} formatter={(value: number) => formatLKR(value)} />
+                    <Tooltip contentStyle={{ backgroundColor: 'hsl(240, 10%, 6%)', border: '1px solid hsl(240, 10%, 18%)', borderRadius: '8px' }} itemStyle={{ color: '#f8fafc' }} formatter={(value: number) => formatLKR(value)} />
                     <Bar dataKey="value" radius={[0, 4, 4, 0]} name="Earnings">{topCategories.map((_, index) => <Cell key={`cell-${index}`} fill={topCategories[index]?.color} />)}</Bar>
                   </BarChart>
                 </ResponsiveContainer>

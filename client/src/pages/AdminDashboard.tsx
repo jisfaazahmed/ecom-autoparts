@@ -19,7 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { formatLKR } from '@/lib/currency';
 
 const AdminDashboard: React.FC = () => {
-  const { profile, shop, role } = useAuth();
+  const { profile, shop, role, user } = useAuth();
   const { toast } = useToast();
   
   const [products, setProducts] = useState<ApiProduct[]>([]);
@@ -33,14 +33,16 @@ const AdminDashboard: React.FC = () => {
   
   const [newProduct, setNewProduct] = useState({ name: '', description: '', price: '', stock: '', sku: '', category_id: '', compatible_variants: [] as string[] });
 
-  useEffect(() => { if (shop?.id) fetchData(); }, [shop?.id]);
+  const vendorId = shop?.id || user?.id;
+
+  useEffect(() => { if (vendorId) fetchData(); }, [vendorId]);
 
   const fetchData = async () => {
-    if (!shop?.id) return;
+    if (!vendorId) return;
     setLoading(true);
     try {
       const [productsRes, ordersRes, categoriesRes, refundsRes] = await Promise.all([
-        api.getProducts({ shop: shop.id }),
+        api.getProducts({ shop: vendorId }),
         api.getVendorOrders({ limit: 10 }),
         api.getCategories(),
         role === 'admin' || role === 'superadmin' 
@@ -138,6 +140,11 @@ const AdminDashboard: React.FC = () => {
   return (
     <AdminLayout>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+        {shop?.status === 'pending' && (
+          <p className="mb-6 text-sm text-warning p-3 bg-warning/10 rounded-lg border border-warning/20">
+            Your shop is pending approval. You can manage products and orders here, but customers will not see your catalog until a super admin approves your shop.
+          </p>
+        )}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
           <div>
             <h1 className="font-display text-2xl lg:text-3xl font-bold">Dashboard</h1>

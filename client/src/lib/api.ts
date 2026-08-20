@@ -97,9 +97,29 @@ export interface ApiShop {
   updatedAt: string;
 }
 
-export interface ApiProduct {
+export interface ForgotPasswordResponse {
+  message: string;
+  resetToken?: string;
+  resetLink?: string;
+}
+
+export interface ApiCompatibleVehicle {
   id: string;
+  year: number;
+  make: string;
+  model: string;
+}
+
+export interface ApiCompatibleModel {
+  id: string;
+  name: string;
+  brandId?: string;
+  brandName?: string;
+}
+
+export interface ApiProduct {
   _id?: string;
+  id: string;
   name: string;
   description?: string;
   price: number;
@@ -113,7 +133,9 @@ export interface ApiProduct {
   categoryId?: string;
   shopId: string;
   isActive: boolean;
-  status: "Pending" | "Approved" | "Rejected";
+  compatibleVehicles?: ApiCompatibleVehicle[];
+  compatibleVehicleModels?: ApiCompatibleModel[];
+  status?: "Pending" | "Approved" | "Rejected";
   featured?: boolean;
   hasDiscount?: boolean;
   originalPrice?: number;
@@ -126,6 +148,8 @@ export interface ApiProduct {
   updatedAt: string;
   category?: ApiCategory;
   shop?: ApiShop;
+  rating?: number;
+  reviewCount?: number;
 }
 
 export interface ApiCategory {
@@ -235,6 +259,8 @@ export interface ApiVehicleModel {
   created_at?: string;
 }
 
+
+
 export interface ApiVehicleVariant {
   id: string;
   name: string;
@@ -257,16 +283,26 @@ export interface ApiUserVehicle {
   userId: string;
   brandId: string;
   modelId: string;
-  variantId?: string;
   year: number;
+  registrationNumber?: string;
   nickname?: string;
   vin?: string;
   isActive: boolean;
   brand?: ApiVehicleBrand;
   model?: ApiVehicleModel;
-  variant?: ApiVehicleVariant;
   createdAt?: string;
 }
+
+export interface ApiRegCheckVehicle {
+  registrationNumber: string;
+  brand: ApiVehicleBrand;
+  model: { id: string; name: string };
+  year: number | null;
+}
+
+export type ApiRegCheckResult =
+  | { found: true; vehicle: ApiRegCheckVehicle }
+  | { found: false; message: string };
 
 export interface ApiReview {
   id: string;
@@ -596,12 +632,18 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers,
+      });
+    } catch {
+      throw new Error(
+        'Cannot reach the API. Use http://localhost:3000 and ensure Docker services (client + server) are running.'
+      );
+    }
 
-    // Handle 401 - try token refresh
     if (response.status === 401) {
       if (this.refreshToken) {
         const refreshed = await this.refreshAccessToken();
@@ -617,15 +659,9 @@ class ApiClient {
           return retryResponse.json();
         }
       }
-      
-      // If no refresh token or refresh failed, clear tokens and redirect
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/auth/customer?redirect=' + window.location.pathname;
-      throw new Error('Session expired, please login again.');
+
+      this.clearAuthStorage();
+      throw new Error('Session expired. Please log in again.');
     }
 
     if (!response.ok) {
@@ -636,16 +672,33 @@ class ApiClient {
     if (response.status === 204) {
       return undefined as T;
     }
-    return response.json();
+
+    try {
+      return await response.json();
+    } catch {
+      throw new Error('Invalid JSON response from server');
+    }
   }
 
   private async getErrorMessage(response: Response): Promise<string> {
+    const raw = await response.text();
+    if (!raw) return `Request failed (${response.status})`;
     try {
-      const data = await response.json();
-      return data.message || data.error || 'An error occurred';
+      const data = JSON.parse(raw);
+      return data.message || data.error || `Request failed (${response.status})`;
     } catch {
-      return 'An error occurred';
+      return raw.length > 200 ? `${raw.slice(0, 200)}...` : raw;
     }
+  }
+
+  private clearAuthStorage() {
+    this.accessToken = null;
+    this.refreshToken = null;
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
   }
 
   private async refreshAccessToken(): Promise<boolean> {
@@ -657,7 +710,7 @@ class ApiClient {
       });
 
       if (!response.ok) {
-        this.logout();
+        this.clearAuthStorage();
         return false;
       }
 
@@ -665,7 +718,7 @@ class ApiClient {
       this.setTokens(data.accessToken, data.refreshToken);
       return true;
     } catch {
-      this.logout();
+      this.clearAuthStorage();
       return false;
     }
   }
@@ -673,23 +726,17 @@ class ApiClient {
   setTokens(accessToken: string, refreshToken: string) {
     this.accessToken = accessToken;
     this.refreshToken = refreshToken;
+    localStorage.setItem('auth_token', accessToken);
     localStorage.setItem('accessToken', accessToken);
     localStorage.setItem('refreshToken', refreshToken);
   }
 
   logout() {
-    this.accessToken = null;
-    this.refreshToken = null;
-    // Clear all auth keys (new + legacy) so refresh can't restore a session.
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    this.clearAuthStorage();
   }
 
   isAuthenticated(): boolean {
-    return !!this.accessToken;
+    return !!(this.getToken());
   }
 
   // ============ AUTH ============
@@ -798,7 +845,7 @@ class ApiClient {
   }
 
   async updateProfile(data: Partial<ApiUser>): Promise<ApiUser> {
-    return this.request<ApiUser>('/users/profile', {
+    return this.request<ApiUser>('/auth/profile', {
       method: 'PUT',
       body: JSON.stringify(data),
     });
@@ -807,21 +854,21 @@ class ApiClient {
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {
     await this.request('/auth/change-password', {
       method: 'POST',
-      body: JSON.stringify({ currentPassword, newPassword }),
+      body: JSON.stringify({ currentPassword, newPassword, passwordConfirm: newPassword }),
     });
   }
 
-  async forgotPassword(email: string): Promise<void> {
-    await this.request('/auth/forgot-password', {
+  async forgotPassword(email: string): Promise<ForgotPasswordResponse> {
+    return this.request<ForgotPasswordResponse>('/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify({ email }),
     });
   }
 
-  async resetPassword(token: string, password: string): Promise<void> {
+  async resetPassword(token: string, password: string, passwordConfirm: string): Promise<void> {
     await this.request('/auth/reset-password', {
       method: 'POST',
-      body: JSON.stringify({ token, password }),
+      body: JSON.stringify({ token, password, passwordConfirm }),
     });
   }
 
@@ -829,6 +876,20 @@ class ApiClient {
     await this.request('/auth/update-password', {
       method: 'POST',
       body: JSON.stringify({ password }),
+    });
+  }
+
+  async verifyEmail(token: string): Promise<{ message: string; emailVerified: boolean }> {
+    return this.request('/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  async resendVerificationEmail(email: string): Promise<{ message: string }> {
+    return this.request('/auth/resend-verification-email', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
     });
   }
 
@@ -871,6 +932,9 @@ class ApiClient {
     sortBy?: string;
     sortOrder?: 'asc' | 'desc';
     isActive?: boolean;
+    make?: string;
+    model?: string;
+    vehicleId?: string;
   }): Promise<PaginatedResponse<ApiProduct>> {
     const searchParams = new URLSearchParams();
     if (params) {
@@ -883,7 +947,7 @@ class ApiClient {
       });
     }
     const response = await this.request<any>(`/products?${searchParams.toString()}`);
-    
+
     // Transform backend response to match PaginatedResponse
     // It might be a plain array or { products: [], pagination: {} }
     const data = Array.isArray(response) ? response : (response.products || response.data || []);
@@ -1335,7 +1399,7 @@ class ApiClient {
 
   async reorder(orderId: string): Promise<{ message: string }> {
     const order = await this.getOrder(orderId);
-    
+
     // Add all order items to cart
     for (const item of order.items || []) {
       await this.addToCart({
@@ -1343,7 +1407,7 @@ class ApiClient {
         quantity: item.quantity,
       });
     }
-    
+
     return { message: 'Items added to cart successfully' };
   }
 
@@ -1523,8 +1587,24 @@ class ApiClient {
   }> {
     const searchParams = new URLSearchParams();
     if (params?.range) searchParams.set('range', params.range);
-    const response = await this.request<{ success: boolean; data: any }>(`/admin-analytics/superadmin?${searchParams.toString()}`);
-    return response.data;
+    const response = await this.request<{ success: boolean; data: any } & Record<string, unknown>>(
+      `/admin-analytics/superadmin?${searchParams.toString()}`
+    );
+    if (response && typeof response === 'object' && 'data' in response && response.data) {
+      return response.data as {
+        totalSales: number;
+        totalCommission: number;
+        totalOrders: number;
+        totalVendors: number;
+        ordersByStatus: Record<string, number>;
+        salesByMonth: Array<{ month: string; sales: number; commission: number; orders: number }>;
+        topCategories: Array<{ categoryId: string; earnings: number }>;
+        topVendors?: Array<{ shopName: string; name: string; sales: number; orders: number }>;
+        aov?: number;
+        totalRefunds?: number;
+      };
+    }
+    return response as any;
   }
 
   async askAnalyticsAI(
@@ -1635,7 +1715,7 @@ class ApiClient {
       coupons: ApiCoupon[];
       pagination: { page: number; limit: number; total: number; totalPages: number };
     }>(`/coupons?${searchParams.toString()}`);
-    
+
     // Transform backend response to match PaginatedResponse
     return {
       data: response.coupons,
@@ -1674,6 +1754,13 @@ class ApiClient {
     });
   }
 
+  async bulkCreateCoupons(data: Partial<ApiCoupon> & { count: number; prefix?: string }): Promise<{ count: number; coupons: ApiCoupon[] }> {
+    return this.request<{ count: number; coupons: ApiCoupon[] }>('/coupons/bulk', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   async updateCoupon(id: string, data: Partial<ApiCoupon>): Promise<ApiCoupon> {
     return this.request<ApiCoupon>(`/coupons/${id}`, {
       method: 'PUT',
@@ -1699,13 +1786,7 @@ class ApiClient {
     return this.request<ApiVehicleModel[]>('/vehicles/models/all');
   }
 
-  async getVehicleVariants(modelId: string): Promise<ApiVehicleVariant[]> {
-    return this.request<ApiVehicleVariant[]>(`/vehicles/variants/${modelId}`);
-  }
 
-  async getAllVehicleVariants(): Promise<ApiVehicleVariant[]> {
-    return this.request<ApiVehicleVariant[]>('/vehicles/variants/all');
-  }
 
   async resolveVehicle(params: {
     year: number;
@@ -1757,6 +1838,26 @@ class ApiClient {
     await this.request(`/vehicles/models/${id}`, { method: 'DELETE' });
   }
 
+
+
+  // ============ REGISTRATION LOOKUP ============
+
+  async lookupRegistration(registrationNumber: string): Promise<ApiRegCheckResult> {
+    return this.request<ApiRegCheckResult>(`/vehicles/lookup/${encodeURIComponent(registrationNumber)}`);
+  }
+
+  async addUserVehicleByReg(data: {
+    registrationNumber: string;
+    brandId: string;
+    modelId: string;
+    year?: number;
+  }): Promise<ApiUserVehicle> {
+    return this.request<ApiUserVehicle>('/vehicles/user/reg', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   async createVehicleVariant(data: {
     name: string;
     modelId: string;
@@ -1790,8 +1891,8 @@ class ApiClient {
   async addUserVehicle(data: {
     brandId: string;
     modelId: string;
-    variantId?: string;
     year: number;
+    registrationNumber?: string;
     nickname?: string;
     vin?: string;
   }): Promise<ApiUserVehicle> {
@@ -1811,9 +1912,7 @@ class ApiClient {
     await this.request(`/vehicles/user/${vehicleId}`, { method: 'DELETE' });
   }
 
-  async deleteVehicleVariant(id: string): Promise<void> {
-    await this.request(`/vehicles/variants/${id}`, { method: 'DELETE' });
-  }
+
 
   // ============ REVIEWS ============
 
@@ -1830,6 +1929,13 @@ class ApiClient {
 
   async createProductReview(productId: string, data: { rating: number; comment?: string }): Promise<ApiReview> {
     return this.createReview(productId, data);
+  }
+
+  async updateReview(productId: string, reviewId: string, data: { rating: number; comment?: string }): Promise<ApiReview> {
+    return this.request<ApiReview>(`/products/${productId}/reviews/${reviewId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
   }
 
   async deleteReview(productId: string, reviewId: string): Promise<void> {

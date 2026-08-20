@@ -33,15 +33,9 @@ const Navbar: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { cart, userVehicle, compareItems, wishlistIds } = useStore();
-  
-  // Fix: map useAuth return values to what Navbar expects
-  const { user, logout } = useAuth();
-  const signOut = logout;
-  const loading = false;
-  const role = user?.role;
-  const profile = user ? { full_name: user.name } : null;
-
+  const { user, profile, role, signOut, loading } = useAuth();
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
+  const [searchQuery, setSearchQuery] = useState('');
   const [couponPopupOpen, setCouponPopupOpen] = useState(false);
   const [couponPopupLoading, setCouponPopupLoading] = useState(false);
   const [popupCoupons, setPopupCoupons] = useState<ApiCoupon[]>([]);
@@ -67,9 +61,35 @@ const Navbar: React.FC = () => {
     { href: '/policy/terms', label: 'Terms & Conditions' },
   ];
 
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    setSearchQuery(params.get('search') ?? '');
+  }, [location.pathname, location.search]);
+
   const handleSignOut = async () => {
     await signOut();
     navigate('/');
+  };
+
+  const handleSearchSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    const nextParams = new URLSearchParams();
+    const trimmedSearch = searchQuery.trim();
+
+    // Keep active category filter when searching from the shop page.
+    if (location.pathname === '/shop') {
+      const currentParams = new URLSearchParams(location.search);
+      const category = currentParams.get('category');
+      if (category) nextParams.set('category', category);
+    }
+
+    if (trimmedSearch) {
+      nextParams.set('search', trimmedSearch);
+    }
+
+    const queryString = nextParams.toString();
+    navigate(`/shop${queryString ? `?${queryString}` : ''}`);
   };
 
   const formatCouponDiscount = (coupon: ApiCoupon) => {
@@ -210,17 +230,29 @@ const Navbar: React.FC = () => {
 
         {/* Search Bar */}
         <div className="hidden lg:flex flex-1 max-w-md">
-          <div className="relative w-full">
+          <form className="relative w-full" onSubmit={handleSearchSubmit}>
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Search parts, brands, or categories..."
-              className="pl-10 bg-secondary/50 border-border/50 focus:border-primary"
+              placeholder="Search parts..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10 pr-24 bg-secondary/50 border-border/50 focus:border-primary"
             />
-          </div>
+            <div className="absolute right-1 top-1/2 -translate-y-1/2 z-10">
+              <Button
+                type="submit"
+                size="sm"
+                className="neon-button h-8 px-3"
+                aria-label="Search"
+              >
+                Search
+              </Button>
+            </div>
+          </form>
         </div>
 
         {/* Vehicle Badge */}
-        {userVehicle && (
+        {user && userVehicle && (
           <Link to="/my-vehicle">
             <Badge variant="outline" className="hidden md:flex items-center gap-2 border-primary/50 text-primary">
               <Car className="h-3 w-3" />
@@ -307,7 +339,7 @@ const Navbar: React.FC = () => {
                     <Link to="/profile">My Profile</Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link to="/my-vehicle">My Vehicle</Link>
+                    <Link to="/my-vehicle">My Vehicles</Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link to="/orders">My Orders</Link>

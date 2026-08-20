@@ -4,6 +4,19 @@ import { Sparkles, MessageSquare, Send, X, AlertCircle, RefreshCw } from 'lucide
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 
+interface AnalyticsData {
+  totalSales: number;
+  totalCommission: number;
+  totalOrders: number;
+  totalVendors: number;
+  aov: number;
+  totalRefunds: number;
+  topVendors: { shopName: string; name: string; sales: number; orders: number }[];
+  ordersByStatus: Record<string, number>;
+  salesByMonth: { month: string; sales: number; commission: number; orders: number }[];
+  topCategories: { categoryId: string; earnings: number }[];
+}
+
 interface AnalyticsAIChatProps {
   // Opaque payload: forwarded straight to api.askAnalyticsAI, never read field
   // by field here, so it is typed from the endpoint that produces it.

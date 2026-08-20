@@ -120,6 +120,13 @@ exports.createProductReview = async (req, res) => {
 
 		res.status(201).json(formatReview(populatedReview));
 	} catch (error) {
+		// Handle MongoDB duplicate key error
+		if (error.code === 11000) {
+			return res.status(409).json({
+				message: 'You have already reviewed this product. Please update your existing review instead.',
+			});
+		}
+
 		res.status(error.statusCode || 500).json({
 			message: error.message || 'Failed to submit review',
 		});

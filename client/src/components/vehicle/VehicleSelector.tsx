@@ -23,7 +23,7 @@ import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
 import { Vehicle } from '@/types';
 import { toast } from 'sonner';
-import { api, ApiVehicleBrand, ApiVehicleModel, ApiVehicleVariant, ApiVinDecoded } from '@/lib/api';
+import { api, ApiVehicleBrand, ApiVehicleModel, ApiRegCheckVehicle, ApiUserVehicle } from '@/lib/api';
 
 interface VehicleSelectorProps {
   trigger?: React.ReactNode;
@@ -34,27 +34,49 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
   const { setUserVehicle, userVehicle, triggerVehicleRefresh } = useStore();
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<'vin' | 'manual'>('manual');
-  
+  const [tab, setTab] = useState<'reg' | 'manual'>('manual');
+
   // Loading states
   const [loading, setLoading] = useState(false);
-  
+
   // Data from database
   const [brands, setBrands] = useState<ApiVehicleBrand[]>([]);
   const [models, setModels] = useState<ApiVehicleModel[]>([]);
-  const [variants, setVariants] = useState<ApiVehicleVariant[]>([]);
-  
-  // VIN state
-  const [vin, setVin] = useState('');
-  const [vinLoading, setVinLoading] = useState(false);
-  const [vinDecoded, setVinDecoded] = useState<ApiVinDecoded | null>(null);
-  const [vinSaving, setVinSaving] = useState(false);
-  
+
+  // Registration lookup state
+  const [regNumber, setRegNumber] = useState('');
+  const [regLoading, setRegLoading] = useState(false);
+  const [regVehicle, setRegVehicle] = useState<ApiRegCheckVehicle | null>(null);
+  const [regNotFound, setRegNotFound] = useState<string | null>(null);
+  const [regSaving, setRegSaving] = useState(false);
+
   // Manual selection state
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
-  const [selectedVariant, setSelectedVariant] = useState('');
   const [selectedYear, setSelectedYear] = useState('');
+  const [savedVehicles, setSavedVehicles] = useState<ApiUserVehicle[]>([]);
+
+  const isDuplicateVehicle = (brandId: string, modelId: string, year: number) =>
+    savedVehicles.some(
+      (v) => v.brandId === brandId && v.modelId === modelId && v.year === year
+    );
+
+  // Load saved vehicles when dialog opens (for duplicate check)
+  useEffect(() => {
+    if (!open || !user) {
+      setSavedVehicles([]);
+      return;
+    }
+    const loadSaved = async () => {
+      try {
+        const data = await api.getUserVehicles();
+        setSavedVehicles(data || []);
+      } catch {
+        setSavedVehicles([]);
+      }
+    };
+    loadSaved();
+  }, [open, user]);
 
   // Fetch brands on mount
   useEffect(() => {
@@ -75,7 +97,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
       setModels([]);
       return;
     }
-    
+
     const fetchModels = async () => {
       setLoading(true);
       try {
@@ -89,81 +111,101 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
     fetchModels();
   }, [selectedBrand]);
 
-  // Fetch variants when model changes
-  useEffect(() => {
-    if (!selectedModel) {
-      setVariants([]);
-      return;
-    }
-    
-    const fetchVariants = async () => {
-      setLoading(true);
-      try {
-        const data = await api.getVehicleVariants(selectedModel);
-        setVariants(data || []);
-      } catch (error) {
-        console.error('Failed to fetch variants:', error);
-      }
-      setLoading(false);
-    };
-    fetchVariants();
-  }, [selectedModel]);
-
   const selectedBrandData = brands.find((b) => b.id === selectedBrand);
   const selectedModelData = models.find((m) => m.id === selectedModel);
-  const selectedVariantData = variants.find((v) => v.id === selectedVariant);
 
-  // Generate years array based on variant
+  // Generate years array (current year down to 2000)
   const getYears = () => {
-    if (!selectedVariantData) return [];
-    const endYear = selectedVariantData.yearEnd || new Date().getFullYear();
+    const currentYear = new Date().getFullYear();
     const years = [];
-    for (let y = selectedVariantData.yearStart; y <= endYear; y++) {
+    for (let y = currentYear; y >= 2000; y--) {
       years.push(y);
     }
     return years;
   };
 
+  // Validate registration number
+  const validateRegNumber = (value: string): string | null => {
+    const raw = value || '';
+
+    if (raw.trim().length === 0) return 'Please enter a registration number';
+
+    // Only allow letters, digits, spaces and dashes in the input
+    if (/[^A-Za-z0-9\s-]/.test(raw)) return 'Only letters, digits, spaces and \'-\' are allowed';
+
+    // Ensure at most one dash is present
+    const dashCount = (raw.match(/-/g) || []).length;
+      if (dashCount > 1) return 'Only one "-" is allowed';
+
+    // Remove spaces and dash for core format validation
+    const cleaned = raw.replace(/[\s-]/g, '');
+
+    // Core pattern: 2-3 letters followed by exactly 4 digits
+    const coreMatch = cleaned.match(/^([A-Za-z]{2,3})(\d{4})$/);
+    if (!coreMatch) {
+      // Provide targeted messages when possible
+      const partial = cleaned.match(/^([A-Za-z]+)(\d+)$/);
+      if (!partial) return 'Format: 2-3 letters followed by 4 digits (e.g., ABC-1234)';
+      const [, letters, digits] = partial;
+      if (letters.length < 2 || letters.length > 3) return 'Must start with 2 or 3 letters';
+      if (digits.length !== 4) return 'Must end with exactly 4 digits';
+      return 'Invalid registration number';
+    }
+
+    return null; // valid
+  };
+
+  const [regError, setRegError] = useState<string | null>(null);
+
   const resetSelections = () => {
     setSelectedBrand('');
     setSelectedModel('');
-    setSelectedVariant('');
     setSelectedYear('');
-    setVin('');
-    setVinDecoded(null);
+    setRegNumber('');
+    setRegVehicle(null);
+    setRegNotFound(null);
+    setRegError(null);
   };
 
-  const handleVinLookup = async () => {
-    if (vin.length !== 17) {
-      toast.error('VIN must be exactly 17 characters');
+  const handleRegLookup = async () => {
+    const error = validateRegNumber(regNumber);
+    if (error) {
+      setRegError(error);
+      toast.error(error);
       return;
     }
+    setRegError(null);
 
-    setVinLoading(true);
-    setVinDecoded(null);
+    setRegLoading(true);
+    setRegVehicle(null);
+    setRegNotFound(null);
 
     try {
-      const result = await api.decodeVin(vin);
-      setVinDecoded(result.decoded);
+      const result = await api.lookupRegistration(regNumber.trim());
 
-      if (!result.decoded.make || !result.decoded.model || !result.decoded.modelYear) {
-        toast.error('Failed to decode VIN');
-      } else {
+      if (result.found && result.vehicle) {
+        setRegVehicle(result.vehicle);
         toast.success(
-          `Found: ${result.decoded.modelYear} ${result.decoded.make} ${result.decoded.model}${result.decoded.trim ? ` ${result.decoded.trim}` : ''}`
+          `Found: ${result.vehicle.year ? result.vehicle.year + ' ' : ''}${result.vehicle.brand.name} ${result.vehicle.model.name}`
         );
+      } else {
+        const message = 'message' in result ? (result as { message: string }).message : 'Vehicle not found in our system.';
+        setRegNotFound(message);
+        toast.error(message);
       }
     } catch (error: unknown) {
       toast.error(
-        'Failed to decode VIN'
+        error instanceof Error && error.message
+          ? error.message
+          : 'Failed to look up registration number'
       );
     }
 
-    setVinLoading(false);
+    setRegLoading(false);
   };
 
-  const handleVinSave = async () => {
-    if (!vinDecoded || !vinDecoded.make || !vinDecoded.model || !vinDecoded.modelYear) {
+  const handleRegSave = async () => {
+    if (!regVehicle) {
       toast.error('No valid vehicle data to save');
       return;
     }
@@ -173,23 +215,30 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
       return;
     }
 
-    setVinSaving(true);
+    const year = regVehicle.year;
+    if (year != null && isDuplicateVehicle(regVehicle.brand.id, regVehicle.model.id, year)) {
+      toast.error('You already have this vehicle saved');
+      return;
+    }
+
+    setRegSaving(true);
 
     try {
-      const saved = await api.addUserVehicleByVin({
-        vin,
+      const saved = await api.addUserVehicleByReg({
+        registrationNumber: regVehicle.registrationNumber,
+        brandId: regVehicle.brand.id,
+        modelId: regVehicle.model.id,
+        year: regVehicle.year ?? undefined,
       });
 
       const vehicle: Vehicle = {
         id: saved.id,
-        brand: saved.brand?.name || vinDecoded.make,
-        model: saved.model?.name || vinDecoded.model,
-        variant: saved.variant?.name || vinDecoded.trim || 'Base',
+        brand: saved.brand?.name || regVehicle.brand.name,
+        model: saved.model?.name || regVehicle.model.name,
         year: saved.year,
-        vin,
-        brandId: saved.brandId || saved.brand?.id,
-        modelId: saved.modelId || saved.model?.id,
-        variantId: saved.variantId || saved.variant?.id,
+        registrationNumber: regVehicle.registrationNumber,
+        brandId: saved.brandId ?? saved.brand?.id ?? regVehicle.brand.id,
+        modelId: saved.modelId ?? saved.model?.id ?? regVehicle.model.id,
       };
 
       setUserVehicle(vehicle);
@@ -206,17 +255,30 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
       );
     }
 
-    setVinSaving(false);
+    setRegSaving(false);
+  };
+
+  const handleRegDecline = () => {
+    setRegVehicle(null);
+    setRegNotFound(null);
+    setRegNumber('');
+    toast.info('Vehicle declined');
   };
 
   const handleManualSave = async () => {
-    if (!selectedBrandData || !selectedModelData || !selectedVariantData || !selectedYear) {
+    if (!selectedBrandData || !selectedModelData || !selectedYear) {
       toast.error('Please complete all selections');
       return;
     }
 
     if (!user) {
       toast.error('Please log in to save vehicles');
+      return;
+    }
+
+    const year = parseInt(selectedYear, 10);
+    if (isDuplicateVehicle(selectedBrand, selectedModel, year)) {
+      toast.error('You already have this vehicle saved');
       return;
     }
 
@@ -227,20 +289,17 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
       await api.addUserVehicle({
         brandId: selectedBrand,
         modelId: selectedModel,
-        variantId: selectedVariant,
         year: parseInt(selectedYear),
       });
 
       // Also update local store for compatibility filtering
       const vehicle: Vehicle = {
-        id: `${selectedBrand}-${selectedModel}-${selectedVariant}-${selectedYear}`,
+        id: `${selectedBrand}-${selectedModel}-${selectedYear}`,
         brand: selectedBrandData.name,
         model: selectedModelData.name,
-        variant: selectedVariantData.name,
         year: parseInt(selectedYear),
         brandId: selectedBrand,
         modelId: selectedModel,
-        variantId: selectedVariant,
       };
 
       setUserVehicle(vehicle);
@@ -252,7 +311,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
     } catch (error: unknown) {
       toast.error(error instanceof Error && error.message ? error.message : 'Failed to save vehicle');
     }
-    
+
     setLoading(false);
   };
 
@@ -278,11 +337,11 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
           </DialogTitle>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as 'vin' | 'manual')}>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as 'reg' | 'manual')}>
           <TabsList className="grid w-full grid-cols-2 bg-secondary/50">
-            <TabsTrigger value="vin" className="gap-2">
+            <TabsTrigger value="reg" className="gap-2">
               <Search className="h-4 w-4" />
-              VIN Lookup
+              Registration Number
             </TabsTrigger>
             <TabsTrigger value="manual" className="gap-2">
               <Car className="h-4 w-4" />
@@ -290,30 +349,35 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="vin" className="space-y-4 mt-4">
+          <TabsContent value="reg" className="space-y-4 mt-4">
             <div className="space-y-2">
-              <Label htmlFor="vin">Enter VIN Number</Label>
+              <Label htmlFor="reg-number">Enter Registration Number</Label>
               <Input
-                id="vin"
-                placeholder="e.g., 1HGBH41JXMN109186"
-                value={vin}
+                id="reg-number"
+                placeholder="e.g., CAB-1234"
+                value={regNumber}
                 onChange={(e) => {
-                  setVin(e.target.value.toUpperCase());
-                  setVinDecoded(null);
+                  setRegNumber(e.target.value.toUpperCase());
+                  setRegVehicle(null);
+                  setRegNotFound(null);
+                  setRegError(null);
                 }}
-                maxLength={17}
-                className="font-mono tracking-wider bg-secondary/50"
+                className={`font-mono tracking-wider bg-secondary/50 ${regError ? 'border-destructive focus-visible:ring-destructive' : ''}`}
               />
-              <p className="text-xs text-muted-foreground">
-                Your 17-character Vehicle Identification Number can be found on your dashboard or door jamb
-              </p>
+              {regError ? (
+                <p className="text-xs text-destructive">{regError}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  2–3 letters followed by 4 digits (e.g., ABC-1234)
+                </p>
+              )}
             </div>
             <Button
-              onClick={handleVinLookup}
-              disabled={vin.length !== 17 || vinLoading}
+              onClick={handleRegLookup}
+              disabled={!regNumber.trim() || regLoading}
               className="w-full neon-button"
             >
-              {vinLoading ? (
+              {regLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <>
@@ -323,9 +387,9 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
               )}
             </Button>
 
-            {/* Decoded VIN results */}
+            {/* Vehicle found in DB — show DB names with Accept / Decline */}
             <AnimatePresence>
-              {vinDecoded && vinDecoded.make && vinDecoded.model && vinDecoded.modelYear && (
+              {regVehicle && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -338,67 +402,66 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
                       <span className="text-sm font-semibold text-primary">Vehicle Found</span>
                     </div>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-                      <span className="text-muted-foreground">Year</span>
-                      <span className="font-medium">{vinDecoded.modelYear}</span>
-                      <span className="text-muted-foreground">Make</span>
-                      <span className="font-medium">{vinDecoded.make}</span>
+                      <span className="text-muted-foreground">Brand</span>
+                      <span className="font-medium">{regVehicle.brand.name}</span>
                       <span className="text-muted-foreground">Model</span>
-                      <span className="font-medium">{vinDecoded.model}</span>
-                      {vinDecoded.trim && (
+                      <span className="font-medium">{regVehicle.model.name}</span>
+                      {regVehicle.year && (
                         <>
-                          <span className="text-muted-foreground">Trim</span>
-                          <span className="font-medium">{vinDecoded.trim}</span>
-                        </>
-                      )}
-                      {vinDecoded.bodyClass && (
-                        <>
-                          <span className="text-muted-foreground">Body</span>
-                          <span className="font-medium">{vinDecoded.bodyClass}</span>
-                        </>
-                      )}
-                      {vinDecoded.driveType && (
-                        <>
-                          <span className="text-muted-foreground">Drive</span>
-                          <span className="font-medium">{vinDecoded.driveType}</span>
-                        </>
-                      )}
-                      {vinDecoded.engineCylinders && vinDecoded.engineDisplacement && (
-                        <>
-                          <span className="text-muted-foreground">Engine</span>
-                          <span className="font-medium">
-                            {vinDecoded.engineCylinders}cyl {vinDecoded.engineDisplacement}L
-                          </span>
-                        </>
-                      )}
-                      {vinDecoded.transmissionStyle && (
-                        <>
-                          <span className="text-muted-foreground">Transmission</span>
-                          <span className="font-medium">{vinDecoded.transmissionStyle}</span>
-                        </>
-                      )}
-                      {vinDecoded.fuelType && (
-                        <>
-                          <span className="text-muted-foreground">Fuel</span>
-                          <span className="font-medium">{vinDecoded.fuelType}</span>
+                          <span className="text-muted-foreground">Year</span>
+                          <span className="font-medium">{regVehicle.year}</span>
                         </>
                       )}
                     </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Click 'Save' to save this vehicle
+                    </p>
                   </div>
 
-                  <Button
-                    onClick={handleVinSave}
-                    disabled={vinSaving}
-                    className="w-full neon-button"
-                  >
-                    {vinSaving ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Check className="h-4 w-4 mr-2" />
-                        Save {vinDecoded.modelYear} {vinDecoded.make} {vinDecoded.model}
-                      </>
-                    )}
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleRegSave}
+                      disabled={regSaving}
+                      className="flex-1 neon-button"
+                    >
+                      {regSaving ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          <Check className="h-4 w-4 mr-2" />
+                          Save
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      onClick={handleRegDecline}
+                      variant="outline"
+                      disabled={regSaving}
+                      className="flex-1 border-destructive/50 text-destructive hover:bg-destructive/10"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Decline
+                    </Button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Vehicle NOT found in DB */}
+            <AnimatePresence>
+              {regNotFound && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                >
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+                    <div className="flex items-center gap-2">
+                      <X className="h-4 w-4 text-destructive" />
+                      <span className="text-sm font-semibold text-destructive">Not Available</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-1">{regNotFound}</p>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -411,7 +474,6 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
               <Select value={selectedBrand} onValueChange={(v) => {
                 setSelectedBrand(v);
                 setSelectedModel('');
-                setSelectedVariant('');
                 setSelectedYear('');
               }}>
                 <SelectTrigger className="bg-secondary/50">
@@ -439,7 +501,6 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
                   <Label>Model</Label>
                   <Select value={selectedModel} onValueChange={(v) => {
                     setSelectedModel(v);
-                    setSelectedVariant('');
                     setSelectedYear('');
                   }}>
                     <SelectTrigger className="bg-secondary/50">
@@ -457,38 +518,9 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
               )}
             </AnimatePresence>
 
-            {/* Variant Selection */}
-            <AnimatePresence>
-              {selectedModel && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="space-y-2"
-                >
-                  <Label>Variant</Label>
-                  <Select value={selectedVariant} onValueChange={(v) => {
-                    setSelectedVariant(v);
-                    setSelectedYear('');
-                  }}>
-                    <SelectTrigger className="bg-secondary/50">
-                      <SelectValue placeholder={loading ? "Loading..." : "Select variant"} />
-                    </SelectTrigger>
-                    <SelectContent className="glass-card">
-                      {variants.map((variant) => (
-                        <SelectItem key={variant.id} value={variant.id}>
-                          {variant.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
             {/* Year Selection */}
             <AnimatePresence>
-              {selectedVariant && (
+              {selectedModel && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -537,7 +569,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
               <div>
                 <p className="text-xs text-muted-foreground">Active Vehicle</p>
                 <p className="font-medium text-sm">
-                  {userVehicle.year} {userVehicle.brand} {userVehicle.model} {userVehicle.variant}
+                  {userVehicle.year} {userVehicle.brand} {userVehicle.model}
                 </p>
               </div>
             </div>

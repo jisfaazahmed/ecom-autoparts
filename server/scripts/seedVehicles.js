@@ -5,7 +5,7 @@ const config = require('../config/config');
 // Import models
 const VehicleBrand = require('../models/vehicleBrand.model');
 const VehicleModel = require('../models/vehicleModel.model');
-const VehicleVariant = require('../models/vehicleVariant.model');
+
 const Vehicle = require('../models/vehicle');
 
 const curatedVehicles = [
@@ -255,36 +255,7 @@ async function seedVehicles() {
         }
 
         for (const variantData of modelData.variants) {
-          // 3. Create/Find Variant
-          let variant = await VehicleVariant.findOne({
-            model: model._id,
-            name: variantData.name,
-            yearStart: variantData.yearStart
-          });
-
-          if (!variant) {
-            variant = await VehicleVariant.create({
-              model: model._id,
-              name: variantData.name,
-              yearStart: variantData.yearStart,
-              yearEnd: variantData.yearEnd
-            });
-            console.log(`    Created Variant: ${variant.name} (${variantData.yearStart}-${variantData.yearEnd || 'Now'})`);
-          } else {
-            let variantUpdated = false;
-            if (variant.yearEnd !== variantData.yearEnd) {
-              variant.yearEnd = variantData.yearEnd;
-              variantUpdated = true;
-            }
-            if (variantUpdated) {
-              await variant.save();
-              console.log(`    Updated Variant: ${variant.name}`);
-            } else {
-              console.log(`    Found Variant: ${variant.name}`);
-            }
-          }
-
-          // 4. Create Flattened "Vehicle" entries for each year in the range
+          // 3. Create Flattened "Vehicle" entries for each year in the range
           // This is for the product compatibility logic (Vehicle schema)
           const start = variantData.yearStart;
           const end = variantData.yearEnd || new Date().getFullYear();
@@ -313,8 +284,8 @@ async function seedVehicles() {
                 await Vehicle.create(vehicleData);
                 console.log(`      -> Created Flattened Vehicle: ${year} ${brandData.brand} ${modelData.name} ${variantData.name}`);
               } catch (e) {
-                  // Ignore duplicate key errors if race condition or index match
-                  if (e.code !== 11000) console.error('Error creating flattened vehicle:', e);
+                // Ignore duplicate key errors if race condition or index match
+                if (e.code !== 11000) console.error('Error creating flattened vehicle:', e);
               }
             }
           }

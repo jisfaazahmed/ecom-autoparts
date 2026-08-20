@@ -1,5 +1,7 @@
 const User = require('../models/user');
 
+const normalizeRole = (role) => String(role || '').replace(/_/g, '').toUpperCase();
+
 const toClientProfile = (user) => ({
   id: user._id.toString(),
   user_id: user._id.toString(),
@@ -23,8 +25,8 @@ exports.getProfile = async (req, res) => {
     const { id } = req.params;
     const currentUser = req.user;
     // Allow superadmin or the user themselves
-    const isSuperAdmin = currentUser.role === 'SUPER_ADMIN';
-    const isSelf = currentUser.id === id;
+    const isSuperAdmin = normalizeRole(currentUser.role) === 'SUPERADMIN';
+    const isSelf = String(currentUser.id || currentUser._id) === String(id);
     if (!isSuperAdmin && !isSelf) {
       return res.status(403).json({ message: 'Access denied' });
     }
@@ -78,6 +80,7 @@ exports.updateMyProfile = async (req, res) => {
     if (!user) return res.status(404).json({ message: 'User not found' });
 
     res.json(toClientProfile(user));
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error' });

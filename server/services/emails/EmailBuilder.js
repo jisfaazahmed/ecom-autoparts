@@ -2,7 +2,7 @@
 // (server/.env, docker-compose). Without this the whole app mails out href="undefined"
 // links. Resolve it once here, since every template goes through EmailBuilder.
 process.env.FRONTEND_URL =
-    process.env.FRONTEND_URL || process.env.CLIENT_URL || 'http://localhost:3000';
+    process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://automobiles.live';
 
 const theme = {
     primary: '#2563EB',
@@ -15,7 +15,7 @@ const theme = {
     text: '#1F2937',
     textLight: '#6B7280',
     border: '#E5E7EB',
-    fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
 };
 
 const EmailBuilder = {
@@ -129,7 +129,7 @@ const EmailBuilder = {
     },
 
     buildOrderSummary(data) {
-        const rows = Object.entries(data).filter(([_, val]) => val).map(([key, val]) => `
+        const rows = Object.entries(data).filter((entry) => entry[1]).map(([key, val]) => `
             <tr>
                 <td width="40%" style="padding: 8px 0; color: ${theme.textLight}; font-size: 14px; font-weight: 500;">${key}</td>
                 <td width="60%" style="padding: 8px 0; color: ${theme.text}; font-size: 14px; font-weight: 600; text-align: right;">${val}</td>
@@ -341,8 +341,8 @@ const EmailBuilder = {
                 <table border="0" cellpadding="0" cellspacing="0">
                     <tr>
                         <td align="center" bgcolor="${theme.primary}" style="border-radius: 6px;">
-                            <a href="${url}" target="_blank" style="display: inline-block; padding: 14px 30px; font-family: ${theme.fontFamily}; font-size: 16px; font-weight: 600; color: #FFFFFF; text-decoration: none; border-radius: 6px; border: 1px solid ${theme.primary};">
-                                ${text}
+                            <a href="${url}" target="_blank" style="display: inline-block; padding: 14px 30px; font-family: ${theme.fontFamily}; font-size: 16px; font-weight: 600; color: #FFFFFF !important; text-decoration: none; border-radius: 6px; border: 1px solid ${theme.primary};">
+                                <span style="color: #FFFFFF;">${text}</span>
                             </a>
                         </td>
                     </tr>
