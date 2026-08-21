@@ -82,6 +82,8 @@ const Index: React.FC = () => {
     rating: p.rating ?? 0,
     reviewCount: p.reviewCount ?? 0,
     sku: p.sku || '',
+    originalPrice: p.originalPrice,
+    effectiveDiscountPercent: p.effectiveDiscountPercent,
   });
 
   return (

@@ -1,0 +1,9 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "docker compose": true,
+        "Push-Location": true,
+        "npm run build": true,
+        "Pop-Location": true,
+        "npm run lint": true
+    }
+}
