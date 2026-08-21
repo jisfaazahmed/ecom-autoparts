@@ -87,10 +87,12 @@ const AdminProducts: React.FC = () => {
     const modelIds = (product.compatibleVehicleModels || []).map(v =>
       typeof v === 'string' ? v : v.id
     );
+    const basePrice = Number(product.originalPrice ?? product.price ?? 0);
     setFormData({
       name: product.name,
       description: product.description || '',
-      price: product.price.toString(),
+      // Keep editing on the undiscounted base price to avoid double-discounting on save.
+      price: basePrice.toString(),
       stock: product.stock.toString(),
       sku: product.sku || '',
       category_id: product.categoryId || '',

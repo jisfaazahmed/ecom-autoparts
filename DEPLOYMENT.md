@@ -72,6 +72,7 @@ Set under **Settings → Secrets and variables → Actions**.
 | `SUPER_ADMIN_PASSWORD` | for seeding | Only read by `npm run seed`, which creates the first super admin |
 | `GEMINI_API_KEY` | for AI analytics | Without it the SuperAdmin AI assistant returns 502 |
 | `GEMINI_MODEL` | no | Overrides the first entry in the model fallback chain |
+| `REGCHECK_USERNAME` | for reg lookup | RegCheck.org.uk username.
 | `R2_ACCOUNT_ID` | **yes** | Cloudflare account that owns the R2 bucket |
 | `R2_ACCESS_KEY_ID` | **yes** | R2 API token, scoped to the media bucket |
 | `R2_SECRET_ACCESS_KEY` | **yes** | Server-side only. Never expose it to the client |

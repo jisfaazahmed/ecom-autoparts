@@ -129,7 +129,8 @@ exports.lookupRegistration = async (req, res) => {
     }
 
     if (!REGCHECK_USERNAME) {
-      return res.status(500).json({ message: 'Failed to fetch vehicle data' });
+      console.error('Registration lookup misconfigured: REGCHECK_USERNAME is not set');
+      return res.status(503).json({ message: 'Vehicle registration lookup is temporarily unavailable' });
     }
 
     const normalizedRegNumber = normalizeRegNumber(registrationNumber);
