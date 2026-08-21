@@ -19,7 +19,7 @@ const OrderTemplates = {
                 'The seller will review and approve your order.',
                 'You will receive another notification when the order is being prepared for shipment.'
             ]),
-            EmailBuilder.buildButton('View Order', `${process.env.FRONTEND_URL}/orders/${data.orderId || data.orderNumber}`),
+            EmailBuilder.buildButton('View Order', `https://automobiles.live/orders`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
@@ -41,7 +41,7 @@ const OrderTemplates = {
                 'The seller is packing your items.',
                 'We will notify you once it has been handed over to the courier.'
             ]),
-            EmailBuilder.buildButton('View Order', `${process.env.FRONTEND_URL}/orders/${data.orderId || data.orderNumber}`),
+            EmailBuilder.buildButton('View Order', `https://automobiles.live/orders`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
@@ -62,7 +62,7 @@ const OrderTemplates = {
                 'Your package will be handed over to our delivery partner soon.',
                 'You will receive tracking information once shipped.'
             ]),
-            EmailBuilder.buildButton('Track Order', `${process.env.FRONTEND_URL}/orders/${data.orderId || data.orderNumber}`),
+            EmailBuilder.buildButton('Track Order', `https://automobiles.live/orders`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
@@ -84,7 +84,7 @@ const OrderTemplates = {
                 'Your package is currently in transit.',
                 'Use the tracking button below to follow the delivery status.'
             ]),
-            EmailBuilder.buildButton('Track Package', data.trackingUrl || `${process.env.FRONTEND_URL}/orders/${data.orderId || data.orderNumber}`),
+            EmailBuilder.buildButton('Track Package', data.trackingUrl || `https://automobiles.live/orders`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
@@ -125,7 +125,7 @@ const OrderTemplates = {
                 'If you are satisfied with your items, please consider leaving a review.',
                 'If there are any issues, you can initiate a return request from your dashboard within the return window.'
             ]),
-            EmailBuilder.buildButton('Leave a Review', `${process.env.FRONTEND_URL}/orders/${data.orderId || data.orderNumber}`),
+            EmailBuilder.buildButton('Leave a Review', `https://automobiles.live/orders`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
@@ -147,7 +147,7 @@ const OrderTemplates = {
                 'The cancellation is complete.',
                 'If payment was already deducted, a refund has been initiated and will reflect in your account based on your payment method.'
             ]),
-            EmailBuilder.buildButton('Continue Shopping', `${process.env.FRONTEND_URL}`),
+            EmailBuilder.buildButton('Continue Shopping', `https://automobiles.live`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
@@ -168,7 +168,7 @@ const OrderTemplates = {
                 'No charges have been finalized for this failed order.',
                 'Please review your payment details and try placing the order again.'
             ]),
-            EmailBuilder.buildButton('Try Again', `${process.env.FRONTEND_URL}/cart`),
+            EmailBuilder.buildButton('Try Again', `https://automobiles.live/cart`),
             EmailBuilder.buildSupportSection()
         ].join('');
 

@@ -17,7 +17,7 @@ const RefundReturnTemplates = {
                 'The refund has been sent to your bank or card issuer.',
                 'Please allow 3-7 business days for the funds to reflect in your account, depending on your financial institution.'
             ]),
-            EmailBuilder.buildButton('View Refund Status', `${process.env.FRONTEND_URL}/orders/${data.orderId || data.orderNumber}`),
+            EmailBuilder.buildButton('View Refund Status', `https://automobiles.live/orders`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
@@ -39,7 +39,7 @@ const RefundReturnTemplates = {
                 'The funds should now be available in your account.',
                 'If you do not see the refund after a few days, please contact your bank with this reference number: ' + (data.refundReference || 'provided in your dashboard.')
             ]),
-            EmailBuilder.buildButton('View Order Details', `${process.env.FRONTEND_URL}/orders/${data.orderId || data.orderNumber}`),
+            EmailBuilder.buildButton('View Order Details', `https://automobiles.live/orders`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
@@ -61,7 +61,7 @@ const RefundReturnTemplates = {
                 'The seller will review your request within 24-48 hours.',
                 'Once approved, you will receive instructions on how to ship the items back.'
             ]),
-            EmailBuilder.buildButton('View Request', `${process.env.FRONTEND_URL}/orders/${data.orderId || data.orderNumber}`),
+            EmailBuilder.buildButton('View Request', `https://automobiles.live/orders`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
@@ -83,7 +83,7 @@ const RefundReturnTemplates = {
                 'Follow the return shipping instructions provided in your dashboard.',
                 'A refund will be initiated once the seller receives and inspects the returned items.'
             ]),
-            EmailBuilder.buildButton('View Return Instructions', `${process.env.FRONTEND_URL}/orders/${data.orderId || data.orderNumber}`),
+            EmailBuilder.buildButton('View Return Instructions', `https://automobiles.live/orders`),
             EmailBuilder.buildSupportSection()
         ].join('');
 

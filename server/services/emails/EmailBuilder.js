@@ -1,8 +1,3 @@
-// Every template below builds links from FRONTEND_URL, but only CLIENT_URL is ever set
-// (server/.env, docker-compose). Without this the whole app mails out href="undefined"
-// links. Resolve it once here, since every template goes through EmailBuilder.
-process.env.FRONTEND_URL =
-    process.env.FRONTEND_URL || process.env.CLIENT_URL || 'https://automobiles.live';
 
 const theme = {
     primary: '#2563EB',
@@ -358,7 +353,7 @@ const EmailBuilder = {
             <td align="center" style="padding: 30px; border-top: 1px solid ${theme.border}; font-family: ${theme.fontFamily};">
                 <h4 style="margin: 0 0 10px 0; color: ${theme.text}; font-size: 16px; font-weight: 600;">Need Help?</h4>
                 <p style="margin: 0 0 15px 0; color: ${theme.textLight}; font-size: 14px; line-height: 1.5;">We're here for you. Visit our Help Center or contact our support team.</p>
-                <a href="${process.env.FRONTEND_URL}/support" style="color: ${theme.primary}; font-size: 14px; font-weight: 600; text-decoration: none;">Visit Help Center &rarr;</a>
+                <a href="https://automobiles.live/support" style="color: ${theme.primary}; font-size: 14px; font-weight: 600; text-decoration: none;">Visit Help Center &rarr;</a>
             </td>
         </tr>
         `;
@@ -373,9 +368,9 @@ const EmailBuilder = {
                         <td align="center" style="font-family: ${theme.fontFamily}; font-size: 13px; color: ${theme.textLight}; line-height: 1.6;">
                             <p style="margin: 0 0 15px 0; font-weight: 600; color: ${theme.text};">AutoMatrix</p>
                             <p style="margin: 0 0 15px 0;">
-                                <a href="${process.env.FRONTEND_URL}/terms" style="color: ${theme.textLight}; text-decoration: underline; margin: 0 10px;">Terms</a>
-                                <a href="${process.env.FRONTEND_URL}/privacy" style="color: ${theme.textLight}; text-decoration: underline; margin: 0 10px;">Privacy Policy</a>
-                                <a href="${process.env.FRONTEND_URL}/contact" style="color: ${theme.textLight}; text-decoration: underline; margin: 0 10px;">Contact Us</a>
+                                <a href="https://automobiles.live/terms" style="color: ${theme.textLight}; text-decoration: underline; margin: 0 10px;">Terms</a>
+                                <a href="https://automobiles.live/privacy" style="color: ${theme.textLight}; text-decoration: underline; margin: 0 10px;">Privacy Policy</a>
+                                <a href="https://automobiles.live/contact" style="color: ${theme.textLight}; text-decoration: underline; margin: 0 10px;">Contact Us</a>
                             </p>
                         </td>
                     </tr>

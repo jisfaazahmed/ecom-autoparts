@@ -16,7 +16,7 @@ const VendorAdminTemplates = {
                 'Approve the order to notify the customer that it is being processed.',
                 'Prepare the items for shipping.'
             ]),
-            EmailBuilder.buildButton('View Order Dashboard', `${process.env.FRONTEND_URL}/vendor/orders`),
+            EmailBuilder.buildButton('View Order Dashboard', `https://automobiles.live/admin/orders`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
@@ -38,7 +38,7 @@ const VendorAdminTemplates = {
                 'Review the vendor application in the super admin panel.',
                 'Approve or reject the request.'
             ]),
-            EmailBuilder.buildButton('Review Application', `${process.env.FRONTEND_URL}/superadmin/vendors`),
+            EmailBuilder.buildButton('Review Application', `https://automobiles.live/superadmin/vendors`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
@@ -56,7 +56,7 @@ const VendorAdminTemplates = {
                 'Set up your store profile and policies.',
                 'Start listing your auto parts products.'
             ]),
-            EmailBuilder.buildButton('Go to Dashboard', `${process.env.FRONTEND_URL}/auth/login`),
+            EmailBuilder.buildButton('Go to Dashboard', `https://automobiles.live/auth/login`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
