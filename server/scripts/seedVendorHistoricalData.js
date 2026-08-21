@@ -132,9 +132,6 @@ async function seedData() {
       });
     }
 
-    const vendors = await User.find({ role: 'ADMIN', status: 'ACTIVE' });
-    console.log(`Found ${vendors.length} active vendors.`);
-
     // 3. Seed Products for each Vendor (6 each)
     console.log('🛍️ Seeding Products...');
     const vendorProductsMap = {}; // vendorId -> [Products]
