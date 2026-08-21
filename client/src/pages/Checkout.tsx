@@ -298,8 +298,6 @@ export default function Checkout() {
   const [walletLoading, setWalletLoading] = useState(false);
   const [walletOtp, setWalletOtp] = useState('');
   const [walletPendingOrderId, setWalletPendingOrderId] = useState<string | null>(null);
-  const [cardOtp, setCardOtp] = useState('');
-  const [cardOtpRequired, setCardOtpRequired] = useState(false);
   const [cardPendingOrder, setCardPendingOrder] = useState<{ id: string; guestInvoiceToken?: string } | null>(null);
   
   const [savedAddresses, setSavedAddresses] = useState<ApiAddress[]>([]);
@@ -634,8 +632,6 @@ export default function Checkout() {
       const orderPlacementKey = orderPlacementKeyRef.current || generateIdempotencyKey('order');
       orderPlacementKeyRef.current = orderPlacementKey;
 
-      // Reuse the order created before the OTP challenge instead of placing a
-      // second one when the customer comes back with their code.
       let pendingOrder = cardPendingOrder;
 
       if (!pendingOrder) {
@@ -666,17 +662,7 @@ export default function Checkout() {
       const paymentIntent = await api.createPaymentIntent({
         orderId,
         email: form.email,
-        otp: cardOtp.trim() || undefined,
       });
-
-      // Email OTP gate runs before Stripe issues a client secret.
-      if (paymentIntent.requiresOtp) {
-        setCardPendingOrder(pendingOrder);
-        setCardOtpRequired(true);
-        setCardOtp('');
-        toast.info('We emailed you a 6-digit code. Enter it to authorize this payment.');
-        return;
-      }
 
       if (!paymentIntent.clientSecret) {
         throw new Error('Payment could not be initialized. Please try again.');
@@ -707,8 +693,6 @@ export default function Checkout() {
       clearCart();
       orderPlacementKeyRef.current = null;
       paymentConfirmationKeyRef.current = null;
-      setCardOtp('');
-      setCardOtpRequired(false);
       setCardPendingOrder(null);
       toast.success('Card payment completed successfully!');
       navigate(`/payment/success?order_id=${encodeURIComponent(orderId)}&payment_intent=${encodeURIComponent(paymentIntentId)}${pendingOrder.guestInvoiceToken ? `&guest_token=${encodeURIComponent(pendingOrder.guestInvoiceToken)}` : ''}`);
@@ -1374,24 +1358,6 @@ export default function Checkout() {
                           />
                         </Elements>
 
-                        {cardOtpRequired && (
-                          <div className="rounded-lg border border-amber-300/60 bg-amber-50/60 p-4 space-y-2">
-                            <Label htmlFor="card-otp" className="text-sm font-semibold">
-                              Email verification code
-                            </Label>
-                            <p className="text-xs text-muted-foreground">
-                              We sent a 6-digit code to {user?.email || 'your email'}. It expires in 5 minutes.
-                            </p>
-                            <Input
-                              id="card-otp"
-                              value={cardOtp}
-                              onChange={(e) => setCardOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                              placeholder="6-digit code"
-                              inputMode="numeric"
-                              autoComplete="one-time-code"
-                            />
-                          </div>
-                        )}
                       </div>
                     )}
 
@@ -1428,7 +1394,7 @@ export default function Checkout() {
                             Processing...
                           </>
                         ) : paymentMethod === 'stripe' ? (
-                          cardOtpRequired ? 'Verify Code & Pay' : 'Pay Card Now'
+                          'Pay Card Now'
                         ) : paymentMethod === 'wallet' ? (
                           walletPendingOrderId ? 'Verify OTP & Pay' : 'Pay With Wallet'
                         ) : (

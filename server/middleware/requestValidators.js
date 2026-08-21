@@ -301,14 +301,6 @@ function validateCreatePaymentIntent(req, res, next) {
     return fail(res, 'Invalid orderId');
   }
 
-  const otp = req.body?.otp;
-  if (otp !== undefined && otp !== null && otp !== '') {
-    const code = asTrimmed(otp);
-    if (!/^\d{4,8}$/.test(code)) {
-      return fail(res, 'Invalid OTP format');
-    }
-  }
-
   return next();
 }
 

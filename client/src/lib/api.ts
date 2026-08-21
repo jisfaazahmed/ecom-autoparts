@@ -1958,28 +1958,23 @@ class ApiClient {
     return response.data || response;
   }
 
-  async createPaymentIntent(data: { orderId: string; email?: string; otp?: string }): Promise<{
+  async createPaymentIntent(data: { orderId: string; email?: string }): Promise<{
     paymentIntentId?: string;
     clientSecret?: string;
     amount?: number;
     currency?: string;
     requiresAction?: boolean;
     nextAction?: any;
-    requiresOtp?: boolean;
-    expiresAt?: string;
-    retryInSeconds?: number;
   }> {
     const response = await this.request<any>('/payments/create-payment-intent', {
       method: 'POST',
       body: JSON.stringify(data),
     });
 
-    // The OTP gate answers 202 with the flag at the top level and the details
-    // nested under `data`, so merge both rather than letting `data` shadow it.
-    return { ...response, ...(response?.data || {}) };
+    return response.data || response;
   }
 
-  async confirmPaymentIntent(data: { orderId: string; paymentIntentId: string; otp?: string; idempotencyKey?: string }): Promise<{
+  async confirmPaymentIntent(data: { orderId: string; paymentIntentId: string; idempotencyKey?: string }): Promise<{
     orderId: string;
     paymentIntentId: string;
     paymentStatus: string;
