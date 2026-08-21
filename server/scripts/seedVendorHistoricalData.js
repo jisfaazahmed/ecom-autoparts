@@ -69,7 +69,7 @@ const CATEGORIES = [
 
 const ORDER_STATUSES = [
   'delivered', 'delivered', 'delivered', 'delivered', 'delivered', // 50% chance delivered
-  'shipped', 'out_for_delivery', 'pending', 'cancelled', 'returned'
+  'shipped', 'out_for_delivery', 'pending', 'cancelled', 'refunded'
 ];
 
 function getRandomItem(arr) {
@@ -222,7 +222,11 @@ async function seedData() {
           shippingCharges,
           totalAmount,
           paymentMethod: getRandomItem(['card', 'cod']),
-          paymentStatus: orderStatus === 'cancelled' ? 'failed' : 'completed',
+          paymentStatus: orderStatus === 'cancelled'
+            ? 'failed'
+            : orderStatus === 'refunded'
+              ? 'refunded'
+              : 'completed',
           overallStatus: orderStatus,
           createdAt: orderDate,
           updatedAt: orderDate,
