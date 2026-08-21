@@ -127,9 +127,6 @@ npm run migrate:r2            # dry run: lists files and DB rows it would touch
 npm run migrate:r2 -- --apply # uploads to R2 and repoints stored URLs
 ```
 
-`npm run qa:storage` round-trips a real object through whichever backend is
-configured — the quickest way to prove a set of credentials works.
-
 ## VPS prerequisites
 
 ```bash

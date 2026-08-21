@@ -10,9 +10,7 @@
     "seed:vehicles": "node scripts/seedVehicles.js",
     "seed:products": "node scripts/seedProducts.js",
     "seed:all": "node scripts/seedVehicles.js && node scripts/seedProducts.js",
-    "backfill:suborders": "node scripts/backfill-suborders.js",
     "qa:regression": "node scripts/test-unit.js",
-    "qa:storage": "node scripts/test-storage.js",
     "migrate:r2": "node scripts/migrate-uploads-to-r2.js",
     "lint": "eslint ."
   },
