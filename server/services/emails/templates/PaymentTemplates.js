@@ -17,7 +17,7 @@ const PaymentTemplates = {
                 'Your order will now be processed by the seller.',
                 'You will receive a notification when the items are shipped.'
             ]),
-            EmailBuilder.buildButton('View Order', `${process.env.FRONTEND_URL}/orders/${data.orderId || data.orderNumber}`),
+            EmailBuilder.buildButton('View Order', `https://automobiles.live/orders`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
@@ -39,7 +39,7 @@ const PaymentTemplates = {
                 'Your order has not been finalized.',
                 'Please update your payment method or try again to complete the purchase.'
             ]),
-            EmailBuilder.buildButton('Retry Payment', `${process.env.FRONTEND_URL}/checkout`),
+            EmailBuilder.buildButton('Retry Payment', `https://automobiles.live/checkout`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
@@ -61,7 +61,7 @@ const PaymentTemplates = {
                 'No further action is required from you at this time.',
                 'We will notify you via email as soon as the payment is confirmed or if any issues arise.'
             ]),
-            EmailBuilder.buildButton('View Order Status', `${process.env.FRONTEND_URL}/orders/${data.orderId || data.orderNumber}`),
+            EmailBuilder.buildButton('View Order Status', `https://automobiles.live/orders`),
             EmailBuilder.buildSupportSection()
         ].join('');
 

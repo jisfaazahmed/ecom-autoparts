@@ -296,6 +296,6 @@ if (testResults.failed > 0) {
   console.log('\n📝 Next Steps:');
   console.log('  1. Start Docker Desktop');
   console.log('  2. Run: docker-compose -f docker-compose.dev.yml up -d');
-  console.log('  3. Run integration tests: node scripts/test-notifications-inventory.js');
+  console.log('  3. Run the server: npm run dev');
   process.exit(0);
 }

@@ -12,7 +12,7 @@ const AccountTemplates = {
                 'Manage your addresses and track your orders easily from your dashboard.',
                 'Enjoy exclusive member deals and fast shipping.'
             ]),
-            EmailBuilder.buildButton('Start Shopping', `${process.env.FRONTEND_URL}`),
+            EmailBuilder.buildButton('Start Shopping', `https://automobiles.live`),
             EmailBuilder.buildSupportSection()
         ].join('');
 
