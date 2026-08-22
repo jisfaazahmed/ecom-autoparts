@@ -33,6 +33,13 @@ router.post('/models', verifyToken, isSuperAdmin, vehicleMasterController.create
 router.put('/models/:id', verifyToken, isSuperAdmin, vehicleMasterController.updateVehicleModel);
 router.delete('/models/:id', verifyToken, isSuperAdmin, vehicleMasterController.deleteVehicleModel);
 
+// Variants
+router.get('/variants/all', vehicleMasterController.getAllVehicleVariants);
+router.get('/variants/:modelId', vehicleMasterController.getVehicleVariantsByModel);
+router.post('/variants', verifyToken, isSuperAdmin, vehicleMasterController.createVehicleVariant);
+router.put('/variants/:id', verifyToken, isSuperAdmin, vehicleMasterController.updateVehicleVariant);
+router.delete('/variants/:id', verifyToken, isSuperAdmin, vehicleMasterController.deleteVehicleVariant);
+
 // ===== User vehicles (saved vehicles per user) =====
 router.get('/user', verifyToken, userVehicleController.getUserVehicles);
 router.post('/user', verifyToken, userVehicleController.addUserVehicle);

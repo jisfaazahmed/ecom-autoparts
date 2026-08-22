@@ -1,4 +1,3 @@
-const xml2js = require('xml2js');
 const VehicleBrand = require('../models/vehicleBrand.model');
 const VehicleModel = require('../models/vehicleModel.model');
 const UserVehicle = require('../models/userVehicle.model');
@@ -12,6 +11,7 @@ const REGCHECK_USERNAME = process.env.REGCHECK_USERNAME || '';
  * Falls back to the `vehicleData` XML element if vehicleJson is empty.
  */
 async function parseRegCheckXml(xmlText) {
+  const xml2js = require('xml2js');
   const parser = new xml2js.Parser({ explicitArray: false, ignoreAttrs: false });
   const parsed = await parser.parseStringPromise(xmlText);
 

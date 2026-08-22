@@ -23,7 +23,7 @@ import { useStore } from '@/store/useStore';
 import { useAuth } from '@/hooks/useAuth';
 import { Vehicle } from '@/types';
 import { toast } from 'sonner';
-import { api, ApiVehicleBrand, ApiVehicleModel, ApiRegCheckVehicle, ApiUserVehicle } from '@/lib/api';
+import { api, ApiVehicleBrand, ApiVehicleModel, ApiVehicleVariant, ApiRegCheckVehicle, ApiUserVehicle } from '@/lib/api';
 
 interface VehicleSelectorProps {
   trigger?: React.ReactNode;
@@ -42,6 +42,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
   // Data from database
   const [brands, setBrands] = useState<ApiVehicleBrand[]>([]);
   const [models, setModels] = useState<ApiVehicleModel[]>([]);
+  const [variants, setVariants] = useState<ApiVehicleVariant[]>([]);
 
   // Registration lookup state
   const [regNumber, setRegNumber] = useState('');
@@ -54,11 +55,12 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
   const [selectedBrand, setSelectedBrand] = useState('');
   const [selectedModel, setSelectedModel] = useState('');
   const [selectedYear, setSelectedYear] = useState('');
+  const [selectedVariant, setSelectedVariant] = useState('');
   const [savedVehicles, setSavedVehicles] = useState<ApiUserVehicle[]>([]);
 
-  const isDuplicateVehicle = (brandId: string, modelId: string, year: number) =>
+  const isDuplicateVehicle = (brandId: string, modelId: string, year: number, variantId?: string) =>
     savedVehicles.some(
-      (v) => v.brandId === brandId && v.modelId === modelId && v.year === year
+      (v) => v.brandId === brandId && v.modelId === modelId && v.year === year && (v.variantId || '') === (variantId || '')
     );
 
   // Load saved vehicles when dialog opens (for duplicate check)
@@ -111,14 +113,29 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
     fetchModels();
   }, [selectedBrand]);
 
+  // Fetch variants for the selected model.
+  useEffect(() => {
+    if (!selectedModel) {
+      setVariants([]);
+      setSelectedVariant('');
+      return;
+    }
+    api.getVehicleVariants(selectedModel)
+      .then((data) => setVariants(data || []))
+      .catch(() => setVariants([]));
+  }, [selectedModel]);
+
   const selectedBrandData = brands.find((b) => b.id === selectedBrand);
   const selectedModelData = models.find((m) => m.id === selectedModel);
 
   // Generate years array (current year down to 2000)
   const getYears = () => {
     const currentYear = new Date().getFullYear();
+    const selectedVariantData = variants.find((variant) => variant.id === selectedVariant);
+    const startYear = selectedVariantData?.yearStart ?? 2000;
+    const endYear = Math.min(selectedVariantData?.yearEnd ?? currentYear, currentYear);
     const years = [];
-    for (let y = currentYear; y >= 2000; y--) {
+    for (let y = endYear; y >= startYear; y--) {
       years.push(y);
     }
     return years;
@@ -161,6 +178,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
     setSelectedBrand('');
     setSelectedModel('');
     setSelectedYear('');
+    setSelectedVariant('');
     setRegNumber('');
     setRegVehicle(null);
     setRegNotFound(null);
@@ -266,7 +284,8 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
   };
 
   const handleManualSave = async () => {
-    if (!selectedBrandData || !selectedModelData || !selectedYear) {
+    const selectedVariantData = variants.find((variant) => variant.id === selectedVariant);
+    if (!selectedBrandData || !selectedModelData || !selectedVariantData || !selectedYear) {
       toast.error('Please complete all selections');
       return;
     }
@@ -277,7 +296,11 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
     }
 
     const year = parseInt(selectedYear, 10);
-    if (isDuplicateVehicle(selectedBrand, selectedModel, year)) {
+    if (year < selectedVariantData.yearStart || (selectedVariantData.yearEnd != null && year > selectedVariantData.yearEnd)) {
+      toast.error('Selected year is outside the variant year range');
+      return;
+    }
+    if (isDuplicateVehicle(selectedBrand, selectedModel, year, selectedVariant)) {
       toast.error('You already have this vehicle saved');
       return;
     }
@@ -290,6 +313,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
         brandId: selectedBrand,
         modelId: selectedModel,
         year: parseInt(selectedYear),
+        variantId: selectedVariant,
       });
 
       // Also update local store for compatibility filtering
@@ -300,6 +324,8 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
         year: parseInt(selectedYear),
         brandId: selectedBrand,
         modelId: selectedModel,
+        variantId: selectedVariant,
+        variant: selectedVariantData.name,
       };
 
       setUserVehicle(vehicle);
@@ -475,6 +501,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
                 setSelectedBrand(v);
                 setSelectedModel('');
                 setSelectedYear('');
+                setSelectedVariant('');
               }}>
                 <SelectTrigger className="bg-secondary/50">
                   <SelectValue placeholder="Select brand" />
@@ -502,6 +529,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
                   <Select value={selectedModel} onValueChange={(v) => {
                     setSelectedModel(v);
                     setSelectedYear('');
+                    setSelectedVariant('');
                   }}>
                     <SelectTrigger className="bg-secondary/50">
                       <SelectValue placeholder={loading ? "Loading..." : "Select model"} />
@@ -518,9 +546,38 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
               )}
             </AnimatePresence>
 
-            {/* Year Selection */}
+            {/* Variant Selection */}
             <AnimatePresence>
               {selectedModel && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="space-y-2"
+                >
+                  <Label>Variant</Label>
+                  <Select value={selectedVariant} onValueChange={(v) => {
+                    setSelectedVariant(v);
+                    setSelectedYear('');
+                  }}>
+                    <SelectTrigger className="bg-secondary/50">
+                      <SelectValue placeholder={variants.length ? 'Select variant' : 'No variants available'} />
+                    </SelectTrigger>
+                    <SelectContent className="glass-card">
+                      {variants.map((variant) => (
+                        <SelectItem key={variant.id} value={variant.id}>
+                          {variant.name} ({variant.yearStart}-{variant.yearEnd || 'present'})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Year Selection */}
+            <AnimatePresence>
+              {selectedVariant && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -546,7 +603,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
 
             <Button
               onClick={handleManualSave}
-              disabled={!selectedYear || loading}
+              disabled={!selectedYear || !selectedVariant || loading}
               className="w-full neon-button"
             >
               {loading ? (

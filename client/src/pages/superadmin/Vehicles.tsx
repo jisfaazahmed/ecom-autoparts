@@ -11,11 +11,12 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Card, CardContent } from '@/components/ui/card';
 import AdminLayout from '@/components/layout/AdminLayout';
-import { api } from '@/lib/api';
+import { api, ApiVehicleVariant } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
 interface VehicleBrand { id: string; name: string; logoUrl: string | null; }
 interface VehicleModel { id: string; name: string; brandId: string; brand?: VehicleBrand; }
+interface VehicleVariant extends ApiVehicleVariant { model?: VehicleModel; }
 
 const SuperAdminVehicles: React.FC = () => {
   const { toast } = useToast();
@@ -25,15 +26,16 @@ const SuperAdminVehicles: React.FC = () => {
 
   const [brands, setBrands] = useState<VehicleBrand[]>([]);
   const [models, setModels] = useState<VehicleModel[]>([]);
+  const [variants, setVariants] = useState<VehicleVariant[]>([]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [brandFilter, setBrandFilter] = useState<string>('all');
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<VehicleBrand | VehicleModel | null>(null);
-  const [itemToDelete, setItemToDelete] = useState<VehicleBrand | VehicleModel | null>(null);
-  const [formData, setFormData] = useState({ name: '', brandId: '' });
+  const [editingItem, setEditingItem] = useState<VehicleBrand | VehicleModel | VehicleVariant | null>(null);
+  const [itemToDelete, setItemToDelete] = useState<VehicleBrand | VehicleModel | VehicleVariant | null>(null);
+  const [formData, setFormData] = useState({ name: '', brandId: '', modelId: '', yearStart: '', yearEnd: '', engine: '' });
   const [logoLoadErrors, setLogoLoadErrors] = useState<Set<string>>(new Set());
 
   useEffect(() => { fetchData(); }, []);
@@ -42,20 +44,33 @@ const SuperAdminVehicles: React.FC = () => {
     setLoading(true);
     setLogoLoadErrors(new Set());
     try {
-      const [brandsData, modelsData] = await Promise.all([
+      const [brandsData, modelsData, variantsData] = await Promise.all([
         api.getVehicleBrands(),
-        api.getAllVehicleModels()
+        api.getAllVehicleModels(),
+        api.getAllVehicleVariants()
       ]);
       setBrands(brandsData as VehicleBrand[]);
       setModels(modelsData as VehicleModel[]);
+      setVariants(variantsData as VehicleVariant[]);
     } catch (error: unknown) {
       toast({ title: 'Error', description: error instanceof Error ? error.message : 'An error occurred', variant: 'destructive' });
     }
     setLoading(false);
   };
 
-  const openAddDialog = () => { setEditingItem(null); setFormData({ name: '', brandId: brandFilter !== 'all' ? brandFilter : '' }); setDialogOpen(true); };
-  const openEditDialog = (item: VehicleBrand | VehicleModel) => { setEditingItem(item); setFormData({ name: item.name, brandId: 'brandId' in item ? item.brandId || '' : '' }); setDialogOpen(true); };
+  const openAddDialog = () => { setEditingItem(null); setFormData({ name: '', brandId: brandFilter !== 'all' ? brandFilter : '', modelId: '', yearStart: '', yearEnd: '', engine: '' }); setDialogOpen(true); };
+  const openEditDialog = (item: VehicleBrand | VehicleModel | VehicleVariant) => {
+    setEditingItem(item);
+    setFormData({
+      name: item.name,
+      brandId: 'brandId' in item ? item.brandId || '' : '',
+      modelId: 'modelId' in item ? item.modelId : '',
+      yearStart: 'yearStart' in item ? String(item.yearStart) : '',
+      yearEnd: 'yearEnd' in item && item.yearEnd ? String(item.yearEnd) : '',
+      engine: 'engine' in item ? item.engine || '' : '',
+    });
+    setDialogOpen(true);
+  };
 
   const handleSave = async () => {
     if (!formData.name.trim()) { toast({ title: 'Error', description: 'Name is required', variant: 'destructive' }); return; }
@@ -79,6 +94,12 @@ const SuperAdminVehicles: React.FC = () => {
           await api.createVehicleModel(data);
         }
         toast({ title: editingItem ? 'Updated' : 'Created', description: `Model ${editingItem ? 'updated' : 'created'} successfully` });
+      } else {
+        if (!formData.modelId || !formData.yearStart) { toast({ title: 'Error', description: 'Model and start year are required', variant: 'destructive' }); setSaving(false); return; }
+        const data = { name: formData.name, modelId: formData.modelId, yearStart: Number(formData.yearStart), yearEnd: formData.yearEnd ? Number(formData.yearEnd) : undefined, engine: formData.engine || undefined };
+        if (editingItem && 'modelId' in editingItem) await api.updateVehicleVariant(editingItem.id, data);
+        else await api.createVehicleVariant(data);
+        toast({ title: editingItem ? 'Updated' : 'Created', description: `Variant ${editingItem ? 'updated' : 'created'} successfully` });
       }
       setDialogOpen(false);
       fetchData();
@@ -94,8 +115,10 @@ const SuperAdminVehicles: React.FC = () => {
     try {
       if (activeTab === 'brands') {
         await api.deleteVehicleBrand(itemToDelete.id);
-      } else {
+      } else if (activeTab === 'models') {
         await api.deleteVehicleModel(itemToDelete.id);
+      } else {
+        await api.deleteVehicleVariant(itemToDelete.id);
       }
       toast({ title: 'Deleted', description: 'Item deleted successfully' });
       setDeleteDialogOpen(false);
@@ -109,6 +132,7 @@ const SuperAdminVehicles: React.FC = () => {
 
   const filteredBrands = brands.filter(b => b.name.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredModels = models.filter(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()) && (brandFilter === 'all' || m.brandId === brandFilter));
+  const filteredVariants = variants.filter(v => v.name.toLowerCase().includes(searchQuery.toLowerCase()) && (brandFilter === 'all' || models.find(m => m.id === v.modelId)?.brandId === brandFilter));
 
   if (loading) return <AdminLayout><div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></AdminLayout>;
 
@@ -120,7 +144,7 @@ const SuperAdminVehicles: React.FC = () => {
             <h1 className="font-display text-2xl lg:text-3xl font-bold flex items-center gap-3"><Car className="h-7 w-7 lg:h-8 lg:w-8 text-primary" />Vehicle Database</h1>
             <p className="text-muted-foreground mt-1">Manage the master vehicle compatibility database</p>
           </div>
-          <Button onClick={openAddDialog} className="neon-button"><Plus className="h-4 w-4 mr-2" />Add {activeTab === 'brands' ? 'Brand' : 'Model'}</Button>
+          <Button onClick={openAddDialog} className="neon-button"><Plus className="h-4 w-4 mr-2" />Add {activeTab === 'brands' ? 'Brand' : activeTab === 'models' ? 'Model' : 'Variant'}</Button>
         </div>
 
         <div className="grid grid-cols-2 gap-3 lg:gap-4 mb-6">
@@ -133,10 +157,11 @@ const SuperAdminVehicles: React.FC = () => {
             <TabsList className="glass-card">
               <TabsTrigger value="brands" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Brands</TabsTrigger>
               <TabsTrigger value="models" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Models</TabsTrigger>
+              <TabsTrigger value="variants" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Variants</TabsTrigger>
             </TabsList>
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
               <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" /><Input placeholder="Search..." className="pl-10 w-full sm:w-64 bg-secondary/50" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} /></div>
-              {activeTab === 'models' && <Select value={brandFilter} onValueChange={setBrandFilter}><SelectTrigger className="w-full sm:w-40 bg-secondary/50"><SelectValue placeholder="All Brands" /></SelectTrigger><SelectContent className="glass-card"><SelectItem value="all">All Brands</SelectItem>{brands.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent></Select>}
+              {activeTab !== 'brands' && <Select value={brandFilter} onValueChange={setBrandFilter}><SelectTrigger className="w-full sm:w-40 bg-secondary/50"><SelectValue placeholder="All Brands" /></SelectTrigger><SelectContent className="glass-card"><SelectItem value="all">All Brands</SelectItem>{brands.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent></Select>}
             </div>
           </div>
 
@@ -176,6 +201,12 @@ const SuperAdminVehicles: React.FC = () => {
             </div>
           </TabsContent>
 
+          <TabsContent value="variants">
+            <div className="glass-card overflow-x-auto"><Table><TableHeader><TableRow className="border-border/50"><TableHead>Variant</TableHead><TableHead>Model</TableHead><TableHead>Years</TableHead><TableHead>Engine</TableHead><TableHead className="text-right">Actions</TableHead></TableRow></TableHeader><TableBody>
+              {filteredVariants.map(variant => <TableRow key={variant.id} className="border-border/50"><TableCell className="font-medium">{variant.name}</TableCell><TableCell><Badge variant="secondary">{models.find(m => m.id === variant.modelId)?.name || 'Unknown'}</Badge></TableCell><TableCell>{variant.yearStart} - {variant.yearEnd || 'present'}</TableCell><TableCell>{variant.engine || '-'}</TableCell><TableCell className="text-right"><Button variant="ghost" size="icon" onClick={() => openEditDialog(variant)}><Edit className="h-4 w-4" /></Button><Button variant="ghost" size="icon" className="text-destructive" onClick={() => { setItemToDelete(variant); setDeleteDialogOpen(true); }}><Trash2 className="h-4 w-4" /></Button></TableCell></TableRow>)}
+            </TableBody></Table></div>
+          </TabsContent>
+
           <TabsContent value="models">
             <div className="glass-card overflow-x-auto">
               <Table>
@@ -197,10 +228,11 @@ const SuperAdminVehicles: React.FC = () => {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="glass-card">
-          <DialogHeader><DialogTitle>{editingItem ? 'Edit' : 'Add'} {activeTab === 'brands' ? 'Brand' : 'Model'}</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{editingItem ? 'Edit' : 'Add'} {activeTab === 'brands' ? 'Brand' : activeTab === 'models' ? 'Model' : 'Variant'}</DialogTitle></DialogHeader>
           <div className="space-y-4 py-4">
             <div><Label>Name *</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder={activeTab === 'brands' ? 'e.g., Toyota' : 'e.g., Corolla'} /></div>
             {activeTab === 'models' && <div><Label>Brand *</Label><Select value={formData.brandId} onValueChange={(v) => setFormData({ ...formData, brandId: v })}><SelectTrigger><SelectValue placeholder="Select brand" /></SelectTrigger><SelectContent className="glass-card">{brands.map(b => <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>)}</SelectContent></Select></div>}
+            {activeTab === 'variants' && <><div><Label>Model *</Label><Select value={formData.modelId} onValueChange={(v) => setFormData({ ...formData, modelId: v })}><SelectTrigger><SelectValue placeholder="Select model" /></SelectTrigger><SelectContent className="glass-card">{models.map(m => <SelectItem key={m.id} value={m.id}>{m.brand?.name ? `${m.brand.name} ` : ''}{m.name}</SelectItem>)}</SelectContent></Select></div><div className="grid grid-cols-2 gap-3"><div><Label>Start year *</Label><Input type="number" value={formData.yearStart} onChange={(e) => setFormData({ ...formData, yearStart: e.target.value })} /></div><div><Label>End year</Label><Input type="number" value={formData.yearEnd} onChange={(e) => setFormData({ ...formData, yearEnd: e.target.value })} /></div></div><div><Label>Engine</Label><Input value={formData.engine} onChange={(e) => setFormData({ ...formData, engine: e.target.value })} placeholder="e.g., 2.0L Turbo" /></div></>}
           </div>
           <DialogFooter><Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button><Button onClick={handleSave} disabled={saving}>{saving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}{editingItem ? 'Update' : 'Create'}</Button></DialogFooter>
         </DialogContent>

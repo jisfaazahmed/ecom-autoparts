@@ -17,6 +17,11 @@ const userVehicleSchema = new mongoose.Schema(
       ref: 'VehicleModel',
       required: true,
     },
+    variant: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'VehicleVariant',
+      default: null,
+    },
 
     year: {
       type: Number,

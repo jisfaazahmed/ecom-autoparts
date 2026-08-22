@@ -5,6 +5,7 @@ const config = require('../config/config');
 // Import models
 const VehicleBrand = require('../models/vehicleBrand.model');
 const VehicleModel = require('../models/vehicleModel.model');
+const VehicleVariant = require('../models/vehicleVariant.model');
 
 const Vehicle = require('../models/vehicle');
 
@@ -255,6 +256,19 @@ async function seedVehicles() {
         }
 
         for (const variantData of modelData.variants) {
+          // Keep the normalized master record alongside the legacy flattened fitment rows.
+          await VehicleVariant.findOneAndUpdate(
+            { model: model._id, name: variantData.name },
+            {
+              model: model._id,
+              name: variantData.name,
+              yearStart: variantData.yearStart,
+              yearEnd: variantData.yearEnd,
+              engine: variantData.engine
+            },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+          );
+
           // 3. Create Flattened "Vehicle" entries for each year in the range
           // This is for the product compatibility logic (Vehicle schema)
           const start = variantData.yearStart;

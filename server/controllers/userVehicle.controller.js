@@ -1,6 +1,7 @@
 const UserVehicle = require('../models/userVehicle.model');
 const VehicleBrand = require('../models/vehicleBrand.model');
 const VehicleModel = require('../models/vehicleModel.model');
+const VehicleVariant = require('../models/vehicleVariant.model');
 
 function mapUserVehicle(doc) {
   const brand = doc.brand && typeof doc.brand === 'object' && doc.brand.name
@@ -15,6 +16,15 @@ function mapUserVehicle(doc) {
     userId: doc.user && (doc.user._id ? doc.user._id.toString() : doc.user.toString()),
     brandId: doc.brand && (doc.brand._id ? doc.brand._id.toString() : doc.brand.toString()),
     modelId: doc.model && (doc.model._id ? doc.model._id.toString() : doc.model.toString()),
+    variantId: doc.variant && (doc.variant._id ? doc.variant._id.toString() : doc.variant.toString()),
+    ...(doc.variant && doc.variant.name ? { variant: {
+      id: doc.variant._id.toString(),
+      name: doc.variant.name,
+      yearStart: doc.variant.yearStart,
+      yearEnd: doc.variant.yearEnd,
+      engine: doc.variant.engine,
+      modelId: doc.variant.model ? doc.variant.model.toString() : undefined,
+    } } : {}),
     year: doc.year,
     registrationNumber: doc.registrationNumber ?? undefined,
     isActive: !!doc.isActive,
@@ -30,6 +40,7 @@ exports.getUserVehicles = async (req, res) => {
     const list = await UserVehicle.find({ user: userId })
       .populate('brand', 'name logoUrl')
       .populate('model', 'name brand')
+      .populate('variant', 'name yearStart yearEnd engine model')
       .sort({ isActive: -1, createdAt: -1 })
       .exec();
     res.json(list.map(mapUserVehicle));
@@ -42,7 +53,7 @@ exports.getUserVehicles = async (req, res) => {
 exports.addUserVehicle = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { brandId, modelId, year, registrationNumber } = req.body;
+    const { brandId, modelId, variantId, year, registrationNumber } = req.body;
 
     if (!brandId || !modelId || year == null) {
       return res.status(400).json({
@@ -63,10 +74,20 @@ exports.addUserVehicle = async (req, res) => {
       return res.status(400).json({ message: 'Invalid brand or model' });
     }
 
+    let variant;
+    if (variantId) {
+      variant = await VehicleVariant.findOne({ _id: variantId, model: modelId }).exec();
+      if (!variant) return res.status(400).json({ message: 'Invalid variant for model' });
+      if (yearNum < variant.yearStart || (variant.yearEnd != null && yearNum > variant.yearEnd)) {
+        return res.status(400).json({ message: 'Year is outside the selected variant range' });
+      }
+    }
+
     const duplicate = await UserVehicle.findOne({
       user: userId,
       brand: brandId,
       model: modelId,
+      ...(variant ? { variant: variant._id } : {}),
       year: yearNum,
     }).exec();
     if (duplicate) {
@@ -82,6 +103,7 @@ exports.addUserVehicle = async (req, res) => {
       user: userId,
       brand: brandId,
       model: modelId,
+      ...(variant ? { variant: variant._id } : {}),
       year: yearNum,
       registrationNumber: registrationNumber || null,
       isActive,
@@ -90,6 +112,7 @@ exports.addUserVehicle = async (req, res) => {
     const populated = await UserVehicle.findById(uv._id)
       .populate('brand', 'name logoUrl')
       .populate('model', 'name brand')
+      .populate('variant', 'name yearStart yearEnd engine model')
       .exec();
 
     res.status(201).json(mapUserVehicle(populated));

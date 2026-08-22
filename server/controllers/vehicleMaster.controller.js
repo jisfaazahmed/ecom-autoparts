@@ -1,5 +1,6 @@
 const VehicleBrand = require('../models/vehicleBrand.model');
 const VehicleModel = require('../models/vehicleModel.model');
+const VehicleVariant = require('../models/vehicleVariant.model');
 
 // Helpers to map Mongo docs to API shapes expected by client/src/lib/api.ts
 const mapBrand = (doc) => ({
@@ -28,6 +29,16 @@ const mapModel = (doc) => {
     ...(brand && { brand }),
   };
 };
+
+const mapVariant = (doc) => ({
+  id: doc._id.toString(),
+  name: doc.name,
+  modelId: doc.model && doc.model._id ? doc.model._id.toString() : doc.model.toString(),
+  yearStart: doc.yearStart,
+  yearEnd: doc.yearEnd,
+  engine: doc.engine,
+  created_at: doc.createdAt ? doc.createdAt.toISOString() : undefined,
+});
 
 // ============ BRANDS ============
 
@@ -199,11 +210,102 @@ exports.deleteVehicleModel = async (req, res) => {
   try {
     const { id } = req.params;
 
+    const variantCount = await VehicleVariant.countDocuments({ model: id }).exec();
+    if (variantCount > 0) {
+      return res.status(400).json({ message: 'Cannot delete model while variants exist. Delete variants first.' });
+    }
+
     const result = await VehicleModel.findByIdAndDelete(id).exec();
     if (!result) return res.status(404).json({ message: 'Model not found' });
     res.status(204).send();
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Failed to delete vehicle model' });
+  }
+};
+
+// ============ VARIANTS ============
+
+exports.getAllVehicleVariants = async (req, res) => {
+  try {
+    const variants = await VehicleVariant.find().sort({ name: 1 }).exec();
+    res.json(variants.map(mapVariant));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Failed to fetch vehicle variants' });
+  }
+};
+
+exports.getVehicleVariantsByModel = async (req, res) => {
+  try {
+    const variants = await VehicleVariant.find({ model: req.params.modelId }).sort({ name: 1 }).exec();
+    res.json(variants.map(mapVariant));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Failed to fetch vehicle variants for model' });
+  }
+};
+
+exports.createVehicleVariant = async (req, res) => {
+  try {
+    const { name, modelId, yearStart, yearEnd, engine } = req.body;
+    if (!name || !String(name).trim()) return res.status(400).json({ message: 'Variant name is required' });
+    if (!modelId) return res.status(400).json({ message: 'modelId is required' });
+    if (!Number.isInteger(Number(yearStart))) return res.status(400).json({ message: 'yearStart is required' });
+    if (yearEnd !== undefined && yearEnd !== null && Number(yearEnd) < Number(yearStart)) {
+      return res.status(400).json({ message: 'yearEnd cannot be before yearStart' });
+    }
+    const modelExists = await VehicleModel.exists({ _id: modelId }).exec();
+    if (!modelExists) return res.status(400).json({ message: 'Model does not exist' });
+
+    const variant = await VehicleVariant.create({
+      name: String(name).trim(), model: modelId, yearStart: Number(yearStart),
+      yearEnd: yearEnd === undefined || yearEnd === null ? undefined : Number(yearEnd),
+      engine: engine ? String(engine).trim() : undefined,
+    });
+    res.status(201).json(mapVariant(variant));
+  } catch (err) {
+    console.error(err);
+    if (err.code === 11000) return res.status(400).json({ message: 'Variant already exists for this model' });
+    res.status(500).json({ message: 'Failed to create vehicle variant' });
+  }
+};
+
+exports.updateVehicleVariant = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, modelId, yearStart, yearEnd, engine } = req.body;
+    const currentVariant = await VehicleVariant.findById(id).exec();
+    if (!currentVariant) return res.status(404).json({ message: 'Variant not found' });
+    const nextYearStart = yearStart === undefined ? currentVariant.yearStart : Number(yearStart);
+    const nextYearEnd = yearEnd === undefined ? currentVariant.yearEnd : (yearEnd === null ? undefined : Number(yearEnd));
+    if (!Number.isInteger(nextYearStart)) return res.status(400).json({ message: 'yearStart must be a whole number' });
+    if (nextYearEnd != null && nextYearEnd < nextYearStart) {
+      return res.status(400).json({ message: 'yearEnd cannot be before yearStart' });
+    }
+    const update = {};
+    if (name !== undefined) update.name = String(name).trim();
+    if (modelId !== undefined) update.model = modelId;
+    if (yearStart !== undefined) update.yearStart = Number(yearStart);
+    if (yearEnd !== undefined) update.yearEnd = yearEnd === null ? undefined : Number(yearEnd);
+    if (engine !== undefined) update.engine = engine ? String(engine).trim() : undefined;
+
+    const variant = await VehicleVariant.findByIdAndUpdate(id, update, { new: true, runValidators: true }).exec();
+    res.json(mapVariant(variant));
+  } catch (err) {
+    console.error(err);
+    if (err.code === 11000) return res.status(400).json({ message: 'Duplicate variant for this model' });
+    res.status(500).json({ message: 'Failed to update vehicle variant' });
+  }
+};
+
+exports.deleteVehicleVariant = async (req, res) => {
+  try {
+    const result = await VehicleVariant.findByIdAndDelete(req.params.id).exec();
+    if (!result) return res.status(404).json({ message: 'Variant not found' });
+    res.status(204).send();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Failed to delete vehicle variant' });
   }
 };

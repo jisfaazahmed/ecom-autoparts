@@ -8,6 +8,7 @@ export interface Vehicle {
   brandId?: string;
   modelId?: string;
   variantId?: string;
+  variant?: string;
 }
 
 export interface Product {

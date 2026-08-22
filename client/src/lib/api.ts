@@ -257,6 +257,7 @@ export interface ApiVehicleModel {
   name: string;
   brandId: string;
   created_at?: string;
+  brand?: ApiVehicleBrand;
 }
 
 
@@ -265,8 +266,11 @@ export interface ApiVehicleVariant {
   id: string;
   name: string;
   modelId: string;
+  variantId?: string;
+  variant?: ApiVehicleVariant;
   yearStart: number;
   yearEnd?: number;
+  engine?: string;
   created_at?: string;
 }
 
@@ -1786,6 +1790,14 @@ class ApiClient {
     return this.request<ApiVehicleModel[]>('/vehicles/models/all');
   }
 
+  async getVehicleVariants(modelId: string): Promise<ApiVehicleVariant[]> {
+    return this.request<ApiVehicleVariant[]>(`/vehicles/variants/${modelId}`);
+  }
+
+  async getAllVehicleVariants(): Promise<ApiVehicleVariant[]> {
+    return this.request<ApiVehicleVariant[]>('/vehicles/variants/all');
+  }
+
 
 
   async resolveVehicle(params: {
@@ -1863,6 +1875,7 @@ class ApiClient {
     modelId: string;
     yearStart: number;
     yearEnd?: number;
+    engine?: string;
   }): Promise<ApiVehicleVariant> {
     return this.request<ApiVehicleVariant>('/vehicles/variants', {
       method: 'POST',
@@ -1875,6 +1888,7 @@ class ApiClient {
     modelId?: string;
     yearStart?: number;
     yearEnd?: number;
+    engine?: string;
   }): Promise<ApiVehicleVariant> {
     return this.request<ApiVehicleVariant>(`/vehicles/variants/${id}`, {
       method: 'PUT',
@@ -1892,6 +1906,7 @@ class ApiClient {
     brandId: string;
     modelId: string;
     year: number;
+    variantId?: string;
     registrationNumber?: string;
     nickname?: string;
     vin?: string;
