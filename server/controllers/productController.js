@@ -405,8 +405,8 @@ exports.updateProduct = async (req, res) => {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    const ownerId = String(product.createdBy || '');
-    const isOwner = ownerId && ownerId === String(requester.id);
+    const ownerId = product.createdBy?._id || product.createdBy?.id || product.createdBy;
+    const isOwner = ownerId && String(ownerId) === String(requester.id);
     const isSuperAdmin = requester.role === 'superadmin';
     if (!isOwner && !isSuperAdmin) {
       return res.status(403).json({ message: 'Not authorized to update this product' });
