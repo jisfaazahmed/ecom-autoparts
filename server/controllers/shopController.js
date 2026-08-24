@@ -37,6 +37,15 @@ function userToShop(user) {
     businessRegistration: u.businessRegistration || null,
     commissionRate: u.commissionRate != null ? u.commissionRate : 10,
     rejectionReason: u.rejectionReason || null,
+    bankDetails: u.bankDetails && (u.bankDetails.accountNumber || u.bankDetails.accountHolderName)
+      ? {
+        accountHolderName: u.bankDetails.accountHolderName || '',
+        accountNumber: u.bankDetails.accountNumber || '',
+        bankName: u.bankDetails.bankName || '',
+        branchName: u.bankDetails.branchName || '',
+        swiftCode: u.bankDetails.swiftCode || '',
+      }
+      : null,
     createdAt: (u.createdAt && new Date(u.createdAt).toISOString()) || new Date().toISOString(),
     updatedAt: (u.updatedAt && new Date(u.updatedAt).toISOString()) || new Date().toISOString(),
   };
@@ -196,6 +205,15 @@ exports.updateMyShop = exports.updateShop = async (req, res) => {
     allowed.forEach((key) => {
       if (body[key] !== undefined) updates[key] = body[key];
     });
+    if (body.bankDetails && typeof body.bankDetails === 'object') {
+      const bankFields = ['accountHolderName', 'accountNumber', 'bankName', 'branchName', 'swiftCode'];
+      updates.bankDetails = {};
+      bankFields.forEach((key) => {
+        if (body.bankDetails[key] !== undefined) {
+          updates.bankDetails[key] = String(body.bankDetails[key]).trim();
+        }
+      });
+    }
     if (Object.keys(updates).length === 0) {
       return res.json(userToShop(user));
     }

@@ -226,11 +226,25 @@ exports.createVendorSettlement = async (req, res) => {
       return res.status(404).json({ message: 'Vendor not found' });
     }
 
+    const parsedStart = new Date(startDate);
+    const parsedEnd = new Date(endDate);
+
+    // Prevent settling the same period (or an overlapping one) twice
+    const overlapping = await SettlementService.findOverlappingSettlement(id, parsedStart, parsedEnd);
+    if (overlapping) {
+      const existingStart = overlapping.settlementPeriod?.startDate?.toISOString().slice(0, 10);
+      const existingEnd = overlapping.settlementPeriod?.endDate?.toISOString().slice(0, 10);
+      return res.status(409).json({
+        message: `A settlement already exists for this vendor covering ${existingStart} to ${existingEnd} (status: ${overlapping.status}). Pick a period that doesn't overlap.`,
+        settlementId: overlapping._id,
+      });
+    }
+
     // Calculate settlement
     const settlementData = await SettlementService.calculateVendorSettlement(
       id,
-      new Date(startDate),
-      new Date(endDate)
+      parsedStart,
+      parsedEnd
     );
 
     // Create settlement record

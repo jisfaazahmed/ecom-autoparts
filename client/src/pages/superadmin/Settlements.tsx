@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { CreditCard, TrendingUp, DollarSign, Clock, RefreshCw, ChevronDown, Zap } from 'lucide-react';
+import { CreditCard, TrendingUp, DollarSign, Clock, RefreshCw, ChevronDown, Zap, Landmark, CheckCircle2 } from 'lucide-react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -11,7 +12,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { api, ApiShop } from '@/lib/api';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { api, ApiShop, ApiBankDetails } from '@/lib/api';
 import { formatLKR } from '@/lib/currency';
 import { toast } from 'sonner';
 
@@ -25,6 +27,8 @@ interface Settlement {
   settlementPeriod?: { startDate: string; endDate: string };
   createdAt: string;
   vendor?: { name?: string; shopName?: string };
+  bankDetails?: ApiBankDetails;
+  payoutDetails?: { transactionId?: string; referenceNumber?: string; payoutDate?: string };
 }
 
 interface Summary {
@@ -59,6 +63,11 @@ const Settlements: React.FC = () => {
   const [generating, setGenerating] = useState(false);
   const [rangeStart, setRangeStart] = useState(thirtyDaysAgoIso());
   const [rangeEnd, setRangeEnd] = useState(todayIso());
+  const [payDialogSettlement, setPayDialogSettlement] = useState<Settlement | null>(null);
+  const [payReference, setPayReference] = useState('');
+  const [markingPaid, setMarkingPaid] = useState(false);
+
+  const selectedVendor = shops.find((s) => s.id === selectedVendorId);
 
   useEffect(() => {
     const fetchShops = async () => {
@@ -101,6 +110,25 @@ const Settlements: React.FC = () => {
     fetchSettlements();
   }, [fetchSettlements]);
 
+  // Default the period start to the day after the latest settled period ends,
+  // so re-settling the same range isn't the default action.
+  useEffect(() => {
+    const activeSettlements = settlements.filter((s) => s.status !== 'failed' && s.status !== 'cancelled');
+    const latestEnd = activeSettlements.reduce<Date | null>((latest, s) => {
+      const endStr = s.period?.end || s.settlementPeriod?.endDate;
+      if (!endStr) return latest;
+      const end = new Date(endStr);
+      return !latest || end > latest ? end : latest;
+    }, null);
+
+    if (latestEnd) {
+      const nextStart = new Date(latestEnd);
+      nextStart.setDate(nextStart.getDate() + 1);
+      const nextStartIso = nextStart.toISOString().slice(0, 10);
+      setRangeStart((prev) => (nextStartIso > prev ? nextStartIso : prev));
+    }
+  }, [settlements]);
+
   const handleGenerateSettlement = async () => {
     if (!selectedVendorId) return;
     if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) {
@@ -116,6 +144,29 @@ const Settlements: React.FC = () => {
       toast.error(err instanceof Error ? err.message : 'Failed to generate settlement');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const confirmMarkAsPaid = async () => {
+    if (!payDialogSettlement) return;
+    if (!payReference.trim()) {
+      toast.error('Enter the bank transaction reference number');
+      return;
+    }
+    setMarkingPaid(true);
+    try {
+      await api.updateSettlementStatus(payDialogSettlement._id, 'completed', {
+        'payoutDetails.transactionId': payReference.trim(),
+        'payoutDetails.referenceNumber': payReference.trim(),
+      });
+      toast.success('Settlement marked as paid');
+      setPayDialogSettlement(null);
+      setPayReference('');
+      fetchSettlements();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update settlement');
+    } finally {
+      setMarkingPaid(false);
     }
   };
 
@@ -185,6 +236,38 @@ const Settlements: React.FC = () => {
           </Button>
         </div>
 
+        {/* Payout bank account for selected vendor */}
+        {selectedVendor && (
+          <div className="glass-card rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Landmark className="h-4 w-4 text-primary" />
+              <span className="text-sm font-semibold">Payout Bank Account — {selectedVendor.name}</span>
+            </div>
+            {selectedVendor.bankDetails?.accountNumber ? (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground">Account Holder</p>
+                  <p className="font-medium">{selectedVendor.bankDetails.accountHolderName || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Account Number</p>
+                  <p className="font-medium font-mono">{selectedVendor.bankDetails.accountNumber}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Bank</p>
+                  <p className="font-medium">{selectedVendor.bankDetails.bankName || '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Branch</p>
+                  <p className="font-medium">{selectedVendor.bankDetails.branchName || '—'}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">This vendor hasn't added payout bank details in their shop settings yet.</p>
+            )}
+          </div>
+        )}
+
         {/* Summary Cards */}
         {summary && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -231,6 +314,7 @@ const Settlements: React.FC = () => {
                     <th className="text-right px-4 py-3 font-medium text-muted-foreground">Amount</th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>
                     <th className="text-left px-4 py-3 font-medium text-muted-foreground">Created</th>
+                    <th className="text-right px-4 py-3 font-medium text-muted-foreground">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -261,6 +345,22 @@ const Settlements: React.FC = () => {
                       <td className="px-4 py-3 text-muted-foreground text-xs">
                         {new Date(s.createdAt).toLocaleDateString()}
                       </td>
+                      <td className="px-4 py-3 text-right">
+                        {s.status === 'completed' ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-green-400">
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            {s.payoutDetails?.referenceNumber || 'Paid'}
+                          </span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => { setPayDialogSettlement(s); setPayReference(''); }}
+                          >
+                            Mark as Paid
+                          </Button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -269,6 +369,39 @@ const Settlements: React.FC = () => {
           )}
         </div>
       </div>
+
+      <Dialog open={!!payDialogSettlement} onOpenChange={(open) => !open && setPayDialogSettlement(null)}>
+        <DialogContent className="glass-card">
+          <DialogHeader>
+            <DialogTitle>Mark Settlement as Paid</DialogTitle>
+            <DialogDescription>
+              Confirm you've sent {payDialogSettlement && formatLKR(payDialogSettlement.payableAmount ?? payDialogSettlement.totalPayable ?? payDialogSettlement.amount ?? 0)} to the vendor's bank account outside this system, then record the reference below. This does not move any money.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedVendor?.bankDetails?.accountNumber && (
+            <div className="rounded-lg border border-border/40 bg-secondary/20 p-3 text-sm space-y-1">
+              <p><span className="text-muted-foreground">Account:</span> {selectedVendor.bankDetails.accountHolderName} — {selectedVendor.bankDetails.accountNumber}</p>
+              <p><span className="text-muted-foreground">Bank:</span> {selectedVendor.bankDetails.bankName} {selectedVendor.bankDetails.branchName ? `(${selectedVendor.bankDetails.branchName})` : ''}</p>
+            </div>
+          )}
+          <div>
+            <Label htmlFor="pay_reference">Bank Transaction Reference</Label>
+            <Input
+              id="pay_reference"
+              value={payReference}
+              onChange={(e) => setPayReference(e.target.value)}
+              placeholder="e.g. bank transfer slip / reference number"
+              className="mt-1"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPayDialogSettlement(null)} disabled={markingPaid}>Cancel</Button>
+            <Button onClick={confirmMarkAsPaid} disabled={markingPaid}>
+              {markingPaid ? 'Saving…' : 'Confirm Paid'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Settings, Store, Mail, Phone, MapPin, FileText, Save, Loader2, Building2, ImageIcon, Percent } from 'lucide-react';
+import { Settings, Store, Mail, Phone, MapPin, FileText, Save, Loader2, Building2, ImageIcon, Percent, Landmark } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,8 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import AdminLayout from '@/components/layout/AdminLayout';
-import { useAuth } from '@/hooks/useAuth';
-import { api } from '@/lib/api';
+import { api, ApiShop } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 
 interface ShopFormData {
@@ -22,14 +21,19 @@ interface ShopFormData {
   business_registration: string;
   logo_url: string;
   shop_wide_discount_percent: string;
+  bank_account_holder_name: string;
+  bank_account_number: string;
+  bank_name: string;
+  bank_branch_name: string;
+  bank_swift_code: string;
 }
 
 const AdminSettings: React.FC = () => {
-  const { shop } = useAuth();
   const { toast } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [shop, setShop] = useState<ApiShop | null>(null);
   const [formData, setFormData] = useState<ShopFormData>({
     name: '',
     description: '',
@@ -39,23 +43,40 @@ const AdminSettings: React.FC = () => {
     business_registration: '',
     logo_url: '',
     shop_wide_discount_percent: '0',
+    bank_account_holder_name: '',
+    bank_account_number: '',
+    bank_name: '',
+    bank_branch_name: '',
+    bank_swift_code: '',
   });
 
   useEffect(() => {
-    if (shop) {
-      setFormData({
-        name: shop.name || '',
-        description: shop.description || '',
-        email: shop.email || '',
-        phone: shop.phone || '',
-        address: shop.address || '',
-        business_registration: shop.business_registration || '',
-        logo_url: shop.logo_url || '',
-        shop_wide_discount_percent: String(shop.shopWideDiscountPercent ?? 0),
-      });
+    const loadShop = async () => {
+      try {
+        const data = await api.getMyShop();
+        setShop(data);
+        setFormData({
+          name: data.name || '',
+          description: data.description || '',
+          email: data.email || '',
+          phone: data.phone || '',
+          address: data.address || '',
+          business_registration: data.businessRegistration || '',
+          logo_url: data.logoUrl || '',
+          shop_wide_discount_percent: String(data.shopWideDiscountPercent ?? 0),
+          bank_account_holder_name: data.bankDetails?.accountHolderName || '',
+          bank_account_number: data.bankDetails?.accountNumber || '',
+          bank_name: data.bankDetails?.bankName || '',
+          bank_branch_name: data.bankDetails?.branchName || '',
+          bank_swift_code: data.bankDetails?.swiftCode || '',
+        });
+      } catch (error) {
+        toast({ title: 'Error', description: (error as Error).message || 'Failed to load shop settings', variant: 'destructive' });
+      }
       setLoading(false);
-    }
-  }, [shop]);
+    };
+    loadShop();
+  }, []);
 
   const handleSave = async () => {
     if (!shop?.id) return;
@@ -99,9 +120,15 @@ const AdminSettings: React.FC = () => {
       return;
     }
 
+    const hasBankInfo = formData.bank_account_holder_name.trim() || formData.bank_account_number.trim() || formData.bank_name.trim();
+    if (hasBankInfo && (!formData.bank_account_holder_name.trim() || !formData.bank_account_number.trim() || !formData.bank_name.trim())) {
+      toast({ title: 'Error', description: 'Account holder name, account number, and bank name are required to save payout bank details', variant: 'destructive' });
+      return;
+    }
+
     setSaving(true);
     try {
-      await api.updateMyShop({
+      const updated = await api.updateMyShop({
         name: formData.name,
         description: formData.description || undefined,
         email: formData.email || undefined,
@@ -110,7 +137,15 @@ const AdminSettings: React.FC = () => {
         businessRegistration: formData.business_registration || undefined,
         logoUrl: formData.logo_url || undefined,
         shopWideDiscountPercent: Math.max(0, Math.min(90, discount)),
+        bankDetails: {
+          accountHolderName: formData.bank_account_holder_name.trim(),
+          accountNumber: formData.bank_account_number.trim(),
+          bankName: formData.bank_name.trim(),
+          branchName: formData.bank_branch_name.trim(),
+          swiftCode: formData.bank_swift_code.trim(),
+        },
       });
+      setShop(updated);
       toast({ title: 'Saved', description: 'Shop settings updated successfully' });
     } catch (error) {
       toast({ title: 'Error', description: (error as Error).message || 'Failed to save settings', variant: 'destructive' });
@@ -169,12 +204,12 @@ const AdminSettings: React.FC = () => {
                 <Separator orientation="vertical" className="h-8 hidden sm:block" />
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Commission Rate</p>
-                  <Badge variant="outline" className="flex items-center gap-1"><Percent className="h-3 w-3" />{shop?.commission_rate || 10}%</Badge>
+                  <Badge variant="outline" className="flex items-center gap-1"><Percent className="h-3 w-3" />{shop?.commissionRate || 10}%</Badge>
                 </div>
                 <Separator orientation="vertical" className="h-8 hidden sm:block" />
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Member Since</p>
-                  <p className="text-sm font-medium">{shop?.created_at && new Date(shop.created_at).toLocaleDateString()}</p>
+                  <p className="text-sm font-medium">{shop?.createdAt && new Date(shop.createdAt).toLocaleDateString()}</p>
                 </div>
               </div>
               {shop?.status === 'pending' && (
@@ -265,6 +300,40 @@ const AdminSettings: React.FC = () => {
                 <Input id="business_registration" value={formData.business_registration} onChange={(e) => setFormData({ ...formData, business_registration: e.target.value })} placeholder="BR-XXXXXXXX" className="mt-1" />
                 <p className="text-sm text-muted-foreground mt-2">This information is used for verification and is not publicly visible.</p>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card className="glass-card">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Landmark className="h-5 w-5" />Payout Bank Details</CardTitle>
+              <CardDescription>Where your settlement payouts are sent. Not visible to customers.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="bank_account_holder_name">Account Holder Name</Label>
+                  <Input id="bank_account_holder_name" value={formData.bank_account_holder_name} onChange={(e) => setFormData({ ...formData, bank_account_holder_name: e.target.value })} placeholder="Name as per bank account" className="mt-1" />
+                </div>
+                <div>
+                  <Label htmlFor="bank_account_number">Account Number</Label>
+                  <Input id="bank_account_number" value={formData.bank_account_number} onChange={(e) => setFormData({ ...formData, bank_account_number: e.target.value })} placeholder="e.g. 000123456789" className="mt-1" />
+                </div>
+                <div>
+                  <Label htmlFor="bank_name">Bank Name</Label>
+                  <Input id="bank_name" value={formData.bank_name} onChange={(e) => setFormData({ ...formData, bank_name: e.target.value })} placeholder="e.g. Commercial Bank" className="mt-1" />
+                </div>
+                <div>
+                  <Label htmlFor="bank_branch_name">Branch</Label>
+                  <Input id="bank_branch_name" value={formData.bank_branch_name} onChange={(e) => setFormData({ ...formData, bank_branch_name: e.target.value })} placeholder="e.g. Colombo Main" className="mt-1" />
+                </div>
+                <div className="md:col-span-2">
+                  <Label htmlFor="bank_swift_code">SWIFT / Bank Code (optional)</Label>
+                  <Input id="bank_swift_code" value={formData.bank_swift_code} onChange={(e) => setFormData({ ...formData, bank_swift_code: e.target.value })} placeholder="e.g. CCEYLKLX" className="mt-1" />
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Settlements are calculated by the platform and paid out manually to this account by the AutoMatrix team. This is not an automated bank transfer.
+              </p>
             </CardContent>
           </Card>
         </div>

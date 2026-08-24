@@ -99,14 +99,13 @@ const settlementSchema = new mongoose.Schema({
         default: 'bank_transfer'
     },
     
-    // Bank details for payout
+    // Bank details for payout, snapshotted from the vendor's profile at settlement creation time
     bankDetails: {
-        accountName: String,
+        accountHolderName: String,
         accountNumber: String,
         bankName: String,
-        ifscCode: String,
-        routingNumber: String,
-        accountType: String
+        branchName: String,
+        swiftCode: String
     },
     
     // Payout tracking

@@ -29,8 +29,8 @@ class SettlementService {
                 status: { $in: ['refund_completed'] }
             });
 
-            // Get vendor commission rate
-            const vendor = await User.findById(vendorId).select('commissionRate shopName');
+            // Get vendor commission rate and payout bank details
+            const vendor = await User.findById(vendorId).select('commissionRate shopName bankDetails');
             const commissionRate = vendor?.commissionRate || 0;
 
             // Calculate financial metrics
@@ -88,6 +88,7 @@ class SettlementService {
                     totalCharges
                 },
                 payableAmount,
+                bankDetails: vendor?.bankDetails || undefined,
                 subOrders: subOrders.map(so => so._id),
                 refunds: refunds.map(r => ({
                     refundId: r._id,
@@ -102,6 +103,19 @@ class SettlementService {
     }
 
     /**
+     * Find an existing non-cancelled/failed settlement for this vendor whose period
+     * overlaps the given range, so the same orders don't get settled twice.
+     */
+    static async findOverlappingSettlement(vendorId, startDate, endDate) {
+        return Settlement.findOne({
+            vendor: vendorId,
+            status: { $in: ['pending', 'processing', 'completed'] },
+            'settlementPeriod.startDate': { $lte: endDate },
+            'settlementPeriod.endDate': { $gte: startDate }
+        });
+    }
+
+    /**
      * Create a settlement record
      */
     static async createSettlement(settlementData, createdBy) {
@@ -113,6 +127,7 @@ class SettlementService {
                 commission: settlementData.commission,
                 charges: settlementData.charges,
                 payableAmount: settlementData.payableAmount,
+                bankDetails: settlementData.bankDetails,
                 subOrders: settlementData.subOrders,
                 refunds: settlementData.refunds,
                 createdBy
@@ -269,15 +284,11 @@ class SettlementService {
 
             for (const vendor of vendors) {
                 try {
-                    // Check if settlement already exists for this period
-                    const existing = await Settlement.findOne({
-                        vendor: vendor._id,
-                        'settlementPeriod.startDate': startDate,
-                        'settlementPeriod.endDate': endDate
-                    });
+                    // Skip if this vendor already has a settlement covering an overlapping period
+                    const existing = await this.findOverlappingSettlement(vendor._id, startDate, endDate);
 
                     if (existing) {
-                        continue; // Skip if already exists
+                        continue; // Skip if already settled for an overlapping period
                     }
 
                     // Calculate settlement

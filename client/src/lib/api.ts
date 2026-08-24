@@ -80,6 +80,14 @@ export interface ApiAddress {
   updatedAt?: string;
 }
 
+export interface ApiBankDetails {
+  accountHolderName?: string;
+  accountNumber?: string;
+  bankName?: string;
+  branchName?: string;
+  swiftCode?: string;
+}
+
 export interface ApiShop {
   id: string;
   name: string;
@@ -93,6 +101,7 @@ export interface ApiShop {
   businessRegistration?: string;
   commissionRate?: number;
   shopWideDiscountPercent?: number;
+  bankDetails?: ApiBankDetails | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1666,6 +1675,13 @@ class ApiClient {
     return this.request<any>(`/vendors/${vendorId}/settlement/create`, {
       method: 'POST',
       body: JSON.stringify({ startDate, endDate }),
+    });
+  }
+
+  async updateSettlementStatus(settlementId: string, status: string, extra?: Record<string, unknown>): Promise<any> {
+    return this.request<any>(`/settlements/${settlementId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, ...extra }),
     });
   }
 

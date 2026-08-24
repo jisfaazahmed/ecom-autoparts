@@ -106,6 +106,13 @@ const userSchema = new mongoose.Schema({
     min: 0,
     max: 90,
   },
+  bankDetails: {
+    accountHolderName: { type: String, trim: true },
+    accountNumber: { type: String, trim: true },
+    bankName: { type: String, trim: true },
+    branchName: { type: String, trim: true },
+    swiftCode: { type: String, trim: true },
+  },
   // Password reset fields
   resetToken: {
     type: String,
