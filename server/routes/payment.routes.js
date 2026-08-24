@@ -11,6 +11,8 @@ const {
     validateVerifyCOD,
     validateConfirmCODCollection,
     validateWalletPay,
+    validateWalletTopupIntent,
+    validateWalletTopupConfirm,
     validateProcessRefund,
     validateObjectIdParam,
     validatePaginationQuery,
@@ -29,6 +31,9 @@ router.post('/confirm-payment-intent', verifyToken, validateConfirmPaymentIntent
 router.post('/retry-payment-intent', verifyToken, validateRetryPaymentIntent, paymentController.retryPaymentIntent);
 router.get('/wallet/balance', verifyToken, paymentController.getWalletBalance);
 router.post('/wallet/pay', verifyToken, validateWalletPay, paymentController.payWithWallet);
+router.post('/wallet/topup/intent', verifyToken, validateWalletTopupIntent, paymentController.createWalletTopupIntent);
+router.post('/wallet/topup/confirm', verifyToken, validateWalletTopupConfirm, paymentController.confirmWalletTopup);
+router.get('/wallet/transactions', verifyToken, validatePaginationQuery, paymentController.getWalletTransactions);
 router.post('/initiate/:orderId', verifyToken, validateObjectIdParam('orderId', 'orderId'), paymentController.createPayment);
 router.post('/confirm-card/:paymentId', verifyToken, validateConfirmCardPayment, paymentController.confirmCardPayment);
 router.get('/my-payments', verifyToken, validatePaginationQuery, paymentController.getUserPayments);

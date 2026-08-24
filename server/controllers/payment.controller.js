@@ -1,6 +1,7 @@
 const Payment = require('../models/payment.model');
 const Order = require('../models/order.model');
 const StripeEvent = require('../models/stripeEvent.model');
+const WalletTransaction = require('../models/walletTransaction.model');
 const paymentService = require('../services/payment.service');
 const stripe = require('../config/stripe');
 const OrderTimeline = require('../models/timeline.model');
@@ -8,6 +9,9 @@ const User = require('../models/user');
 const invoiceService = require('../services/invoice.service');
 const emailService = require('../services/email.service');
 const NotificationService = require('../services/notification.service');
+
+const WALLET_TOPUP_MIN = 100;
+const WALLET_TOPUP_MAX = 500000;
 
 function normalizeRole(role) {
   return String(role || '').replace(/_/g, '').toUpperCase();
@@ -994,6 +998,147 @@ exports.payWithWallet = async (req, res) => {
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message || 'Wallet payment failed' });
+  }
+};
+
+// Create a Stripe PaymentIntent for topping up the customer's wallet balance
+exports.createWalletTopupIntent = async (req, res) => {
+  try {
+    const userId = getRequestUserId(req);
+    const userEmail = getRequestBillingEmail(req);
+    const amount = Number(req.body?.amount);
+
+    if (!Number.isFinite(amount) || amount < WALLET_TOPUP_MIN) {
+      return res.status(400).json({ success: false, message: `Minimum top-up amount is LKR ${WALLET_TOPUP_MIN}` });
+    }
+    if (amount > WALLET_TOPUP_MAX) {
+      return res.status(400).json({ success: false, message: `Maximum top-up amount is LKR ${WALLET_TOPUP_MAX}` });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.create(withReceiptEmail({
+      amount: Math.round(amount * 100),
+      currency: 'lkr',
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        purpose: 'wallet_topup',
+        userId: String(userId),
+      },
+      description: 'AutoMatrix wallet top-up',
+    }, userEmail));
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        paymentIntentId: paymentIntent.id,
+        clientSecret: paymentIntent.client_secret,
+        amount,
+        currency: 'LKR',
+      },
+    });
+  } catch (error) {
+    console.error('Create wallet topup intent error:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to start wallet top-up' });
+  }
+};
+
+// Confirm a wallet top-up PaymentIntent succeeded and credit the wallet exactly once
+exports.confirmWalletTopup = async (req, res) => {
+  try {
+    const userId = getRequestUserId(req);
+    const { paymentIntentId } = req.body;
+
+    if (!paymentIntentId) {
+      return res.status(400).json({ success: false, message: 'paymentIntentId is required' });
+    }
+
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (paymentIntent.status !== 'succeeded') {
+      return res.status(400).json({
+        success: false,
+        message: `Payment is not completed. Current status: ${paymentIntent.status}`,
+      });
+    }
+
+    if (paymentIntent.metadata?.purpose !== 'wallet_topup') {
+      return res.status(400).json({ success: false, message: 'This payment is not a wallet top-up' });
+    }
+    if (String(paymentIntent.metadata?.userId || '') !== String(userId)) {
+      return res.status(403).json({ success: false, message: 'This payment does not belong to your account' });
+    }
+
+    const amount = paymentIntent.amount / 100;
+
+    // The unique index on stripePaymentIntentId acts as a lock: only the first
+    // confirm call for a given intent can insert this document, so a retried or
+    // duplicated confirm never credits the wallet twice.
+    let transaction;
+    try {
+      transaction = await WalletTransaction.create({
+        user: userId,
+        type: 'topup',
+        amount,
+        balanceAfter: 0,
+        status: 'completed',
+        stripePaymentIntentId: paymentIntent.id,
+        description: 'Wallet top-up via card',
+      });
+    } catch (err) {
+      if (err.code === 11000) {
+        const user = await User.findById(userId).select('wallet');
+        return res.status(200).json({
+          success: true,
+          data: { balance: Number(user?.wallet?.balance || 0), alreadyProcessed: true },
+        });
+      }
+      throw err;
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $inc: { 'wallet.balance': amount } },
+      { new: true }
+    ).select('wallet');
+
+    transaction.balanceAfter = Number(updatedUser?.wallet?.balance || 0);
+    await transaction.save();
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        balance: transaction.balanceAfter,
+        transactionId: transaction._id,
+      },
+    });
+  } catch (error) {
+    console.error('Confirm wallet topup error:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Failed to confirm wallet top-up' });
+  }
+};
+
+exports.getWalletTransactions = async (req, res) => {
+  try {
+    const userId = getRequestUserId(req);
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit, 10) || 20));
+
+    const [transactions, total] = await Promise.all([
+      WalletTransaction.find({ user: userId })
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      WalletTransaction.countDocuments({ user: userId }),
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        transactions,
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) || 1 },
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 

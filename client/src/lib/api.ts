@@ -80,6 +80,16 @@ export interface ApiAddress {
   updatedAt?: string;
 }
 
+export interface ApiWalletTransaction {
+  _id: string;
+  type: 'topup' | 'debit';
+  amount: number;
+  balanceAfter: number;
+  status: 'pending' | 'completed' | 'failed';
+  description?: string;
+  createdAt: string;
+}
+
 export interface ApiBankDetails {
   accountHolderName?: string;
   accountNumber?: string;
@@ -2087,6 +2097,42 @@ class ApiClient {
     // details; returning `response.data` alone dropped the flag and let the
     // caller treat an OTP challenge as a completed payment.
     return { ...response, ...(response?.data || {}) };
+  }
+
+  async createWalletTopupIntent(amount: number): Promise<{
+    paymentIntentId: string;
+    clientSecret: string;
+    amount: number;
+    currency: string;
+  }> {
+    const response = await this.request<any>('/payments/wallet/topup/intent', {
+      method: 'POST',
+      body: JSON.stringify({ amount }),
+    });
+    return response.data || response;
+  }
+
+  async confirmWalletTopup(paymentIntentId: string): Promise<{
+    balance: number;
+    transactionId?: string;
+    alreadyProcessed?: boolean;
+  }> {
+    const response = await this.request<any>('/payments/wallet/topup/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ paymentIntentId }),
+    });
+    return response.data || response;
+  }
+
+  async getWalletTransactions(params?: { page?: number; limit?: number }): Promise<{
+    transactions: ApiWalletTransaction[];
+    pagination: { page: number; limit: number; total: number; pages: number };
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', String(params.page));
+    if (params?.limit) searchParams.set('limit', String(params.limit));
+    const response = await this.request<any>(`/payments/wallet/transactions?${searchParams.toString()}`);
+    return response.data || response;
   }
 
   // ============ PAYMENTS ============

@@ -408,6 +408,24 @@ function validateWalletPay(req, res, next) {
   return next();
 }
 
+function validateWalletTopupIntent(req, res, next) {
+  const amount = Number(req.body?.amount);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return fail(res, 'A valid amount is required');
+  }
+  req.body.amount = amount;
+  return next();
+}
+
+function validateWalletTopupConfirm(req, res, next) {
+  const paymentIntentId = asTrimmed(req.body?.paymentIntentId);
+  if (!paymentIntentId) {
+    return fail(res, 'paymentIntentId is required');
+  }
+  req.body.paymentIntentId = paymentIntentId;
+  return next();
+}
+
 function validateProcessRefund(req, res, next) {
   if (!isObjectId(req.params?.paymentId)) {
     return fail(res, 'Invalid paymentId');
@@ -626,6 +644,8 @@ module.exports = {
   validateVerifyCOD,
   validateConfirmCODCollection,
   validateWalletPay,
+  validateWalletTopupIntent,
+  validateWalletTopupConfirm,
   validateProcessRefund,
   validateShippingCalculate,
   validateShippingStatusUpdate,

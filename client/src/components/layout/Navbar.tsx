@@ -345,6 +345,9 @@ const Navbar: React.FC = () => {
                     <Link to="/orders">My Orders</Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
+                    <Link to="/wallet">My Wallet</Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
                     <Link to="/wishlist">My Wishlist</Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
@@ -432,6 +435,9 @@ const Navbar: React.FC = () => {
                   <>
                     <Link to="/orders" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
                       My Orders
+                    </Link>
+                    <Link to="/wallet" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
+                      My Wallet
                     </Link>
                     <Link to="/wishlist" className="text-lg font-medium transition-all hover:text-black dark:hover:text-black hover:font-bold">
                       My Wishlist {wishlistIds.length > 0 && `(${wishlistIds.length})`}

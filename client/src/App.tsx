@@ -19,6 +19,7 @@ import Orders from "./pages/Orders";
 import ReturnsRefunds from "./pages/ReturnsRefunds";
 import MyVehicle from "./pages/MyVehicle";
 import Profile from "./pages/Profile";
+import Wallet from "./pages/Wallet";
 import TrackOrder from "./pages/TrackOrder";
 import CustomerAuth from "./pages/auth/CustomerAuth";
 import SellerAuth from "./pages/auth/SellerAuth";
@@ -92,6 +93,11 @@ const App = () => (
             <Route path="/profile" element={
               <ProtectedRoute>
                 <Profile />
+              </ProtectedRoute>
+            } />
+            <Route path="/wallet" element={
+              <ProtectedRoute>
+                <Wallet />
               </ProtectedRoute>
             } />
             <Route path="/wishlist" element={
