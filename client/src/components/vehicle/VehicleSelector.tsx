@@ -235,6 +235,10 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
         year: regVehicle.year ?? undefined,
       });
 
+      // Set the newly added vehicle as active on the server so it stays
+      // in sync with the local store (prevents navbar reverting on page nav).
+      await api.setActiveVehicle(saved.id);
+
       const vehicle: Vehicle = {
         id: saved.id,
         brand: saved.brand?.name || regVehicle.brand.name,
@@ -290,15 +294,19 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
 
     try {
       // Save to database via API
-      await api.addUserVehicle({
+      const saved = await api.addUserVehicle({
         brandId: selectedBrand,
         modelId: selectedModel,
         year: parseInt(selectedYear),
       });
 
+      // Set the newly added vehicle as active on the server so it stays
+      // in sync with the local store (prevents navbar reverting on page nav).
+      await api.setActiveVehicle(saved.id);
+
       // Also update local store for compatibility filtering
       const vehicle: Vehicle = {
-        id: `${selectedBrand}-${selectedModel}-${selectedYear}`,
+        id: saved.id,
         brand: selectedBrandData.name,
         model: selectedModelData.name,
         year: parseInt(selectedYear),
