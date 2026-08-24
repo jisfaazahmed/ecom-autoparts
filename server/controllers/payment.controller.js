@@ -7,6 +7,7 @@ const OrderTimeline = require('../models/timeline.model');
 const User = require('../models/user');
 const invoiceService = require('../services/invoice.service');
 const emailService = require('../services/email.service');
+const NotificationService = require('../services/notification.service');
 
 function normalizeRole(role) {
   return String(role || '').replace(/_/g, '').toUpperCase();
@@ -184,6 +185,12 @@ async function finalizeSuccessfulCardPayment({ order, paymentIntentId, sessionId
     await invoiceService.generateInvoicePdf(order._id);
   } catch (invoiceError) {
     console.error(`Invoice generation failed for order ${order.orderNumber}:`, invoiceError);
+  }
+
+  try {
+    await NotificationService.notifyPaymentSuccess(order, order.totalAmount);
+  } catch (notifyError) {
+    console.error(`Payment success notification failed for order ${order.orderNumber}:`, notifyError);
   }
 
   return payment;
@@ -723,6 +730,12 @@ async function handlePaymentIntentFailed(paymentIntent) {
         if (order) {
             order.paymentStatus = 'failed';
             await order.save();
+
+            try {
+                await NotificationService.notifyPaymentFailed(order);
+            } catch (notifyError) {
+                console.error(`Payment failed notification failed for order ${order.orderNumber}:`, notifyError);
+            }
         }
     }
 }
@@ -963,6 +976,12 @@ exports.payWithWallet = async (req, res) => {
 
     order.paymentId = payment._id;
     await order.save();
+
+    try {
+      await NotificationService.notifyPaymentSuccess(order, order.totalAmount);
+    } catch (notifyError) {
+      console.error(`Wallet payment success notification failed for order ${order.orderNumber}:`, notifyError);
+    }
 
     return res.json({
       success: true,
