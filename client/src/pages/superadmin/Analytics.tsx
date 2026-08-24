@@ -102,7 +102,7 @@ const SuperAdminAnalytics: React.FC = () => {
       const categories = await api.getCategories().catch(() => []);
       const categoryNameMap = new Map((categories || []).map((cat: { id: string; name: string }) => [String(cat.id), String(cat.name)]));
 
-      const categoryColors = ['#0e7490', '#22d3ee', '#67e8f9', '#a5f3fc', '#cffafe'];
+      const categoryColors = ['#0e7490', '#0e94ac', '#22b8d8', '#5dd0e8', '#94e2f0'];
       const topCats = (data.topCategories || []).map((c, idx) => ({
         name: categoryNameMap.get(c.categoryId) || (c.categoryId === 'null' ? 'Uncategorized' : 'Other'),
         value: c.earnings,
@@ -229,12 +229,12 @@ const SuperAdminAnalytics: React.FC = () => {
 
 
   const stats = [
-    { label: 'Total Sales', value: formatLKRCompact(totalSales), icon: DollarSign, change: totalSales > 0 ? 'Live data' : 'No data', positive: totalSales > 0, color: 'text-primary' },
-    { label: 'Commission Earned', value: formatLKRCompact(totalCommission), icon: TrendingUp, change: totalCommission > 0 ? 'Live data' : 'No data', positive: totalCommission > 0, color: 'text-success' },
-    { label: 'Total Orders', value: totalOrders.toLocaleString(), icon: ShoppingBag, change: '+24%', positive: true, color: 'text-purple-400' },
-    { label: 'Average Order Value', value: formatLKRCompact(aov), icon: DollarSign, change: '+5%', positive: true, color: 'text-blue-400' },
-    { label: 'Total Refunds', value: formatLKRCompact(totalRefunds), icon: TrendingUp, change: '-2%', positive: false, color: 'text-destructive' },
-    { label: 'Active Vendors', value: totalVendors.toLocaleString(), icon: Users, change: totalVendors > 0 ? 'Live data' : 'No vendors', positive: totalVendors > 0, color: 'text-warning' },
+    { label: 'Total Sales', value: formatLKRCompact(totalSales), icon: DollarSign, color: 'text-primary' },
+    { label: 'Total Commission', value: formatLKRCompact(totalCommission), icon: TrendingUp, color: 'text-primary' },
+    { label: 'Total Orders', value: totalOrders.toLocaleString(), icon: ShoppingBag, color: 'text-primary' },
+    { label: 'Average Order Value', value: formatLKRCompact(aov), icon: DollarSign, color: 'text-primary' },
+    { label: 'Total Refunds', value: formatLKRCompact(totalRefunds), icon: TrendingUp, color: 'text-destructive' },
+    { label: 'Active Vendors', value: totalVendors.toLocaleString(), icon: Users, color: 'text-primary' },
   ];
 
   if (loading) return <AdminLayout><div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div></AdminLayout>;
@@ -263,12 +263,23 @@ const SuperAdminAnalytics: React.FC = () => {
             <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
               <Card className="glass-card">
                 <CardContent className="p-4 lg:p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="p-2 lg:p-3 rounded-lg bg-primary/10 border border-primary/30"><stat.icon className={`h-4 w-4 lg:h-5 lg:w-5 ${stat.color}`} /></div>
-                    <div className={`flex items-center gap-1 text-xs lg:text-sm ${stat.positive ? 'text-success' : 'text-destructive'}`}>{stat.positive ? <ArrowUpRight className="h-3 w-3 lg:h-4 lg:w-4" /> : <ArrowDownRight className="h-3 w-3 lg:h-4 lg:w-4" />}{stat.change}</div>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                      <div className="p-2 lg:p-3 rounded-lg bg-secondary/50 border border-white/10"><stat.icon className={`h-4 w-4 lg:h-5 lg:w-5 ${stat.color}`} /></div>
+                      <div className="text-xs text-muted-foreground">
+                        {{
+                          '7d': 'Last 7 days',
+                          '30d': 'Last 30 days',
+                          '90d': 'Last 90 days',
+                          '1y': 'Last year'
+                        }[timeRange] || 'This period'}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-lg lg:text-2xl font-display font-bold">{stat.value}</p>
+                      <p className="text-sm lg:text-base font-medium text-muted-foreground mt-0.5">{stat.label}</p>
+                    </div>
                   </div>
-                  <p className="text-lg lg:text-2xl font-display font-bold">{stat.value}</p>
-                  <p className="text-xs lg:text-sm text-muted-foreground">{stat.label}</p>
                 </CardContent>
               </Card>
             </motion.div>

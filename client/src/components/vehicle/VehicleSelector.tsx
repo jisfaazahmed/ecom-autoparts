@@ -380,7 +380,7 @@ const VehicleSelector: React.FC<VehicleSelectorProps> = ({ trigger, onVehicleAdd
               <Label htmlFor="reg-number">Enter Registration Number</Label>
               <Input
                 id="reg-number"
-                placeholder="e.g., CAB-1234"
+                placeholder="e.g., ABC-1234"
                 value={regNumber}
                 onChange={(e) => {
                   setRegNumber(e.target.value.toUpperCase());

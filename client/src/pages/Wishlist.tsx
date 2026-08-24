@@ -50,7 +50,7 @@ const Wishlist: React.FC = () => {
         id: product.id || product._id || '',
         name: product.name,
         price: product.price,
-        image: product.imageUrl || '/placeholder.svg',
+        image: product.image || '/placeholder.svg',
         shopId: product.shopId,
         sku: product.sku,
         stock: product.stock,
@@ -111,7 +111,7 @@ const Wishlist: React.FC = () => {
                     <Link to={`/product/${productId}`} className="block">
                       <div className="relative aspect-square bg-secondary/50 overflow-hidden">
                         <img
-                          src={product.imageUrl || '/placeholder.svg'}
+                          src={product.image || '/placeholder.svg'}
                           alt={product.name}
                           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                         />

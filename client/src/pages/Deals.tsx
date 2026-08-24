@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Tag, Percent, Clock, Loader2, Copy, Check } from 'lucide-react';
 import Navbar from '@/components/layout/Navbar';
@@ -8,6 +8,8 @@ import { api, ApiProduct, ApiCoupon } from '@/lib/api';
 import { usePagination } from '@/hooks/usePagination';
 import { formatLKR } from '@/lib/currency';
 import { useSeo } from '@/hooks/useSeo';
+import { useStore } from '@/store/useStore';
+import { getProductCompatibility } from '@/lib/vehicleCompatibility';
 
 const Deals: React.FC = () => {
   useSeo({
@@ -16,7 +18,10 @@ const Deals: React.FC = () => {
       'Live discounts and coupon codes on genuine and performance auto parts. Limited-time offers from verified sellers, priced in LKR.',
     path: '/deals',
   });
-  const [products, setProducts] = useState<ApiProduct[]>([]);
+
+  const { userVehicle } = useStore();
+
+  const [allDealProducts, setAllDealProducts] = useState<ApiProduct[]>([]);
   const [coupons, setCoupons] = useState<ApiCoupon[]>([]);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -29,7 +34,7 @@ const Deals: React.FC = () => {
         const dealProducts = (response.data || []).filter(
           (p) => (p.effectiveDiscountPercent || 0) > 0 && p.stock > 0
         );
-        setProducts(dealProducts);
+        setAllDealProducts(dealProducts);
       } catch (error) {
         console.error('Failed to fetch deals:', error);
       }
@@ -46,12 +51,28 @@ const Deals: React.FC = () => {
     fetchDeals();
   }, []);
 
+  // Compute compatibility for each deal product
+  const productsWithFitment = useMemo(() => {
+    return allDealProducts.map((product) => ({
+      product,
+      isCompatible: getProductCompatibility(product, userVehicle),
+    }));
+  }, [allDealProducts, userVehicle]);
+
+  // When a vehicle is set, show only compatible deals; otherwise show all
+  const filteredProducts = useMemo(() => {
+    if (userVehicle) {
+      return productsWithFitment.filter(({ isCompatible }) => isCompatible === true);
+    }
+    return productsWithFitment;
+  }, [productsWithFitment, userVehicle]);
+
   const {
     paginatedItems: paginatedProducts,
     currentPage,
     totalPages,
     goToPage,
-  } = usePagination(products, { itemsPerPage: 12 });
+  } = usePagination(filteredProducts, { itemsPerPage: 12 });
 
   const mapToProductCard = (p: ApiProduct) => ({
     id: p.id || p._id || '',
@@ -114,15 +135,17 @@ const Deals: React.FC = () => {
           </p>
         </motion.div>
 
+
+
         {/* Deal Highlights */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
           {[
             {
               icon: Percent,
-              title: products.length ? `Up to ${Math.round(Math.max(...products.map((p) => p.effectiveDiscountPercent || 0)))}% Off` : 'Seller Discounts',
+              title: filteredProducts.length ? `Up to ${Math.round(Math.max(...filteredProducts.map(({ product: p }) => p.effectiveDiscountPercent || 0)))}% Off` : 'Seller Discounts',
               desc: 'Shop-wide and product-level markdowns',
             },
-            { icon: Tag, title: `${products.length} Discounted Products`, desc: 'Filtered live from active seller offers' },
+            { icon: Tag, title: `${filteredProducts.length} Discounted Products`, desc: 'Filtered live from active seller offers' },
             { icon: Clock, title: 'Limited Time Savings', desc: 'Deals update whenever sellers change discounts' },
           ].map((item, i) => (
             <motion.div
@@ -188,19 +211,26 @@ const Deals: React.FC = () => {
           <div className="flex justify-center py-20">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
-        ) : products.length === 0 ? (
-          <p className="text-center text-muted-foreground py-20">No deals available at the moment. Check back soon!</p>
+        ) : filteredProducts.length === 0 ? (
+          <p className="text-center text-muted-foreground py-20">
+            {userVehicle
+              ? `No compatible deals found for your ${userVehicle.year} ${userVehicle.brand} ${userVehicle.model}.`
+              : 'No deals available at the moment. Check back soon!'}
+          </p>
         ) : (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-              {paginatedProducts.map((product, i) => (
+              {paginatedProducts.map(({ product, isCompatible }, i) => (
                 <motion.div
                   key={product.id || product._id || i}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.05 }}
                 >
-                  <ProductCard product={mapToProductCard(product)} />
+                  <ProductCard
+                    product={mapToProductCard(product)}
+                    isCompatible={isCompatible}
+                  />
                 </motion.div>
               ))}
             </div>
@@ -218,3 +248,4 @@ const Deals: React.FC = () => {
 };
 
 export default Deals;
+

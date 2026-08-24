@@ -234,7 +234,7 @@ const SellerAuth: React.FC = () => {
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       id="login-email"
-                      type="email"
+                      type="text"
                       placeholder="your@email.com"
                       className="pl-10"
                       value={loginForm.email}
@@ -317,7 +317,7 @@ const SellerAuth: React.FC = () => {
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                       id="signup-email"
-                      type="email"
+                      type="text"
                       placeholder="your@email.com"
                       className="pl-10"
                       value={signupForm.email}

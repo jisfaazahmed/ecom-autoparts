@@ -290,7 +290,7 @@ const ResetPassword = () => {
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   id="email"
-                  type="email"
+                  type="text"
                   placeholder="your@email.com"
                   className="pl-10"
                   value={email}
