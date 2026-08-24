@@ -4,6 +4,7 @@ const OrderItem = require('../models/orderItem.model');
 const stripe = require('../config/stripe');
 const OrderTimeline = require('../models/timeline.model');
 const User = require('../models/user');
+const NotificationService = require('./notification.service');
 
 class PaymentService {
 
@@ -197,6 +198,12 @@ class PaymentService {
             });
 
             await this.generateReceipt(payment._id);
+
+            try {
+                await NotificationService.notifyPaymentSuccess(order, payment.amount || order.totalAmount);
+            } catch (notifyError) {
+                console.error(`Payment success notification failed for order ${order.orderNumber}:`, notifyError);
+            }
         }
         else if (paymentIntent.status === 'payment_failed') {
             payment.status = 'failed';
@@ -204,6 +211,18 @@ class PaymentService {
                 errorCode: paymentIntent.last_payment_error?.code,
                 errorMessage: paymentIntent.last_payment_error?.message
             };
+
+            const order = await Order.findById(payment.order);
+            if (order) {
+                order.paymentStatus = 'failed';
+                await order.save();
+
+                try {
+                    await NotificationService.notifyPaymentFailed(order);
+                } catch (notifyError) {
+                    console.error(`Payment failed notification failed for order ${order.orderNumber}:`, notifyError);
+                }
+            }
         }
 
         await payment.save();
@@ -336,6 +355,15 @@ class PaymentService {
             actorType: 'courier',
             metadata: { collectedBy: collectionData.collectedBy }
         });
+
+        const order = await Order.findById(payment.order);
+        if (order) {
+            try {
+                await NotificationService.notifyPaymentSuccess(order, collectionData.amount || order.totalAmount);
+            } catch (notifyError) {
+                console.error(`COD payment success notification failed for order ${order.orderNumber}:`, notifyError);
+            }
+        }
 
         return payment;
     }

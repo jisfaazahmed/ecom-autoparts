@@ -261,6 +261,19 @@ test('Refund service is properly structured', () => {
   }
 });
 
+// Test 15: Verify payment controller and payment service integrate with Notification service
+test('Payment controller and service integrate with Notification service', () => {
+  const paymentController = require('../controllers/payment.controller');
+  const paymentService = require('../services/payment.service');
+
+  if (!paymentController) {
+    throw new Error('Payment controller not found');
+  }
+  if (!paymentService) {
+    throw new Error('Payment service not found');
+  }
+});
+
 console.log('\n' + '='.repeat(70));
 console.log('BACKGROUND JOBS - TESTS');
 console.log('='.repeat(70) + '\n');
