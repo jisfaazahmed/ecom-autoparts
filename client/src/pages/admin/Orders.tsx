@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ShoppingBag, Search, MoreVertical, Eye, Truck, Package, CheckCircle, XCircle, Loader2, Filter, Calendar, MapPin } from 'lucide-react';
+import { ShoppingBag, Search, MoreVertical, Eye, Truck, Package, CheckCircle, XCircle, Loader2, Filter, Calendar, MapPin, Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -60,6 +60,13 @@ const validateTrackingNumber = (value: string): string | null => {
     return 'Tracking number must be 4-64 characters using only letters, numbers, or hyphens.';
   }
   return null;
+};
+
+const generateTrackingId = (): string => {
+  const date = new Date();
+  const stamp = `${String(date.getFullYear()).slice(-2)}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `ORD-${stamp}-${random}`;
 };
 
 const validateOrderNotes = (value: string): string | null => {
@@ -427,7 +434,15 @@ const AdminOrders: React.FC = () => {
                 </div>
               </div>
               <div className="space-y-4">
-                <div><Label>Tracking Number</Label><Input value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} placeholder="Enter tracking number" /></div>
+                <div>
+                  <Label>Tracking Number</Label>
+                  <div className="flex gap-2">
+                    <Input value={trackingNumber} onChange={(e) => setTrackingNumber(e.target.value)} placeholder="Enter tracking number" />
+                    <Button type="button" variant="outline" size="icon" title="Auto-generate tracking number" onClick={() => setTrackingNumber(generateTrackingId())}>
+                      <Wand2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
                 <div>
                   <Label>Order Notes</Label>
                   <Textarea
