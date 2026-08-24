@@ -81,7 +81,10 @@ const subOrderSchema = new mongoose.Schema({
         enum: ['standard', 'express', 'same_day', 'pickup_point'],
         default: 'standard'
     },
-    trackingNumber: String,
+    trackingNumber: {
+        type: String,
+        trim: true
+    },
     courierPartner: String,
     estimatedDeliveryDate: Date,
     actualDeliveryDate: Date,

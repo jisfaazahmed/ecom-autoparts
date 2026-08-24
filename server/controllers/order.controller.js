@@ -356,6 +356,35 @@ module.exports.updateOrderStatus = async (req, res) => {
     }
 }
 
+// Update tracking number for the seller's sub-order (Vendor)
+module.exports.updateOrderTracking = async (req, res) => {
+    try {
+        if (!assertValidOrderId(res, req.params.id)) return;
+
+        const { trackingNumber } = req.body;
+        if (!trackingNumber || !String(trackingNumber).trim()) {
+            return res.status(400).json({ message: 'Tracking number is required' });
+        }
+
+        const sellerId = req.user?._id || req.user?.id;
+        const SubOrder = require('../models/subOrder.model');
+
+        const subOrder = await SubOrder.findOneAndUpdate(
+            { order: req.params.id, seller: sellerId },
+            { $set: { trackingNumber: String(trackingNumber).trim() } },
+            { new: true }
+        );
+
+        if (!subOrder) {
+            return res.status(404).json({ message: 'Order not found for this seller' });
+        }
+
+        res.status(200).json({ trackingNumber: subOrder.trackingNumber });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 // Update Overall Order status by Admin
 module.exports.adminUpdateOrderStatus = async (req, res) => {
     try {
@@ -522,6 +551,8 @@ module.exports.getVendorOrders = async (req, res) => {
                 totalAmount: parentOrder?.totalAmount,
                 shippingAddress: parentOrder?.shippingAddress,
                 createdAt: parentOrder?.createdAt || subOrder.createdAt,
+                trackingNumber: subOrder.trackingNumber,
+                courierPartner: subOrder.courierPartner,
                 subOrder: {
                     _id: subOrder._id,
                     seller: subOrder.seller,

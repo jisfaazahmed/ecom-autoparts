@@ -16,6 +16,7 @@ router.get('/seller/orders', verifyToken, orderController.getVendorOrders);
 router.get('/seller/sub-orders', verifyToken, orderController.getMySubOrders);
 router.get('/seller/customers', verifyToken, orderController.getSellerCustomers);
 router.patch('/:id/item-status', verifyToken, orderController.updateOrderStatus);
+router.put('/:id/tracking', verifyToken, orderController.updateOrderTracking);
 
 //track
 router.get('/track/:trackingNumber', orderController.trackOrder);
