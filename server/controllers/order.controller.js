@@ -760,7 +760,7 @@ module.exports.getGuestInvoice = async (req, res) => {
 module.exports.getSellerCustomers = async (req, res) => {
     try {
         const sellerId = req.user?.id || req.user?._id;
-        const SubOrder = require('../models/orderItem.model');
+        const SubOrder = require('../models/subOrder.model');
 
         const rows = await SubOrder.aggregate([
             { $match: { seller: new mongoose.Types.ObjectId(String(sellerId)) } },
@@ -776,7 +776,7 @@ module.exports.getSellerCustomers = async (req, res) => {
                 },
             },
             { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'userDoc' } },
-            { $unwind: { path: '$userDoc', preserveNullAndEmpty: true } },
+            { $unwind: { path: '$userDoc', preserveNullAndEmptyArrays: true } },
             {
                 $project: {
                     _id: 0,
