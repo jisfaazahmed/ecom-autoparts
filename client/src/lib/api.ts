@@ -644,7 +644,7 @@ class ApiClient {
       });
     } catch {
       throw new Error(
-        'Cannot reach the API. Use http://localhost:3000 and ensure Docker services (client + server) are running.'
+        'Cannot reach the API.'
       );
     }
 

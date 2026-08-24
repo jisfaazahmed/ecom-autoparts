@@ -217,15 +217,6 @@ const ProductCard: React.FC<ProductCardProps> = ({
           <div className="absolute top-3 left-3 z-10">{compatibilityBadge}</div>
         )}
 
-        {/* Discount Badge */}
-        {!!(product.effectiveDiscountPercent && product.effectiveDiscountPercent > 0) && (
-          <div className="absolute bottom-3 left-3 z-10">
-            <Badge className="bg-destructive/90 text-white border-destructive/80">
-              -{Math.round(product.effectiveDiscountPercent)}%
-            </Badge>
-          </div>
-        )}
-
         <div className="absolute top-3 right-3 z-10">{stockBadge}</div>
 
         {/* Image */}
@@ -288,9 +279,16 @@ const ProductCard: React.FC<ProductCardProps> = ({
                 {formatLKR(product.price)}
               </span>
               {!!(product.originalPrice && product.originalPrice > product.price) && (
-                <p className="text-xs text-muted-foreground line-through">
-                  {formatLKR(product.originalPrice)}
-                </p>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground line-through">
+                    {formatLKR(product.originalPrice)}
+                  </span>
+                  {!!(product.effectiveDiscountPercent && product.effectiveDiscountPercent > 0) && (
+                    <Badge className="bg-destructive/90 text-white border-destructive/80 text-[10px] px-1.5 py-0">
+                      -{Math.round(product.effectiveDiscountPercent)}%
+                    </Badge>
+                  )}
+                </div>
               )}
             </div>
             <Button
