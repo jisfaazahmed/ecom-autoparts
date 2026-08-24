@@ -191,7 +191,7 @@ exports.updateShopCommission = async (req, res) => {
  */
 exports.updateMyShop = exports.updateShop = async (req, res) => {
   try {
-    const id = req.params.id === 'my' ? req.user.id : req.params.id;
+    const id = req.params.id || req.user.id;
     const isOwn = id?.toString() === req.user.id?.toString();
     const user = await User.findOne({ _id: id, role: 'ADMIN' });
     if (!user) return res.status(404).json({ message: 'Shop not found' });
