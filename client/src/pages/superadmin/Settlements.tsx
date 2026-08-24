@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { CreditCard, TrendingUp, DollarSign, Clock, RefreshCw, ChevronDown } from 'lucide-react';
+import { CreditCard, TrendingUp, DollarSign, Clock, RefreshCw, ChevronDown, Zap } from 'lucide-react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -41,6 +42,13 @@ const STATUS_COLORS: Record<string, string> = {
   failed: 'bg-red-500/15 text-red-400 border-red-500/30',
 };
 
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const thirtyDaysAgoIso = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 30);
+  return d.toISOString().slice(0, 10);
+};
+
 const Settlements: React.FC = () => {
   const [shops, setShops] = useState<ApiShop[]>([]);
   const [selectedVendorId, setSelectedVendorId] = useState<string>('');
@@ -48,6 +56,9 @@ const Settlements: React.FC = () => {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(false);
   const [shopsLoading, setShopsLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [rangeStart, setRangeStart] = useState(thirtyDaysAgoIso());
+  const [rangeEnd, setRangeEnd] = useState(todayIso());
 
   useEffect(() => {
     const fetchShops = async () => {
@@ -90,13 +101,21 @@ const Settlements: React.FC = () => {
     fetchSettlements();
   }, [fetchSettlements]);
 
-  const handleProcessSettlements = async () => {
+  const handleGenerateSettlement = async () => {
+    if (!selectedVendorId) return;
+    if (!rangeStart || !rangeEnd || rangeStart > rangeEnd) {
+      toast.error('Pick a valid start and end date');
+      return;
+    }
+    setGenerating(true);
     try {
-      await api.getSettlementDetails('process/all'); // placeholder; real endpoint via direct fetch
-      toast.success('Settlement processing triggered');
+      await api.createVendorSettlement(selectedVendorId, rangeStart, rangeEnd);
+      toast.success('Settlement generated');
       fetchSettlements();
-    } catch {
-      toast.error('Failed to process settlements');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to generate settlement');
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -121,7 +140,7 @@ const Settlements: React.FC = () => {
         </div>
 
         {/* Vendor selector */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <label className="text-sm font-medium whitespace-nowrap">Select Vendor:</label>
           <Select value={selectedVendorId} onValueChange={setSelectedVendorId} disabled={shopsLoading}>
             <SelectTrigger className="w-64 bg-secondary/50">
@@ -135,6 +154,35 @@ const Settlements: React.FC = () => {
               ))}
             </SelectContent>
           </Select>
+
+          <div className="flex items-center gap-2 ml-0 sm:ml-4">
+            <label className="text-sm font-medium whitespace-nowrap">Period:</label>
+            <Input
+              type="date"
+              value={rangeStart}
+              max={rangeEnd}
+              onChange={(e) => setRangeStart(e.target.value)}
+              className="w-40 bg-secondary/50"
+            />
+            <span className="text-muted-foreground text-sm">to</span>
+            <Input
+              type="date"
+              value={rangeEnd}
+              min={rangeStart}
+              max={todayIso()}
+              onChange={(e) => setRangeEnd(e.target.value)}
+              className="w-40 bg-secondary/50"
+            />
+          </div>
+
+          <Button
+            size="sm"
+            onClick={handleGenerateSettlement}
+            disabled={generating || !selectedVendorId}
+          >
+            <Zap className={`h-4 w-4 mr-2 ${generating ? 'animate-pulse' : ''}`} />
+            {generating ? 'Generating…' : 'Generate Settlement'}
+          </Button>
         </div>
 
         {/* Summary Cards */}

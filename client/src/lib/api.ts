@@ -1662,6 +1662,13 @@ class ApiClient {
     return this.request<any>(`/settlements/${settlementId}`);
   }
 
+  async createVendorSettlement(vendorId: string, startDate: string, endDate: string): Promise<any> {
+    return this.request<any>(`/vendors/${vendorId}/settlement/create`, {
+      method: 'POST',
+      body: JSON.stringify({ startDate, endDate }),
+    });
+  }
+
   async getTotalPayable(vendorId: string): Promise<{ totalPayable: number; totalSettlements: number }> {
     return this.request<{ totalPayable: number; totalSettlements: number }>(`/vendors/${vendorId}/payable`);
   }
