@@ -286,7 +286,7 @@ jobs:
         run: |
           path="${DEPLOY_PATH:-~/ecom-autoparts}"
           ssh -i ~/.ssh/id_deploy -p "${SSH_PORT:-22}" "$SSH_USER@$SSH_HOST" \
-            path="$path" HTTP_PORT="${HTTP_PORT:-80}" 'bash -se' <<'REMOTE'
+            path="$path" 'bash -se' <<'REMOTE'
           set -euo pipefail
           cd "$path"
 
@@ -311,7 +311,7 @@ jobs:
 
           # nginx is the only public entry point now, so prove the proxy hop works
           # instead of trusting that a healthy container means a reachable site.
-          if ! curl -fsS "http://127.0.0.1:${HTTP_PORT:-80}/api/message" >/dev/null 2>&1; then
+          if ! curl -fsS "http://127.0.0.1:8080/api/message" >/dev/null 2>&1; then
             echo "nginx is not proxying /api through to the server container" >&2
             docker compose logs --tail=50 client >&2
             exit 1

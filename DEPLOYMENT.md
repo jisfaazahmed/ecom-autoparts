@@ -187,3 +187,86 @@ Or re-run the CD workflow from a known-good commit via **Actions → CD → Run 
   `docker-compose.deploy.yml` is the production one.
 - The dev images (`client/Dockerfile`, `server/Dockerfile`) are untouched and still
   back `docker-compose.dev.yml`. Production uses the `.prod` variants.
+
+## Hosting on AWS EC2
+
+The CD workflow treats any SSH-reachable Docker host as "the VPS", so an EC2
+instance needs no workflow changes. Traffic flows:
+
+```
+Browser -> Caddy (443, auto TLS) -> client container nginx (127.0.0.1:8080)
+        -> /api -> server container (5000) -> mongo container (27017)
+```
+
+Only 22, 80 and 443 are open. MongoDB and the API are never exposed.
+
+### 1. Launch the instance
+
+- **AMI:** Ubuntu Server 24.04 LTS
+- **Type:** `t3.small` minimum (2 GB RAM, MongoDB needs room); `t3.medium` is more comfortable
+- **Storage:** 20-30 GB gp3. MongoDB data lives in the `mongodb_data` Docker volume on this disk
+- **Key pair:** create one for your own admin access
+- **Security group:** inbound 22 (your IP only), 80 and 443 (anywhere)
+- **Elastic IP:** allocate and associate one, so the address survives a stop/start
+
+### 2. DNS
+
+Create an `A` record for your domain pointing to the Elastic IP. Caddy cannot
+issue a certificate until this resolves. (If the domain is on Cloudflare, set
+the record to "DNS only" until the certificate is issued.)
+
+### 3. Bootstrap the server (once)
+
+```bash
+ssh -i your-key.pem ubuntu@<elastic-ip>
+curl -fsSL https://raw.githubusercontent.com/<owner>/ecom-autoparts/main/deploy/ec2/bootstrap.sh -o bootstrap.sh
+sudo DOMAIN=shop.example.com bash bootstrap.sh
+```
+
+This installs Docker, Caddy (HTTPS + reverse proxy to `127.0.0.1:8080`), UFW,
+and 2 GB swap. Log out and back in afterwards so the `docker` group applies.
+
+### 4. Deploy key for GitHub Actions
+
+On your own machine:
+
+```bash
+ssh-keygen -t ed25519 -f ec2-deploy -N "" -C "github-actions"
+ssh-copy-id -i ec2-deploy.pub -o IdentityFile=your-key.pem ubuntu@<elastic-ip>
+ssh-keyscan -H <elastic-ip>      # -> SSH_KNOWN_HOSTS
+```
+
+### 5. GitHub secrets
+
+In addition to the secrets listed above:
+
+| Secret | Value |
+|---|---|
+| `SSH_HOST` | Elastic IP (or the domain) |
+| `SSH_USER` | `ubuntu` |
+| `SSH_PRIVATE_KEY` | contents of `ec2-deploy` |
+| `SSH_KNOWN_HOSTS` | output of the `ssh-keyscan` above |
+| `CLIENT_URL` | `https://shop.example.com` |
+
+Leave `VITE_API_URL` unset (the client uses relative `/api`). `HTTP_PORT` is
+unused on EC2: the web container is published on `127.0.0.1:8080` and Caddy
+fronts it.
+
+### 6. Deploy and seed
+
+Push to `main` or run the **CD** workflow manually. Then create the first super admin:
+
+```bash
+ssh ubuntu@<elastic-ip>
+cd ~/ecom-autoparts && docker compose exec server npm run seed
+```
+
+Update the Stripe webhook endpoint to `https://shop.example.com/api/...`
+(your payment webhook route) and use the new `STRIPE_WEBHOOK_SECRET`.
+
+### Operations
+
+- Logs: `docker compose logs -f server`
+- Mongo backup: `docker compose exec -T mongo mongodump --archive --gzip -u "$MONGO_USER" -p "$MONGO_PASSWORD" --authenticationDatabase admin > backup.gz`
+  (schedule it, and copy off-box to S3; also consider EBS snapshots)
+- Caddy: `sudo systemctl status caddy`, `sudo journalctl -u caddy`
